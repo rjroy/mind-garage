@@ -234,6 +234,26 @@ func test_area_release_and_moving_footprint() -> void:
 	check(s.get("player", {}).get("hp") == 20 and enemy(s, "a").get("hp") == 8 and enemy(s, "b").get("hp") == 8, "released burst damages both enemies but not player")
 	check(not events(s, "area").is_empty(), "released burst reports area geometry")
 
+func test_burst_push_axis() -> void:
+	var b := F.board()
+	b.enemies = [
+		F.foe("source", [1, 4], [1, 0], F.ability("burst", 3, 1, 3, true)),
+		F.foe("tie", [2, 2], [1, 0], F.ability("bolt", 1, 1)),
+		F.foe("xdom", [5, 4], [1, 0], F.ability("bolt", 1, 1)),
+		F.foe("ydom", [4, 5], [1, 0], F.ability("bolt", 1, 1)),
+	]
+	var g = model(b)
+	if not apply(g, {"type": "capture", "source": "source"}, "capture axis-test burst"): return
+	# The controlled radius reaches each actor, and their destination cells are free.
+	if not apply(g, {"type": "release", "target": [3, 3]}, "axis-test burst release"): return
+	var state: Dictionary = g.snapshot()
+	var destinations := {}
+	for event in events(state, "displace"):
+		destinations[event.actor] = event.to
+	for item in [["tie", [1, 2]], ["xdom", [6, 4]], ["ydom", [4, 6]]]:
+		check(destinations.get(item[0], []) == item[1] and enemy(state, item[0]).get("pos") == item[1], "burst displacement destination: " + item[0])
+		check(enemy(state, item[0]).get("hp") == 9, "burst affected axis-test actor: " + item[0])
+
 func test_end_turn_intentions_and_reset() -> void:
 	var b := F.board()
 	b.player.hp = 1
@@ -291,6 +311,8 @@ func _initialize() -> void:
 		test_budget_boundary()
 	elif OS.get_cmdline_user_args().has("--focus=no-invert"):
 		test_no_invert()
+	elif OS.get_cmdline_user_args().has("--focus=burst-axis"):
+		test_burst_push_axis()
 	else:
 		test_budget_boundary()
 		test_interleaving()
@@ -302,6 +324,7 @@ func _initialize() -> void:
 		test_range_sight_and_discard()
 		test_action_budget()
 		test_area_release_and_moving_footprint()
+		test_burst_push_axis()
 		test_end_turn_intentions_and_reset()
 		test_no_invert()
 	print("Checks: ", checks, "; failures: ", failures.size())

@@ -20,6 +20,14 @@ The suite covers four movement points interleaved with free capture and same-tur
 
 Invert was explicitly removed from the live baseline. Focused removal regressions run with `-- --focus=no-invert` on either the model test runner or UI smoke runner. Historical builds and evidence may still contain the earlier optional feature; they are not current requirements.
 
+The controlled burst-push axis regression, promoted from the retained revision-02 diagnostic, runs independently with:
+
+```sh
+/usr/bin/godot --headless --path games/borrowed-turns --script res://tests/run.gd -- --focus=burst-axis
+```
+
+It checks the horizontal tie and dominant horizontal/vertical destinations, plus nonmutating assessment and preview-to-commit equality. The regular model command above also runs this regression. These test-owned positions and ability values do not constrain production tuning.
+
 ## Rendered smoke completion gate
 
 The two earlier rendered runs recorded in `evidence/no-invert/README.md` exited 0 without a full summary or terminal capture. Their cause is unknown; they are not passes. The gate below protects automation without changing normal game window-close behavior or requiring desktop changes.
