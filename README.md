@@ -20,9 +20,22 @@ The live game now uses one shared baseline: independent action/movement points, 
 
 This is a mechanic prototype, not a finished roguelite or a validated progression system. Revision 02 passed independent functional checks and correctness, visual and engineering-quality reviews. Human enjoyment and replay evidence are still pending; completion alone does not demonstrate that capture creates worthwhile decisions.
 
-The first six-variant prototype is preserved at `fd8e91d` and in its source archive; it is not a parallel mode in the live game. Subsequent human feedback and the unlimited-capture/backlash direction are recorded in [design revision 02](.lore/work/experiments/001-hook-discovery/design-revision-02.md), with provisional [executable rules](.lore/work/experiments/001-hook-discovery/revision-02-executable-rules.md).
+The first six-variant prototype is preserved at source commit `fd8e91d`; it is not a parallel mode in the live game. Subsequent human feedback and the unlimited-capture/backlash direction are recorded in [design revision 02](.lore/work/experiments/001-hook-discovery/design-revision-02.md), with provisional [executable rules](.lore/work/experiments/001-hook-discovery/revision-02-executable-rules.md).
 
-The separate [revision-02 replay package](.lore/work/experiments/001-hook-discovery/builds/revision-02/README.md) preserves that checkpoint's source and test evidence without replacing the first-build record. It predates the subsequent Invert removal; archived features are history, not current requirements.
+The separate [revision-02 replay guide](.lore/work/experiments/001-hook-discovery/builds/revision-02/README.md) identifies checkpoint `009311b` and its recorded test results without replacing the first-build record. It predates the subsequent Invert removal; historical features are not current requirements. Generated archives and raw output are local, not required checkout files.
+
+### Current visual pilot
+
+The [action-shadow experiment](.lore/work/experiments/002-shadow-paper/record.md) adds a reversible, one-ability paper presentation without changing the rules:
+
+```bash
+godot --path games/borrowed-turns -- --presentation=paper
+godot --path games/borrowed-turns -- --presentation=plain
+```
+
+The in-game presentation toggle also preserves the current encounter. This is a **limited ownership, legibility and motion pilot**, not a representative test of finished shadow-paper art appeal. Independent visual review found recognizable figures and gestures, but inadequate staging and construction to answer that broader question. No new finished assets were generated.
+
+`mind-garage-fy3` remains open for Ronald's reaction and the next visual decision. The later short-run/progression discussion, `mind-garage-7am`, remains blocked on it. Technical checks do not replace either decision.
 
 ## Shared foundations
 
@@ -59,7 +72,9 @@ The notes do not authorize a particular implementation. Start with a prototype s
 
 Start with the [player brief](.lore/work/intents/player-brief.md), then use [`discover-game-hook`](.agents/skills/discover-game-hook/SKILL.md) to explore a few experience promises and select a direction. Hand its candidate mechanic to [`explore-mechanic`](.agents/skills/explore-mechanic/SKILL.md) for six alternative versions with independently playable survivors. A promising pitch is not evidence that playing it is fun.
 
-Keep a separate record per experiment at `.lore/work/experiments/<experiment-id>/record.md`, using the [experiment template](.agents/skills/discover-game-hook/templates/experiment-record.md). Snapshot inputs and procedures so we can run the method afresh; preserve builds, configuration, seeds, and isolated progression state so we can replay a comparison. Neither resets player learning or guarantees identical AI proposals.
+Keep a separate record per experiment at `.lore/work/experiments/<experiment-id>/record.md`, using the [experiment template](.agents/skills/discover-game-hook/templates/experiment-record.md). Record source/input/procedure versions, configuration, seeds and replay commands so we can repeat a comparison. Neither resets player learning or guarantees identical AI proposals.
+
+Commit source, tests and substantive documentation, not regenerable evidence. Screenshots, recordings, raw logs, generated manifests and build/source archives belong under gitignored `.lore/local/` if needed for discussion. Document results and how to reproduce them without requiring those local files.
 
 **Prototype → playtest → revise.** Three evidence sources support the loop:
 
@@ -87,7 +102,7 @@ Keep a versioned experiment record with:
 6. **Comparison:** Baseline and candidate results, uncertainty, and conflicting signals.
 7. **Decision:** Keep, revert, or investigate further, with reasons.
 
-Choose measurements and decision criteria before reviewing candidate results. Preserve builds, seeds, test conditions, failures, and reversions. Account for learning, prior experience, and exposure order; use randomized assignment when practical. Small samples justify provisional decisions, not broad causal claims.
+Choose measurements and decision criteria before reviewing candidate results. Preserve source versions, seeds, test conditions, documented failures and reversions; keep generated outputs local. Account for learning, prior experience, and exposure order; use randomized assignment when practical. Small samples justify provisional decisions, not broad causal claims.
 
 Record the originating AI proposal and human contributions, especially human-supplied diagnoses or design choices. This makes AI-led design distinguishable from AI implementation of a human design. Document claimed novelty without assuming that an AI-generated mechanic is original.
 

@@ -1,28 +1,25 @@
 # Borrowed Turns revision 02: source replay package
 
-This package is a deterministic **source snapshot**, not a compiled export. It contains 22 files under `games/borrowed-turns/`, including Godot `.uid` metadata, and four input/provenance documents at their original paths. `source-files.sha256` and `input-files.sha256` separately enumerate and identify them. Including the revision-02 executable rules at their original path keeps the game's `TESTING.md` contract link valid in an isolated extraction. Other historical links in the input documents may refer to records outside this package; the original first-build archive, evidence and input snapshots remain separate and unchanged.
+The revision-02 source checkpoint is Git commit `009311b`, before Invert removal. Its 22 game files and four provenance documents were verified byte-for-byte against the historical source and input manifests. The generated archive, manifests, logs and screenshots were moved to gitignored `.lore/local/experiments/001-hook-discovery/` if retained; they are local discussion evidence, not checkout or replay requirements. The original input snapshots remain separately tracked. This is a source project, not a compiled export.
 
-- Archive: `borrowed-turns-r2-source.tar.gz`, 44,109 bytes.
+- Historical local archive, if present: `.lore/local/experiments/001-hook-discovery/builds/revision-02/borrowed-turns-r2-source.tar.gz`, 44,109 bytes.
 - Archive SHA-256: `41bf019d551f2df6d5df17fc24476e7248fb3394905b630a137d56efbdf8c604`.
 - Source-manifest SHA-256: `bebe67799d8f3cfc785c975c2da28ffe92b07fee16d6e77133055e3a08f02efe`.
 - Input-manifest SHA-256: `7ecfe30df6538bb567eb6ec2461e48c0e40ad5e84b8438f8445e036dded61561`.
 - Engine: `/usr/bin/godot --version` returned `4.7.2.stable.arch_linux.ed1daf0bf`.
-- `package.sha256` covers this README, the archive and both manifests. `../../evidence/revision-02/evidence.sha256` covers copied logs, harnesses and screenshots.
+- Historical local manifests under `.lore/local/experiments/001-hook-discovery/builds/revision-02/` and `evidence/revision-02/` describe the package and copied evidence at that time. They are retained unmodified, so checks covering documentation edited during this relocation do not validate the current documentation as a set.
 
-Archive entries are sorted, USTAR, mode 0644, owner/group 0, epoch mtime, and gzip without a timestamp. Godot `.godot` caches, editor transients and generated binaries are excluded. There are no installed plugins, external services or generated assets. This snapshot is identified by content hashes, not a new commit.
+The former local archive used sorted entries, USTAR, mode 0644, owner/group 0, epoch mtime and gzip without a timestamp. Godot `.godot` caches, editor transients and generated binaries were excluded. There are no installed plugins, external services or generated assets.
 
 ## Extract and run
 
-From the original repository root, save absolute paths before entering a fresh extraction directory:
+From the repository root, save the path to the tracked diagnostic harnesses before entering a fresh extraction directory:
 
 ```sh
-build="$(realpath .lore/work/experiments/001-hook-discovery/builds/revision-02)"
 evidence="$(realpath .lore/work/experiments/001-hook-discovery/evidence/revision-02)"
 replay="$(mktemp -d /tmp/opencode/borrowed-turns-r2-replay.XXXXXX)"
-tar -xzf "$build/borrowed-turns-r2-source.tar.gz" -C "$replay"
+git archive 009311b -- games/borrowed-turns .lore/work/experiments/001-hook-discovery/design-revision-02.md .lore/work/experiments/001-hook-discovery/revision-02-executable-rules.md .lore/work/experiments/001-hook-discovery/revision-02-interface-brief.md .lore/work/intents/player-brief.md | tar -x -C "$replay"
 cd "$replay"
-sha256sum -c "$build/source-files.sha256"
-sha256sum -c "$build/input-files.sha256"
 /usr/bin/godot --path games/borrowed-turns
 /usr/bin/godot --path games/borrowed-turns -- --invert
 ```
@@ -36,7 +33,7 @@ The game opens the single revised `R2` baseline. Invert is an optional directly 
 
 ## Retained independent observations
 
-These commands/statuses were supplied by the independent tester. They were **not rerun during packaging**; copied logs and harnesses are byte-identical to the `/tmp/opencode` originals. Commands were run from the original repository root.
+These commands/statuses were supplied by the independent tester. They were **not rerun during packaging**; copied logs and harnesses were byte-identical to the `/tmp/opencode` originals. The logs and screenshots, if retained, are under `.lore/local/experiments/001-hook-discovery/evidence/revision-02/`; the two harnesses remain tracked under `.lore/work/experiments/001-hook-discovery/evidence/revision-02/`. Commands were run from the original repository root.
 
 | Stage | Exact command | Recorded result |
 | --- | --- | --- |

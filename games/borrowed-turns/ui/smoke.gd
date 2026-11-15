@@ -32,7 +32,10 @@ func click(cell: Array) -> void:
 	game.board.gui_input.emit(event)
 
 func settle() -> void:
-	await create_timer(0.21).timeout
+	var deadline := Time.get_ticks_msec() + 5000
+	while game.resolving and Time.get_ticks_msec() < deadline:
+		await process_frame
+	check(not game.resolving, "finite feedback completes without persistent-loop lock")
 	await process_frame
 
 func load_fixture(data: Dictionary) -> void:
@@ -236,6 +239,86 @@ func _test_normal_shove() -> void:
 	game.restart_dialog.hide()
 	check(game.state.turn == 1 and game.state.stored.is_empty() and game.history_lines.size() == 1, "restart isolates storage, budgets and history")
 
+func _test_shadow_integration() -> void:
+	var reference: Array = []
+	var reference_history: Array[String] = []
+	for view in ["plain", "paper"]:
+		game.set_presentation_mode(view)
+		await load_fixture(F.shadow_single())
+		var observed: Array = []
+		for step in [["capture", [2, 3]], ["end_turn", []], ["release", [2, 3]]]:
+			select(step[0], step[1])
+			observed.append(game.prediction.duplicate(true))
+			await commit()
+			observed.append(game.state.duplicate(true))
+			if step[0] == "end_turn":
+				var frame: Dictionary = game.shadow.frame()
+				check(not frame.held.is_empty() and frame.announcements.size() == 1, view + ": fresh source announcement coexists with old held shadow")
+		if view == "plain":
+			reference = observed
+			reference_history = game.history_lines.duplicate()
+		else:
+			check(observed == reference and game.history_lines == reference_history, "plain/paper actual controls yield identical assessments, model state, events and history")
+	game.set_presentation_mode("paper")
+	await load_fixture(F.shadow_single())
+	var before: Dictionary = game.model.snapshot()
+	select("capture", [4, 4])
+	check(game.shadow.frame().cues.is_empty() and game.model.snapshot() == before, "invalid source selection creates no committed transfer")
+	select("capture", [2, 3])
+	press(game.cancel_button)
+	check(game.shadow.frame().cues.is_empty() and game.model.snapshot() == before, "canceling capture preview creates no transfer")
+	select("capture", [2, 3])
+	press(game.confirm_button)
+	check(game.resolving and game.shadow.frame().busy, "paper capture starts finite feedback")
+	var once: Dictionary = game.model.snapshot()
+	var lines: int = game.history_lines.size()
+	game._confirm()
+	check(game.model.snapshot() == once and game.history_lines.size() == lines, "repeated confirmation during feedback cannot commit twice")
+	game.paper_switch.set_pressed(false)
+	check(game.presentation_mode == "plain" and not game.resolving and not game.shadow.frame().busy, "view switch cancels transfer without retaining busy work")
+	check(game.model.snapshot() == once and game.history_lines.size() == lines, "view change preserves progress, budgets and history")
+	game.paper_switch.set_pressed(true)
+	check(game.shadow.frame().held == once.stored and game.shadow.frame().cues.is_empty(), "returning to paper restores settled ownership without replay")
+	select("release", [2, 3])
+	var selected_command: Dictionary = game.command.duplicate(true)
+	var selected_prediction: Dictionary = game.prediction.duplicate(true)
+	game.paper_switch.set_pressed(false)
+	game.paper_switch.set_pressed(true)
+	check(game.command == selected_command and game.prediction == selected_prediction and preview_matches(), "view switches preserve targeting and synchronized prediction")
+	press(game.cancel_button)
+	await load_fixture(F.shadow_single())
+	select("capture", [2, 3])
+	press(game.confirm_button)
+	var old_generation: int = game.generation
+	press(game.restart_button)
+	game.restart_dialog.confirmed.emit()
+	game.restart_dialog.hide()
+	await settle()
+	check(game.generation > old_generation and game.state.stored.is_empty() and game.shadow.frame().held.is_empty() and not game.shadow.frame().busy, "restart during transfer isolates generation and cancels acquisition visuals")
+	for outcome in ["acquired", "source_dead", "out_of_reach", "lethal"]:
+		await load_fixture(F.shadow_replacement(outcome))
+		await capture([1, 4])
+		select("capture", [0, 3] if outcome == "acquired" else [2, 3])
+		await commit()
+		var types: Array = []
+		for cue in game.shadow.frame().cues: types.append(cue.type)
+		check(types == (["backlash", "capture"] if outcome == "acquired" else ["backlash"]), outcome + ": actual UI transfer plan follows the real replacement result")
+		check(game.shadow.frame().held == game.state.stored, outcome + ": held rendering matches actual acquisition or loss")
+	await load_fixture(F.encounter([
+		F.enemy("a", [2, 3], F.ability("shove", 1, 3, 0, true), 1, [1, 0]),
+		F.enemy("b", [2, 5], F.ability("bolt", 1, 3), 8, [0, -1]),
+	]))
+	await capture([2, 3])
+	select("end_turn")
+	await commit()
+	check(not game.shadow.frame().held.is_empty() and game.shadow.frame().announcements.is_empty(), "source death removes fresh source shadow but not its still-held capture")
+	if capture_view:
+		capture_view.size = Vector2i(1024, 720)
+		await process_frame
+		check(game.board._cell_size() >= 36 and game.confirm_button.get_global_rect().end.y <= 720, "minimum viewport preserves tactical cell size and confirmation bounds")
+		await image("fy3-1024-held-source-dead.png")
+		capture_view.size = Vector2i(1280, 800)
+
 func _run() -> void:
 	game = load("res://scenes/encounter.tscn").instantiate()
 	if capture_dir.is_empty(): root.add_child(game)
@@ -258,6 +341,13 @@ func _run() -> void:
 		await process_frame
 		quit(1 if failures else 0)
 		return
+	if OS.get_cmdline_user_args().has("--focus=shadow"):
+		await _test_shadow_integration()
+		print("R2 UI smoke: %d checks, %d failures. Injected GUI events, not physical OS input." % [checks, failures])
+		game.queue_free()
+		await process_frame
+		quit(1 if failures else 0)
+		return
 	if capture_view:
 		for size in [Vector2i(1280, 800), Vector2i(1024, 720), Vector2i(1600, 900)]:
 			capture_view.size = size
@@ -268,6 +358,7 @@ func _run() -> void:
 	await _test_deadline()
 	await _test_ability_ranges()
 	await _test_normal_shove()
+	await _test_shadow_integration()
 	# Board Enter selects without committing; the next explicit confirmation acts.
 	await load_fixture(F.encounter([]))
 	var before_keyboard: Dictionary = game.model.snapshot()

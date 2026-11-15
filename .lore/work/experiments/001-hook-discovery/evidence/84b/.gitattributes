@@ -1,2 +1,0 @@
-# Retain raw test output byte-for-byte, including emitted trailing spaces.
-*.log -whitespace

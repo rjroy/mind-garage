@@ -13,3 +13,12 @@ static func encounter(enemies: Array, movement: int = 4, health: int = 20, captu
 		"exit": {"pos": [6, 6], "opens": 30},
 		"rules": {"actions": 2, "movement": movement, "capture_range": capture_range}, "enemies": enemies,
 	}
+
+static func shadow_single() -> Dictionary:
+	return encounter([enemy("a", [2, 3], ability("shove", 1, 3, 0, true))])
+
+static func shadow_replacement(outcome: String) -> Dictionary:
+	return encounter([
+		enemy("a", [1, 4], ability("shove", 3 if outcome == "lethal" else 1, 3, 0, true), 8, [1, 0]),
+		enemy("b", [0, 3] if outcome == "acquired" else [2, 3], ability("shove", 1, 3, 0, true), 1 if outcome == "source_dead" else 8),
+	], 4, 2 if outcome == "lethal" else 20)

@@ -6,6 +6,10 @@ signal cell_inspected(cell: Array)
 signal cancel_requested
 
 const P = preload("res://ui/presentation.gd")
+const ShadowRenderer = preload("res://ui/shadow_renderer.gd")
+var shadow_renderer = ShadowRenderer.new()
+var paper_mode := false
+var shadow_frame: Dictionary = {}
 var state: Dictionary = {}
 var preview: Dictionary = {}
 var candidates: Array = []
@@ -33,6 +37,11 @@ func set_view(snapshot: Dictionary, predicted: Dictionary, legal_cells: Array, t
 	candidates = legal_cells
 	selected = target
 	source = selected_source
+	queue_redraw()
+
+func set_presentation(paper: bool, frame: Dictionary) -> void:
+	paper_mode = paper
+	shadow_frame = frame
 	queue_redraw()
 
 func pulse(events: Array) -> void:
@@ -118,11 +127,41 @@ func _arrow(from: Vector2, to: Vector2, color: Color, dashed: bool) -> void:
 	var side := Vector2(-direction.y, direction.x)
 	draw_colored_polygon(PackedVector2Array([to, to - direction * 9 + side * 5, to - direction * 9 - side * 5]), color)
 
+func _uses_shadow_effects() -> bool:
+	return paper_mode and preview.is_empty() and not shadow_frame.get("cues", []).is_empty()
+
+func effect_footprints() -> Array:
+	if _uses_shadow_effects():
+		var cue: Dictionary = shadow_frame.get("cue", {})
+		if cue.is_empty() or cue.type == "capture": return []
+		return [{"type": cue.footprint_type, "actor": cue.source if cue.type == "resolve" else "player",
+			"stage": "enemy" if cue.type == "resolve" else cue.type, "cells": cue.cells.duplicate(true)}]
+	var effects: Array = preview.get("events", []) if not preview.is_empty() else last_events
+	var footprints: Array = []
+	var stage := "enemy"
+	for event in effects:
+		if event.type in ["release", "backlash"]: stage = event.type
+		if event.type in ["ray", "area"]:
+			footprints.append({"type": event.type, "actor": event.actor,
+				"stage": stage if event.actor == "player" else "enemy", "cells": event.cells.duplicate(true)})
+	return footprints
+
+func _draw_effect_footprint(footprint: Dictionary, active_shadow: bool = false) -> void:
+	var color := P.BORROWED if footprint.actor == "player" and footprint.stage == "release" else P.DANGER
+	for cell in footprint.cells:
+		draw_rect(_cell_rect(cell).grow(-7), color, false, 2)
+		if active_shadow and footprint.stage == "backlash":
+			draw_rect(_cell_rect(cell).grow(-10), color, false, 1)
+	if footprint.type == "ray" and footprint.actor == "player" and footprint.stage == "release" and not footprint.cells.is_empty():
+		_arrow(cell_center(state.player.pos), cell_center(footprint.cells.back()), P.BORROWED, false)
+
 func _draw() -> void:
 	if state.is_empty(): return
 	var cell_size := _cell_size()
 	var rect := _board_rect()
 	draw_rect(rect, P.FLOOR)
+	if paper_mode:
+		shadow_renderer.draw_shadows(self, state, shadow_frame, cell_center, cell_size, source)
 	for x in range(state.width + 1):
 		var start := rect.position + Vector2(x * cell_size, 0)
 		draw_line(start, start + Vector2(0, rect.size.y), P.GRID, 1)
@@ -161,32 +200,45 @@ func _draw() -> void:
 		draw_circle(tile.position + Vector2(5, 5), 2, P.BORROWED)
 	var stored: Dictionary = state.get("stored", {})
 	var effects: Array = preview.get("events", []) if not preview.is_empty() else last_events
-	var stage := "enemy"
+	var footprints := effect_footprints()
+	var shadow_effects := _uses_shadow_effects()
+	if shadow_effects:
+		for footprint in footprints: _draw_effect_footprint(footprint, true)
+	var footprint_index := 0
 	var effect_positions := {"player": state.player.pos}
 	var death_cells: Array = []
 	for enemy in state.enemies: effect_positions[enemy.id] = enemy.pos
 	for event in effects:
-		if event.type in ["release", "backlash"]: stage = event.type
-		if event.type in ["ray", "area"]:
-			var color := P.BORROWED if event.actor == "player" and stage == "release" else P.DANGER
-			for cell in event.cells:
-				draw_rect(_cell_rect(cell).grow(-7), color, false, 2)
-			if event.type == "ray" and event.actor == "player" and stage == "release" and not event.cells.is_empty():
-				_arrow(cell_center(state.player.pos), cell_center(event.cells.back()), P.BORROWED, false)
+		if not shadow_effects and event.type in ["ray", "area"]:
+			var footprint: Dictionary = footprints[footprint_index]
+			footprint_index += 1
+			_draw_effect_footprint(footprint)
 		if event.type == "move" or event.type == "displace":
 			_arrow(cell_center(event.from), cell_center(event.to), P.BORROWED, false)
 			effect_positions[event.actor] = event.to
 		if event.type == "death" and effect_positions.has(event.actor): death_cells.append(effect_positions[event.actor])
 	for enemy in state.enemies:
 		var pawn := Rect2(cell_center(enemy.pos) - Vector2.ONE * cell_size * 0.23, Vector2.ONE * cell_size * 0.46)
-		draw_rect(pawn, P.INK)
-		_text(pawn.position + Vector2(5, pawn.size.y - 5), str(enemy.id).to_upper(), P.FLOOR, 16)
-		_text(pawn.position + Vector2(0, -4), "%d HP" % enemy.hp, P.INK, 12)
+		if paper_mode and enemy.kind == "shove":
+			shadow_renderer.draw_figure(self, cell_center(enemy.pos), cell_size, false)
+			_text(cell_center(enemy.pos) + Vector2(-4, 4), str(enemy.id).left(1).to_upper(), P.INK, 12)
+		else:
+			draw_rect(pawn, P.INK)
+			_text(pawn.position + Vector2(5, pawn.size.y - 5), str(enemy.id).to_upper(), P.FLOOR, 16)
+		var hp_at := cell_center(enemy.pos) + Vector2(-cell_size * 0.23, -cell_size * (0.42 if paper_mode and enemy.kind == "shove" else 0.23) - 4)
+		if paper_mode:
+			var text_width := ThemeDB.fallback_font.get_string_size("%d HP" % enemy.hp, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
+			draw_rect(Rect2(hp_at - Vector2(1, 12), Vector2(text_width + 2, 14)), P.FLOOR)
+		_text(hp_at, "%d HP" % enemy.hp, P.INK, 12)
 		if enemy.id == source or (not stored.is_empty() and enemy.id == stored.source):
 			draw_rect(pawn.grow(5), P.BORROWED, false, 2)
 	var player := cell_center(state.player.pos)
-	draw_circle(player, cell_size * 0.20, P.INK)
-	_text(player + Vector2(-5, 5), "Y", P.FLOOR, 14)
+	if paper_mode:
+		shadow_renderer.draw_figure(self, player, cell_size, true)
+		_text(player + Vector2(-4, 4), "Y", P.INK, 12)
+	else:
+		draw_circle(player, cell_size * 0.20, P.INK)
+		_text(player + Vector2(-5, 5), "Y", P.FLOOR, 14)
 	var diamond := player + Vector2(cell_size * 0.30, -cell_size * 0.20)
 	draw_polyline(PackedVector2Array([diamond + Vector2(0, -5), diamond + Vector2(5, 0), diamond + Vector2(0, 5), diamond + Vector2(-5, 0), diamond + Vector2(0, -5)]), P.BORROWED, 2, true)
 	if not preview.is_empty():

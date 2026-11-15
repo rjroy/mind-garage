@@ -8,6 +8,8 @@ related: [.lore/work/intents/player-brief.md, .lore/work/research/game-hooks-and
 
 # Experiment 001: initial hook discovery
 
+**Local output note:** Generated logs, screenshots, manifests and source archives described below were moved to gitignored `.lore/local/experiments/001-hook-discovery/`, if retained, and are not checkout dependencies. The original prototype and revision-02 game sources can be restored from `fd8e91d` and `009311b`; their historical source manifests were verified against those commits. The tracked evidence notes and source harnesses remain here. Commands and results below are historical records, not claims that local output is present on another machine.
+
 ## Inputs and provenance
 
 - **ID and stage:** `001-hook-discovery`; first playable Borrowed Turns comparison preserved at `fd8e91d`, followed by verified revision 02. Subsequent human correction removed Invert from the live baseline; [presentation intent](presentation-intent.md) records the current art-discussion boundaries. Structured enjoyment/replay evidence is still pending. Original proposals, source packages and evidence below are preserved as history, not current feature requirements.
@@ -71,7 +73,7 @@ Carry the selected promise and mechanic into `explore-mechanic`. Set executable 
 
 - **Plan:** `capture-bargains.md` retains the original hypotheses; `executable-rules.md` records provisional implementation rules. Mechanical correctness and reachability were checked; human comparison thresholds remain provisional rather than invented after results.
 - **Six alternatives:** V1–V6 are implemented and accessible. No variant was excluded. Passing automated checks does not establish enjoyable choices.
-- **Build/replay manifest:** See [source replay package](builds/PACKAGE.md), source hashes, archived project, and copied evidence. This is a source project, not an exported binary. No RNG or persistent progression is used; reset restores the configured fixture and preview mode.
+- **Build/replay manifest:** See [source replay notes](builds/PACKAGE.md), source hashes, and the local-output note above. This is a source project, not an exported binary. No RNG or persistent progression is used; reset restores the configured fixture and preview mode.
 - **Human sessions:** Not run. No enjoyment scores, desire-to-continue reports, voluntary replay, or unlock-payoff evidence exists.
 - **Revision log:** Initial proposals preserved above; subsequent human selection, story contribution, encounter baseline, and AI-proposed capture alternatives are in `capture-bargains.md`. The original input snapshots remain unchanged.
 - **Game outcome:** Human enjoyment, anticipation/payoff, and voluntary replay remain unknown. Both capture and no-capture strategies can escape this fixture in all variants.
@@ -121,7 +123,7 @@ godot --path games/borrowed-turns -- --variant=V6 --invert
 
 All variants are selectable without completing another. Choose an action, select its source/target, inspect the preview, then confirm. Reset/replay preserves the variant and preview configuration; variant switches start clean. [Game instructions](../../../../games/borrowed-turns/README.md) describe controls and limitations.
 
-Durable source identity and replay instructions: [builds/PACKAGE.md](builds/PACKAGE.md). Archive SHA-256: `83278bd8a4b0bb5a989818c9e63d858d67aae8da63cfc29d707b8896617d17ab`. [Copied evidence](evidence/) retains exact logs, diagnostic harnesses, the corrected screenshot, and integrity hashes. The source package does not include user telemetry or a compiled export.
+Durable source identity and replay instructions: [builds/PACKAGE.md](builds/PACKAGE.md). Historical archive SHA-256: `83278bd8a4b0bb5a989818c9e63d858d67aae8da63cfc29d707b8896617d17ab`. The [tracked evidence notes and diagnostic harnesses](evidence/) remain in the checkout; exact logs, the corrected screenshot and generated hashes are local output if retained. The source project does not include user telemetry or a compiled export.
 
 | Evidence | Command from repository root | Exit and result |
 | --- | --- | --- |
@@ -184,11 +186,11 @@ The only nonblocking quality recommendation was to promote the existing off-axis
 
 ### Revision 02 source and evidence preservation
 
-The [R2 replay package](builds/revision-02/README.md) preserves 22 current game files plus four separately identified provenance documents. The original first-build archive, evidence and input snapshots were checked before and after packaging and remained unchanged.
+The [R2 replay notes](builds/revision-02/README.md) identify 22 historical game files plus four separately identified provenance documents, verified against commit `009311b`. The original first-build archive, evidence and input snapshots were checked before and after packaging and remained unchanged at that time.
 
-- Source archive: `builds/revision-02/borrowed-turns-r2-source.tar.gz`, 44,109 bytes.
+- Historical source archive, if retained locally: `.lore/local/experiments/001-hook-discovery/builds/revision-02/borrowed-turns-r2-source.tar.gz`, 44,109 bytes. The equivalent verified game source is at commit `009311b`.
 - Archive SHA-256: `41bf019d551f2df6d5df17fc24476e7248fb3394905b630a137d56efbdf8c604`.
-- [Current source manifest](builds/revision-02/source-files.sha256), [input manifest](builds/revision-02/input-files.sha256), and [copied evidence](evidence/revision-02/) identify exactly what was tested and preserved.
+- The historical [source manifest](../../../local/experiments/001-hook-discovery/builds/revision-02/source-files.sha256) and [input manifest](../../../local/experiments/001-hook-discovery/builds/revision-02/input-files.sha256) are local and may be absent; tracked [evidence notes and harnesses](evidence/revision-02/) remain in the checkout.
 - Packaging checks returned exit 0 for current/extracted hashes, archive membership, deterministic byte-identical regeneration, evidence-copy comparison, and original-history integrity. No behavioral suites were rerun merely for packaging.
 
 The source project is directly runnable with `godot --path games/borrowed-turns` or `godot --path games/borrowed-turns -- --invert`. The new package README gives safe extraction and harness replay commands. This is not a compiled export, and restoration cannot reset Ronald's prior experience. Native physical input, compositor resize, HiDPI, balance and enjoyment remain outside the established evidence.
@@ -215,7 +217,7 @@ A separately authorized temporary wrapper extended the unchanged UI smoke runner
 
 Independent correctness review accepted the removal without material findings. A subsequent proportionate refactoring assessment recommended no changes; lightweight engineering-quality assessment found the removal adequate. Its nonblocking recommendation is to make future premature rendered-smoke closure explicitly aborted/nonzero rather than rely on callers checking the completion marker. Current acceptance required both the final summary and expected capture.
 
-Exact RED/GREEN, incomplete-render and guarded-render logs, the temporary wrapper, representative captures and current source identity are preserved in the [removal evidence package](evidence/no-invert/README.md). The source checkpoint, not a rewritten old archive, identifies this live version. Packaging checked exact evidence copies, current source hashes, and unchanged membership/hashes of 46 first-build/R2 artifacts and input snapshots; no suites were rerun merely for copying. The nonblocking rendered-harness reliability recommendation is separately tracked as `mind-garage-84b`.
+The [removal evidence notes](evidence/no-invert/README.md) describe exact RED/GREEN, incomplete-render and guarded-render logs, the temporary wrapper, representative captures and source identity. The wrapper remains tracked; generated logs, captures and manifests are local if retained. The source checkpoint, not a rewritten old archive, identifies that version. Packaging checked exact evidence copies, current source hashes, and unchanged membership/hashes of 46 first-build/R2 artifacts and input snapshots; no suites were rerun merely for copying. The nonblocking rendered-harness reliability recommendation is separately tracked as `mind-garage-84b`.
 
 No art production, shadow animation, geometry experiment or final art selection was performed. Physical OS input, native resize and HiDPI remain unverified. No refactor was selected after the bounded assessment; the focused feature removal was accepted without new architectural work.
 
@@ -242,3 +244,5 @@ The first staged checkpoint check caught trailing spaces emitted by unittest in 
 84b was closed and checkpointed at `29cd5ef` before 2nx was claimed. The latter promoted the existing passing off-axis diagnostic into a normal controlled model regression, using the current two-argument/no-Invert API and existing fixture/assessment helpers. It protects horizontal ties, dominant X/Y, displacement events, final actor positions, HP, and preview/commit equality without changing the production resolver.
 
 Independent 2nx execution passed 14 focused checks and the full 285-check model suite, exit 0 for both. No artificial RED was claimed for existing-behavior characterization. Correctness and subsequent proportional refactoring/quality assessments accepted the test change without a material defect or worthwhile refactor. [Retained evidence](evidence/2nx/README.md) identifies the two changed test/documentation files and exact logs. Model, UI, content, completion gate and supplied art remain unchanged; a local checkpoint precedes the visual phase.
+
+2nx was closed and checkpointed at `ba3ab7a`. With both technical prerequisites complete, fy3 was claimed for the [separate action-shadow visual experiment](../002-shadow-paper/record.md). That experiment retains the plain source baseline and must remain open for Ronald's actual visual reaction. The later short-run/earned-capability mechanics bead `mind-garage-7am` remains blocked and has not started.

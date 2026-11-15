@@ -5,7 +5,11 @@ const Encounter = preload("res://model/encounter.gd")
 const Board = preload("res://ui/board.gd")
 const P = preload("res://ui/presentation.gd")
 const Production = preload("res://content/escape.gd")
+const Shadow = preload("res://ui/shadow_presentation.gd")
 var model = Encounter.new()
+var shadow = Shadow.new()
+var presentation_mode := "paper"
+var baseline_feedback_left := 0.0
 var fixture: Dictionary
 var state: Dictionary = {}
 var mode := "inspect"
@@ -17,7 +21,6 @@ var source := ""
 var changed := false
 var resolving := false
 var generation := 0
-var active_tween: Tween
 var history_lines: Array[String] = []
 
 var board: Control
@@ -43,6 +46,7 @@ var restart_button: Button
 var action_buttons: Dictionary = {}
 var restart_dialog: ConfirmationDialog
 var help_dialog: AcceptDialog
+var paper_switch: CheckButton
 
 func _ready() -> void:
 	theme = P.make_theme()
@@ -54,8 +58,38 @@ func _ready() -> void:
 			return
 		elif argument.begins_with("--variant="):
 			push_warning("Borrowed Turns: legacy variant selection is unsupported. Running the revised baseline.")
+		elif argument.begins_with("--presentation="):
+			presentation_mode = argument.trim_prefix("--presentation=")
+			if presentation_mode not in ["plain", "paper"]:
+				push_error("Borrowed Turns: presentation must be plain or paper.")
+				get_tree().quit(2)
+				return
 	_build_interface()
 	_start_encounter()
+
+func _process(delta: float) -> void:
+	if state.is_empty(): return
+	shadow.advance(delta)
+	if presentation_mode == "paper": board.set_presentation(true, shadow.frame())
+	if resolving:
+		baseline_feedback_left = maxf(0, baseline_feedback_left - delta)
+		if baseline_feedback_left <= 0 and (presentation_mode == "plain" or not shadow.frame().busy):
+			resolving = false
+			_refresh()
+			board.grab_focus()
+
+func set_presentation_mode(value: String) -> void:
+	if value not in ["plain", "paper"] or value == presentation_mode: return
+	presentation_mode = value
+	# A view switch cancels visual work only. Model, target, preview and history stay intact.
+	generation += 1
+	shadow.reset(state, generation)
+	baseline_feedback_left = 0.0
+	resolving = false
+	board.clear_pulse()
+	paper_switch.set_pressed_no_signal(value == "paper")
+	_refresh()
+	print("Borrowed Turns UI: presentation=%s; gameplay unchanged" % value)
 
 func _label(parent: Node, text: String = "", font_size: int = 16, wrap: bool = false) -> Label:
 	var label := Label.new()
@@ -102,6 +136,12 @@ func _build_interface() -> void:
 	var economy := _box(page, false)
 	budgets = _label(economy, "", 16, true)
 	budgets.custom_minimum_size.y = 44
+	paper_switch = CheckButton.new()
+	paper_switch.text = "Paper pilot"
+	paper_switch.tooltip_text = "Experimental paper figures and shove action-shadows. Off: plain baseline. Changes no rules or progress."
+	paper_switch.set_pressed_no_signal(presentation_mode == "paper")
+	paper_switch.toggled.connect(func(enabled: bool): set_presentation_mode("paper" if enabled else "plain"))
+	economy.add_child(paper_switch)
 	_button(economy, "Controls", func(): help_dialog.popup_centered(Vector2i(650, 410)))
 	var main := _box(page, false)
 	main.add_theme_constant_override("separation", 20)
@@ -193,9 +233,10 @@ func _resize_rail() -> void:
 
 func _start_encounter() -> void:
 	generation += 1
-	if active_tween and active_tween.is_valid(): active_tween.kill()
 	model.configure(fixture, "R2")
 	state = model.snapshot()
+	shadow.reset(state, generation)
+	baseline_feedback_left = 0.0
 	changed = false
 	resolving = false
 	board.clear_pulse()
@@ -205,7 +246,7 @@ func _start_encounter() -> void:
 	new_events.visible = false
 	_clear_selection()
 	_refresh()
-	print("Borrowed Turns UI: start baseline=R2")
+	print("Borrowed Turns UI: start baseline=R2 presentation=%s" % presentation_mode)
 
 func _request_restart() -> void:
 	if changed and state.status == "playing":
@@ -225,6 +266,7 @@ func _clear_selection() -> void:
 	candidates = []
 	instruction.text = "Choose an operation. Capture is free; release uses 1 AP."
 	consequence.text = "Move and act in any order. Enemies act only when you End turn."
+	consequence.add_theme_color_override("font_color", P.SECONDARY)
 	confirm_button.disabled = true
 	confirm_button.text = "Confirm"
 	event_tabs.current_tab = 0
@@ -285,6 +327,7 @@ func _inspect_cell(cell: Array) -> void:
 
 func _update_board() -> void:
 	board.set_view(state, prediction, candidates, selected, source)
+	board.set_presentation(presentation_mode == "paper", shadow.frame())
 
 func _choose_action(action: String) -> void:
 	if resolving or state.status != "playing": return
@@ -365,26 +408,21 @@ func _confirm() -> void:
 		_refresh()
 		return
 	var submitted := command.duplicate(true)
+	var before: Dictionary = state.duplicate(true)
 	print("Borrowed Turns UI: submit turn=%d command=%s" % [state.turn, JSON.stringify(submitted)])
 	if not model.act(submitted):
 		push_error("Borrowed Turns UI: model rejected reassessed command.")
 		return
 	state = model.snapshot()
+	shadow.observe(before, submitted, state, generation)
 	print("Borrowed Turns UI: resolved turn=%d status=%s AP=%d MP=%d HP=%d" % [state.turn, state.status, state.action_points, state.movement_points, state.player.hp])
 	changed = true
 	_append_events(state.events)
 	_clear_selection()
 	resolving = true
+	baseline_feedback_left = 0.16
 	_refresh()
 	board.pulse(state.events)
-	var submitted_generation := generation
-	active_tween = create_tween()
-	active_tween.tween_interval(0.16)
-	active_tween.tween_callback(func():
-		if generation != submitted_generation: return
-		resolving = false
-		_refresh()
-		board.grab_focus())
 
 func _append_events(events: Array) -> void:
 	var scrollbar := history.get_v_scroll_bar()
