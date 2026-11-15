@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "mind_garage",
+  "project_id": "dc46efbf-1208-4e3e-b901-a927c15892da"
+}
