@@ -10,7 +10,7 @@ related: [.lore/work/intents/player-brief.md, .lore/work/research/game-hooks-and
 
 ## Inputs and provenance
 
-- **ID and stage:** `001-hook-discovery`; first playable Borrowed Turns comparison implemented and functionally verified. V1–V6 and Invert preview are independently accessible. Human playtesting is pending. The original discovery proposals below are preserved as history.
+- **ID and stage:** `001-hook-discovery`; first playable Borrowed Turns comparison implemented and functionally verified, checkpointed at `fd8e91d`. Initial human design feedback produced an agreed new capture direction in [revision 02](design-revision-02.md); that revision is not implemented. Structured enjoyment/replay evidence is still pending. The original discovery proposals below are preserved as history.
 - **Request:** Ronald approved recording the player brief, defining the discovery skill and experiment template, and using them to propose first directions. No full game design yet.
 - **Input snapshot:** `inputs/` preserves the brief, instructions, foundation notes, research synthesis, both skills, and template used for this discovery. `inputs/manifest.json` records source paths and SHA-256 hashes. Later revisions must not overwrite these inputs.
 - **Agent:** Orchestrator, OpenAI `gpt-6.1-sol`. Prior source research and artifact-convention checks used the explorer; its configured model identity is not recorded here.
@@ -133,3 +133,9 @@ Durable source identity and replay instructions: [builds/PACKAGE.md](builds/PACK
 The tester used `/usr/bin/godot`, version `4.7.2.stable.arch_linux.ed1daf0bf`. Unchanged model/launch evidence was reused after the UI-only correction rather than rerunning unrelated checks. Correctness review and focused correction review found no unresolved material defect; engineering-quality review accepted the first playable. Fixed-size rendered viewports and injected controls do not establish native OS mouse/keyboard, window-manager resizing, or HiDPI acceptance.
 
 Next evidence must come from Ronald's play. This first fixture tests understandability and the feel of the capture bargains; it is not a finished roguelite, a tested unlock path, or a demonstration that capture is necessary or rewarding. Keep reported enjoyment, desire for another run, voluntary replay, and reactions to Invert separate. Any later encounter tuning or progression work needs its own recorded hypothesis and comparison, not a retrospective claim that passing these checks found the fun.
+
+## Post-prototype design feedback: revision 02
+
+Ronald challenged whether the original six variants offered enough diversity, distinguishing useful common constraints/tuning from distinct mechanics. He supplied a revised shared direction: separate interleavable movement/action budgets, unlimited free capture, action-cost release, ability-derived release range, forced release, ability-specific replacement/expiry backlash, and no discard. He explicitly chose backlash rather than a per-turn capture cap as the starting restriction.
+
+See [the full decision record](design-revision-02.md) for the human/AI contribution sequence, rejected cap proposal, rationale, open timing/geometry details, and proposed evidence. These are part of the experiment's method outcome: substantial human design judgment was needed after the first AI-led exploration. No claim of improved enjoyment is supported yet. The running game, original executable rules, input snapshots, and packaged first-build evidence remain unchanged.

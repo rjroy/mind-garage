@@ -20,6 +20,8 @@ Select V1–V6 independently in the game, or launch one directly with `godot --p
 
 This is a mechanics comparison, not a finished roguelite or a validated progression system. The initial encounter has known no-capture escape routes, so completion alone does not demonstrate that capture creates worthwhile decisions. Human enjoyment and replay evidence are still pending.
 
+The tested first prototype is checkpointed at `fd8e91d`. Subsequent feedback and the agreed unlimited-capture/backlash direction are recorded in [design revision 02](.lore/work/experiments/001-hook-discovery/design-revision-02.md). Those revised rules are not yet implemented in the game above.
+
 ## Shared foundations
 
 All experiments start from the notes in [`.lore/work/notes/`](.lore/work/notes/):
