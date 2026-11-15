@@ -2,9 +2,23 @@
 
 A workspace for multiple experiments in AI-led game design. Each experiment explores a small, replayable game and the process used to find its fun.
 
+**Mind Garage names the experimental effort, not a game.** Individual game prototypes have their own working titles; the selected first direction is currently called **Borrowed Turns**.
+
 The shared research question is: **Can AI originate a central game mechanic and drive its refinement into something players enjoy and voluntarily return to?**
 
 Human playtest feedback is part of that process. The question is not whether AI can build a game without human contact, or whether a clever prompt alone can establish that a design is novel and fun.
+
+## First playable: Borrowed Turns
+
+Steal an enemy's announced action, then turn it against the hunt. An ordinary person with a stolen artifact must escape a small, turn-based grid encounter.
+
+```bash
+godot --path games/borrowed-turns
+```
+
+Select V1–V6 independently in the game, or launch one directly with `godot --path games/borrowed-turns -- --variant=V3`. The optional `--invert` flag enables a push/pull ability preview without unlocking it through play. See the [play instructions](games/borrowed-turns/README.md) and [experiment record](.lore/work/experiments/001-hook-discovery/record.md).
+
+This is a mechanics comparison, not a finished roguelite or a validated progression system. The initial encounter has known no-capture escape routes, so completion alone does not demonstrate that capture creates worthwhile decisions. Human enjoyment and replay evidence are still pending.
 
 ## Shared foundations
 
@@ -28,9 +42,20 @@ Before building a particular game, agree on:
 - Necessary telemetry, consent, and playtest recruitment.
 - Baseline and candidate comparison design, measurements, decision thresholds, and stopping criteria.
 
-No common engine, genre, or telemetry service is prescribed. The notes do not authorize a particular implementation. Start with a prototype small enough to revise repeatedly and choose tools to fit the experiment.
+### Current audience and constraints
+
+- **Audience of one:** Ronald is the initial intended player. The goal is to discover what he enjoys and voluntarily returns to, not establish market demand or general player preferences. Repeat sessions help investigate his experience but do not increase the number of independent players.
+- **Engine:** Playable experiments must use Godot and be buildable with the tools available here. Check installed versions and capabilities when planning implementation.
+- **Supporting tools:** Blender is available when useful. This does not require 3D or authorize asset creation by itself.
+- **Still open:** Genre, desired player experience, 2D/3D, target platform/input, and telemetry approach remain experiment decisions.
+
+The notes do not authorize a particular implementation. Start with a prototype small enough to revise repeatedly and choose techniques that fit these constraints.
 
 ## How we look for fun
+
+Start with the [player brief](.lore/work/intents/player-brief.md), then use [`discover-game-hook`](.agents/skills/discover-game-hook/SKILL.md) to explore a few experience promises and select a direction. Hand its candidate mechanic to [`explore-mechanic`](.agents/skills/explore-mechanic/SKILL.md) for six alternative versions with independently playable survivors. A promising pitch is not evidence that playing it is fun.
+
+Keep a separate record per experiment at `.lore/work/experiments/<experiment-id>/record.md`, using the [experiment template](.agents/skills/discover-game-hook/templates/experiment-record.md). Snapshot inputs and procedures so we can run the method afresh; preserve builds, configuration, seeds, and isolated progression state so we can replay a comparison. Neither resets player learning or guarantees identical AI proposals.
 
 **Prototype → playtest → revise.** Three evidence sources support the loop:
 
@@ -82,4 +107,4 @@ bd ready       # Find available work
 bd show <id>   # Inspect a work item
 ```
 
-Use each experiment's own setup and playtest instructions once defined. This README does not prescribe a runtime or assert that a playable prototype or validated result already exists.
+Use each Godot experiment's own setup and playtest instructions. Borrowed Turns is the first playable prototype; its functional checks do not establish enjoyment or a successful game-design method.

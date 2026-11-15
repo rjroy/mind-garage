@@ -1,0 +1,51 @@
+{
+  "date": "2026-11-15",
+  "hash_algorithm": "sha256",
+  "files": [
+    {
+      "source": "AGENTS.md",
+      "snapshot": "AGENTS.md",
+      "sha256": "88f6957de6b32f1dbf75032b52bea55eb2a5dfd02cbee8eb8edbb0b5b619adc0"
+    },
+    {
+      "source": ".lore/work/intents/player-brief.md",
+      "snapshot": ".lore/work/intents/player-brief.md",
+      "sha256": "5b04af7e2e5bab9d32102143b5144d6b5ea0b773bc12473e412471248da74575"
+    },
+    {
+      "source": ".lore/work/research/game-hooks-and-player-promises.md",
+      "snapshot": ".lore/work/research/game-hooks-and-player-promises.md",
+      "sha256": "afc4872aaa08a0fe9725a076cf19298bf2d4cb3c8adad7dac77df73dfb6b8ede"
+    },
+    {
+      "source": ".lore/work/notes/ai-game-design-experiment.md",
+      "snapshot": ".lore/work/notes/ai-game-design-experiment.md",
+      "sha256": "582ecb3de70d4ac8be4874e299147c793e86d9865495c833a41286d9c7a46b0f"
+    },
+    {
+      "source": ".lore/work/notes/ai-design-novel-fun.md",
+      "snapshot": ".lore/work/notes/ai-design-novel-fun.md",
+      "sha256": "83a6648df5644d85ebb947410d13c881e06ac671f739af16fa2dc5ba6cfe4f67"
+    },
+    {
+      "source": ".lore/work/notes/what-makes-games-fun.md",
+      "snapshot": ".lore/work/notes/what-makes-games-fun.md",
+      "sha256": "e3b32f57b330fdef7d39594e600da835ebb2b12436ec87dcf95e96f2f8483612"
+    },
+    {
+      "source": ".agents/skills/discover-game-hook/SKILL.md",
+      "snapshot": ".agents/skills/discover-game-hook/SKILL.md",
+      "sha256": "ceeccd82c3aaf9a726c7eac9ca4c79fee253c252524e4642800ecf3c0ba4f918"
+    },
+    {
+      "source": ".agents/skills/explore-mechanic/SKILL.md",
+      "snapshot": ".agents/skills/explore-mechanic/SKILL.md",
+      "sha256": "5f1cbb3c9f7a381708ca3bba384821237d174ddeca294d382090007c4020180e"
+    },
+    {
+      "source": ".agents/skills/discover-game-hook/templates/experiment-record.md",
+      "snapshot": ".agents/skills/discover-game-hook/templates/experiment-record.md",
+      "sha256": "423fa2062b0ce95f5289e4da874a31caab8ba43a902836bc08a24da33be9ad36"
+    }
+  ]
+}

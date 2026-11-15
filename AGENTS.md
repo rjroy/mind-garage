@@ -4,6 +4,8 @@
 
 This repository hosts multiple experiments in AI-led game design, not one predetermined game. The shared question is whether AI can originate a central mechanic and refine it into repeatable enjoyment through automated diagnostics, human play, and evidence-led iteration.
 
+Mind Garage is the name of the experimental effort, not a game title. Give individual game prototypes their own names; Borrowed Turns is the current working title for the first selected direction.
+
 Read [README.md](README.md) for the project overview and these shared foundations before proposing or changing an experiment:
 
 - [Experiment brief](.lore/work/notes/ai-game-design-experiment.md): research question, validation layers, iteration protocol, and guardrails.
@@ -13,12 +15,17 @@ Read [README.md](README.md) for the project overview and these shared foundation
 ### Experiment scope and authorization
 
 - Give each experiment a distinct identity, bounded question, and its own prototype, configuration, results, and run instructions. Keep changes and evidence attributable to that experiment; do not silently apply its assumptions to others.
-- Start small enough to support repeated revisions. Neither a shared engine nor a particular genre, stack, or telemetry platform is prescribed. Share infrastructure when an actual need warrants it.
+- The initial intended audience is one player: Ronald. Explore his enjoyment and voluntary replay; do not generalize his results to a wider audience. Multiple sessions from one player are not independent player samples.
+- Build playable experiments in Godot using the tools available here. Blender is available as an optional supporting tool, not a requirement for 3D or authorization to create assets. Verify installed versions and needed capabilities before committing to an implementation approach; do not assume plugins or external services are available.
+- Start small enough to support repeated revisions. No particular genre, 2D/3D approach, target platform, or telemetry platform is prescribed. Share infrastructure when an actual need warrants it.
 - The notes are exploratory context, not authorization to implement a game. Before implementation, settle the prototype and intended audience, development constraints, telemetry approach, recruitment, comparison design, stopping criteria, executable correctness checks, and practical decision thresholds with the user.
 - Preserve the originating mechanic proposal, its claimed distinctive features, and human contributions. An AI proposal is not proof of originality. Human playtest feedback is compatible with AI-led design; record when humans instead supply a diagnosis, choose a change, or reject an interpretation.
 
 ### Evidence and iteration
 
+- Read the [player brief](.lore/work/intents/player-brief.md) for Ronald's stated preferences and agreed player promise. Before choosing a hook or core mechanic, use [`discover-game-hook`](.agents/skills/discover-game-hook/SKILL.md). Keep reusable procedure separate from player preferences and per-game decisions.
+- Store each experiment's research record at `.lore/work/experiments/<experiment-id>/record.md`, starting from the discovery skill's [template](.agents/skills/discover-game-hook/templates/experiment-record.md). Preserve input snapshots and procedure versions for fresh repetitions, and build/configuration/seed/save-state manifests for replay. Player learning cannot be reset; repeated AI generation need not yield identical proposals.
+- For a new mechanic, use the project-local [`explore-mechanic`](.agents/skills/explore-mechanic/SKILL.md) skill: propose six alternative versions, build minimal individually playable variants, screen with recorded automated evidence, and compare human playtests. These are alternative rules for one mechanic, not six scenarios using unchanged rules.
 - Use three complementary evidence layers: reproducible mechanical checks, consent-based human-play telemetry, and player reports. Select diagnostics for the actual mechanic rather than treating a generic checklist as a definition of fun.
 - Automated checks can expose invalid states, deadlocks, weak choices, or apparent strategy dominance. Simulations and AI personas are not independent evidence of human enjoyment.
 - Measure enjoyment, desire to continue, and actual voluntary replay separately. Retention, session length, difficulty, and strategy diversity are not substitutes for enjoyment. Treat agency, mastery, connection, and absorption as hypotheses to test with the intended players.
