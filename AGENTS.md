@@ -1,5 +1,36 @@
 # Agent Instructions
 
+## Project: Mind Garage
+
+This repository hosts multiple experiments in AI-led game design, not one predetermined game. The shared question is whether AI can originate a central mechanic and refine it into repeatable enjoyment through automated diagnostics, human play, and evidence-led iteration.
+
+Read [README.md](README.md) for the project overview and these shared foundations before proposing or changing an experiment:
+
+- [Experiment brief](.lore/work/notes/ai-game-design-experiment.md): research question, validation layers, iteration protocol, and guardrails.
+- [AI, novelty, and fun](.lore/work/notes/ai-design-novel-fun.md): what the retained accounts do and do not demonstrate.
+- [What makes games fun](.lore/work/notes/what-makes-games-fun.md): selective research starting points, not universal design rules.
+
+### Experiment scope and authorization
+
+- Give each experiment a distinct identity, bounded question, and its own prototype, configuration, results, and run instructions. Keep changes and evidence attributable to that experiment; do not silently apply its assumptions to others.
+- Start small enough to support repeated revisions. Neither a shared engine nor a particular genre, stack, or telemetry platform is prescribed. Share infrastructure when an actual need warrants it.
+- The notes are exploratory context, not authorization to implement a game. Before implementation, settle the prototype and intended audience, development constraints, telemetry approach, recruitment, comparison design, stopping criteria, executable correctness checks, and practical decision thresholds with the user.
+- Preserve the originating mechanic proposal, its claimed distinctive features, and human contributions. An AI proposal is not proof of originality. Human playtest feedback is compatible with AI-led design; record when humans instead supply a diagnosis, choose a change, or reject an interpretation.
+
+### Evidence and iteration
+
+- Use three complementary evidence layers: reproducible mechanical checks, consent-based human-play telemetry, and player reports. Select diagnostics for the actual mechanic rather than treating a generic checklist as a definition of fun.
+- Automated checks can expose invalid states, deadlocks, weak choices, or apparent strategy dominance. Simulations and AI personas are not independent evidence of human enjoyment.
+- Measure enjoyment, desire to continue, and actual voluntary replay separately. Retention, session length, difficulty, and strategy diversity are not substitutes for enjoyment. Treat agency, mastery, connection, and absorption as hypotheses to test with the intended players.
+- For each revision, retain an experiment record: observation, competing explanations, hypothesis and possible disconfirmation, prediction and risks, bounded intervention, baseline/candidate comparison, and keep/revert/investigate decision.
+- Choose measurements and decision criteria before inspecting candidate results. Preserve versioned builds, seeds, test conditions, and failed experiments. Account for learning, player experience, exposure order, uncertainty, and contradictory signals; randomize comparisons when practical.
+- Keep telemetry definitions stable and associate events and reports with experiment, version, variant, and session. Distinguish genuine exits from crashes or missing events. Collect only necessary data with appropriate consent.
+- Report game outcomes separately from method outcomes: whether intended players enjoy and replay the game versus whether AI diagnoses problems, makes useful predictions, and chooses productive revisions. Small samples support provisional decisions; one successful game does not establish a general capability or prove faster development.
+
+Use Beads for actionable work and blockers. Experiment records document hypotheses and evidence, not a parallel task tracker. Preserve the source notes as context; do not rewrite them to fit later results.
+
+## Issue Tracking
+
 This project uses **bd** (beads) for issue tracking. Run `bd prime` for full workflow context.
 
 > **Architecture in one line:** Issues live in a local Dolt database
