@@ -1,14 +1,12 @@
 extends RefCounted
 
 var _fixture: Dictionary = {}
-var _invert_enabled := false
 var _state: Dictionary = {}
 
 
-func configure(fixture: Dictionary, variant: String, invert_enabled: bool) -> void:
+func configure(fixture: Dictionary, variant: String) -> void:
 	assert(variant == "R2", "Only the revision 02 baseline is supported.")
 	_fixture = fixture.duplicate(true)
-	_invert_enabled = invert_enabled
 	reset()
 
 
@@ -16,7 +14,7 @@ func reset() -> void:
 	_state = _fixture.duplicate(true)
 	_state.merge({
 		"turn": 1, "status": "playing", "variant": "R2",
-		"invert_enabled": _invert_enabled, "action_points": _fixture.rules.actions,
+		"action_points": _fixture.rules.actions,
 		"movement_points": _fixture.rules.movement, "cancelled": [], "stored": {},
 		"intentions": [], "backlash_footprint": {}, "events": [],
 	}, true)
@@ -33,7 +31,6 @@ func assess(action: Dictionary) -> Dictionary:
 		return {"legal": false, "reason": reason, "preview": {}}
 	var preview = get_script().new()
 	preview._fixture = _fixture
-	preview._invert_enabled = _invert_enabled
 	preview._state = _state.duplicate(true)
 	preview._apply(action)
 	return {"legal": true, "reason": "", "preview": preview.snapshot()}
@@ -177,17 +174,13 @@ func _rejection(action: Dictionary) -> String:
 
 
 func _release_rejection(action: Dictionary) -> String:
-	if not _keys_allowed(action, ["type", "target", "invert"]) or not _cell(action.get("target")):
+	if not _keys_allowed(action, ["type", "target"]) or not _cell(action.get("target")):
 		return "Release requires a target cell and valid fields."
-	if action.has("invert") and not action.invert is bool:
-		return "Invert must be a boolean."
 	if _state.stored.is_empty():
 		return "There is no stored action."
 	if _state.action_points <= 0:
 		return "No action points remain."
 	var ability: Dictionary = _state.stored.ability
-	if action.get("invert", false) and (not _invert_enabled or ability.kind != "shove"):
-		return "This action cannot be inverted."
 	if _target_ray(_state.player.pos, action.target, ability.range).is_empty():
 		return "Target is outside an unobstructed ability range."
 	return ""
@@ -247,9 +240,8 @@ func _release(action: Dictionary) -> void:
 	var origin: Array = _state.player.pos.duplicate()
 	var center: Array = action.target if ability.kind == "burst" else origin
 	var cells: Array = _area(center, ability.radius) if ability.kind == "burst" else _target_ray(origin, action.target, ability.range)
-	var inverted: bool = action.get("invert", false)
-	_event("release", {"source": held.source, "kind": ability.kind, "target": action.target.duplicate(), "invert": inverted})
-	_resolve_ability("player", ability, cells, center, inverted, false)
+	_event("release", {"source": held.source, "kind": ability.kind, "target": action.target.duplicate()})
+	_resolve_ability("player", ability, cells, center, false)
 
 
 func _backlash() -> void:
@@ -258,7 +250,7 @@ func _backlash() -> void:
 	var origin: Array = _state.player.pos.duplicate()
 	_state.stored = {}
 	_event("backlash", {"source": held.source, "kind": held.ability.kind})
-	_resolve_ability("player", held.ability, footprint.cells, origin, false, true)
+	_resolve_ability("player", held.ability, footprint.cells, origin, true)
 
 
 func _end_turn() -> void:
@@ -274,7 +266,7 @@ func _end_turn() -> void:
 		var ability: Dictionary = enemy.ability
 		var ray := _ray(enemy.pos, enemy.dir, ability.range)
 		var center: Array = ray.back() if ability.kind == "burst" and not ray.is_empty() else enemy.pos
-		_resolve_ability(id, ability, _enemy_footprint(enemy), center, false, false)
+		_resolve_ability(id, ability, _enemy_footprint(enemy), center, false)
 	if _state.status != "playing":
 		return
 	_state.turn += 1
@@ -307,7 +299,7 @@ func _targets(actor_id: String, cells: Array, is_area: bool, backlash: bool) -> 
 	return targets
 
 
-func _resolve_ability(actor_id: String, ability: Dictionary, cells: Array, center: Array, inverted: bool, backlash: bool) -> void:
+func _resolve_ability(actor_id: String, ability: Dictionary, cells: Array, center: Array, backlash: bool) -> void:
 	var is_area: bool = ability.kind == "burst"
 	_event("area" if is_area else "ray", {"actor": actor_id, "kind": ability.kind, "cells": cells.duplicate(true)})
 	var targets := _targets(actor_id, cells, is_area, backlash)
@@ -319,7 +311,7 @@ func _resolve_ability(actor_id: String, ability: Dictionary, cells: Array, cente
 			return
 		var actor: Dictionary = _state.player if id == "player" else _enemy(id)
 		if ability.push and not actor.is_empty() and not (backlash and id == "player"):
-			_displace(id, actor, center, inverted)
+			_displace(id, actor, center)
 
 
 func _damage(id: String, amount: int) -> void:
@@ -335,13 +327,11 @@ func _damage(id: String, amount: int) -> void:
 			_state.enemies.erase(actor)
 
 
-func _displace(id: String, actor: Dictionary, center: Array, inverted: bool) -> void:
+func _displace(id: String, actor: Dictionary, center: Array) -> void:
 	var dx: int = actor.pos[0] - center[0]
 	var dy: int = actor.pos[1] - center[1]
 	# Off-axis area pushes choose the dominant axis, with horizontal winning ties.
 	var direction := [signi(dx), 0] if absi(dx) >= absi(dy) else [0, signi(dy)]
-	if inverted:
-		direction = [-direction[0], -direction[1]]
 	if direction == [0, 0]:
 		return
 	var destination := _add(actor.pos, direction)

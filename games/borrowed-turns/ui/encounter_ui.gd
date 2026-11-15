@@ -8,8 +8,6 @@ const Production = preload("res://content/escape.gd")
 var model = Encounter.new()
 var fixture: Dictionary
 var state: Dictionary = {}
-var invert_enabled := false
-var pull := false
 var mode := "inspect"
 var selected: Array = []
 var command: Dictionary = {}
@@ -19,7 +17,6 @@ var source := ""
 var changed := false
 var resolving := false
 var generation := 0
-var pending_invert := false
 var active_tween: Tween
 var history_lines: Array[String] = []
 
@@ -43,8 +40,6 @@ var new_events: Button
 var confirm_button: Button
 var cancel_button: Button
 var restart_button: Button
-var invert_switch: CheckButton
-var pull_switch: CheckButton
 var action_buttons: Dictionary = {}
 var restart_dialog: ConfirmationDialog
 var help_dialog: AcceptDialog
@@ -53,7 +48,10 @@ func _ready() -> void:
 	theme = P.make_theme()
 	fixture = Production.DATA.duplicate(true)
 	for argument in OS.get_cmdline_user_args():
-		if argument == "--invert": invert_enabled = true
+		if argument == "--invert" or argument.begins_with("--invert="):
+			push_error("Borrowed Turns: --invert is no longer supported.")
+			get_tree().quit(2)
+			return
 		elif argument.begins_with("--variant="):
 			push_warning("Borrowed Turns: legacy variant selection is unsupported. Running the revised baseline.")
 	_build_interface()
@@ -99,17 +97,11 @@ func _build_interface() -> void:
 	_label(header, "Borrowed Turns", 28)
 	objective = _label(header, "", 16, true)
 	phase = _label(header)
-	restart_button = _button(header, "Restart", func(): _request_restart(invert_enabled))
+	restart_button = _button(header, "Restart", func(): _request_restart())
 	_label(page, "They want the artifact back. Reach the exit.", 16)
 	var economy := _box(page, false)
 	budgets = _label(economy, "", 16, true)
 	budgets.custom_minimum_size.y = 44
-	invert_switch = CheckButton.new()
-	invert_switch.text = "Invert preview"
-	invert_switch.toggled.connect(func(enabled: bool):
-		invert_switch.set_pressed_no_signal(invert_enabled)
-		_request_restart(enabled))
-	economy.add_child(invert_switch)
 	_button(economy, "Controls", func(): help_dialog.popup_centered(Vector2i(650, 410)))
 	var main := _box(page, false)
 	main.add_theme_constant_override("separation", 20)
@@ -144,10 +136,6 @@ func _build_interface() -> void:
 	confirm_button = _button(confirmation_row, "Confirm", _confirm)
 	confirm_button.custom_minimum_size.x = 174
 	cancel_button = _button(confirmation_row, "Cancel", _cancel)
-	pull_switch = CheckButton.new()
-	pull_switch.text = "Pull instead of push"
-	pull_switch.toggled.connect(_change_pull)
-	confirmation_row.add_child(pull_switch)
 	rail = _box(main)
 	rail.custom_minimum_size.x = 316
 	var details_scroll := ScrollContainer.new()
@@ -195,7 +183,7 @@ func _build_interface() -> void:
 	add_child(restart_dialog)
 	help_dialog = AcceptDialog.new()
 	help_dialog.title = "Controls and the capture bargain"
-	help_dialog.dialog_text = "Move and act in any order. AP (action points) and MP (movement points) are independent.\nCapture is free and unlimited across legal sources, even at zero AP/MP.\nRelease uses 1 AP and can happen on the capture turn.\nReplace a held ability or end its deadline turn: it discharges where you stand.\nEnemy plans resolve only when you End turn. There is no automatic turn ending.\n\nChoose an operation, choose its target, inspect, then Confirm.\nM: Move, C: Capture, L: Release, E: prepare End turn.\nTab / Shift+Tab: controls. Arrows on board: inspect.\nEnter selects a cell; a separate Enter confirms. Esc / right click: cancel.\nCtrl+R: restart. Nothing advances during inspection or preview.\n\nY: you; squares: pursuers; EXIT: escape.\nRust hatches/dashed routes: enemy intentions. Double rust border: held backlash here.\nTeal outlines: legal choices. Solid arrows/hollow pawns: exact command preview.\nPreview lists ordered effects; Recent events contains only confirmed commands.\nInvert changes released shove push to pull, never backlash or burst."
+	help_dialog.dialog_text = "Move and act in any order. AP (action points) and MP (movement points) are independent.\nCapture is free and unlimited across legal sources, even at zero AP/MP.\nRelease uses 1 AP and can happen on the capture turn.\nReplace a held ability or end its deadline turn: it discharges where you stand.\nEnemy plans resolve only when you End turn. There is no automatic turn ending.\n\nChoose an operation, choose its target, inspect, then Confirm.\nM: Move, C: Capture, L: Release, E: prepare End turn.\nTab / Shift+Tab: controls. Arrows on board: inspect.\nEnter selects a cell; a separate Enter confirms. Esc / right click: cancel.\nCtrl+R: restart. Nothing advances during inspection or preview.\n\nY: you; squares: pursuers; EXIT: escape.\nRust hatches/dashed routes: enemy intentions. Double rust border: held backlash here.\nTeal outlines: legal choices. Solid arrows/hollow pawns: exact command preview.\nPreview lists ordered effects; Recent events contains only confirmed commands."
 	add_child(help_dialog)
 	resized.connect(_resize_rail)
 	_resize_rail()
@@ -206,29 +194,26 @@ func _resize_rail() -> void:
 func _start_encounter() -> void:
 	generation += 1
 	if active_tween and active_tween.is_valid(): active_tween.kill()
-	model.configure(fixture, "R2", invert_enabled)
+	model.configure(fixture, "R2")
 	state = model.snapshot()
 	changed = false
 	resolving = false
 	board.clear_pulse()
 	board.cursor = state.player.pos.duplicate()
-	invert_switch.set_pressed_no_signal(invert_enabled)
-	history_lines = ["Turn 1 · Revised baseline · Invert %s\nReach the exit. Capture is free; End turn when ready." % ("on" if invert_enabled else "off")]
+	history_lines = ["Turn 1 · Revised baseline\nReach the exit. Capture is free; End turn when ready."]
 	history.text = "\n".join(history_lines)
 	new_events.visible = false
 	_clear_selection()
 	_refresh()
-	print("Borrowed Turns UI: start baseline=R2 invert=%s" % invert_enabled)
+	print("Borrowed Turns UI: start baseline=R2")
 
-func _request_restart(enabled: bool) -> void:
-	pending_invert = enabled
+func _request_restart() -> void:
 	if changed and state.status == "playing":
-		restart_dialog.dialog_text = "Restart the encounter with Invert %s?\nCurrent progress, budgets, storage and history will reset." % ("on" if enabled else "off")
+		restart_dialog.dialog_text = "Restart the encounter?\nCurrent progress, budgets, storage and history will reset."
 		restart_dialog.popup_centered(Vector2i(550, 200))
 	else: _apply_restart()
 
 func _apply_restart() -> void:
-	invert_enabled = pending_invert
 	_start_encounter()
 
 func _clear_selection() -> void:
@@ -238,8 +223,6 @@ func _clear_selection() -> void:
 	command = {}
 	prediction = {}
 	candidates = []
-	pull = false
-	pull_switch.set_pressed_no_signal(false)
 	instruction.text = "Choose an operation. Capture is free; release uses 1 AP."
 	consequence.text = "Move and act in any order. Enemies act only when you End turn."
 	confirm_button.disabled = true
@@ -255,8 +238,6 @@ func _refresh() -> void:
 	var info: Array[String] = ["AP: action points · MP: movement points"]
 	if state.action_points == 0: info.append("No AP: move/capture can still be available.")
 	if state.movement_points == 0: info.append("No MP: capture/release can still be available.")
-	if invert_enabled: info.append("Invert preview: on. Released shove only.")
-	if not state.stored.is_empty() and state.stored.ability.kind != "shove": info.append("Invert unavailable for this ability.")
 	availability.text = "\n".join(info)
 	if not terminal and mode == "inspect" and state.action_points == 0 and state.movement_points == 0:
 		consequence.text = "No AP or MP left. Capture is still free; End turn when ready."
@@ -266,7 +247,6 @@ func _refresh() -> void:
 	action_buttons.move.disabled = terminal or resolving or state.movement_points == 0
 	action_buttons.release.disabled = terminal or resolving or state.action_points == 0 or state.stored.is_empty()
 	cancel_button.disabled = mode == "inspect" or resolving
-	pull_switch.visible = mode == "release" and invert_enabled and not state.stored.is_empty() and state.stored.ability.kind == "shove"
 	result.visible = terminal
 	result.text = "Escaped · The exit is yours." if state.status == "won" else "Caught · Your health reached zero. Inspect the recent events."
 	instruction.visible = not terminal
@@ -335,7 +315,6 @@ func _rebuild_candidates() -> void:
 			for x in range(state.width):
 				var option := {"type": mode}
 				option["to" if mode == "move" else "target"] = [x, y]
-				if mode == "release": option.invert = pull
 				if model.assess(option).legal: candidates.append([x, y])
 
 func _select_cell(cell: Array) -> void:
@@ -349,7 +328,7 @@ func _select_cell(cell: Array) -> void:
 		_update_board()
 		return
 	if mode == "move": command = {"type": "move", "to": cell}
-	elif mode == "release": command = {"type": "release", "target": cell, "invert": pull}
+	elif mode == "release": command = {"type": "release", "target": cell}
 	elif mode == "capture":
 		source = ""
 		for enemy in state.enemies:
@@ -425,19 +404,11 @@ func _cancel() -> void:
 	_refresh()
 	board.grab_focus()
 
-func _change_pull(enabled: bool) -> void:
-	pull = enabled
-	if command.get("type", "") == "release":
-		command.invert = enabled
-		_assess_command(false)
-	_rebuild_candidates()
-	_refresh()
-
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not event is InputEventKey or not event.pressed or event.echo: return
 	if restart_dialog.visible or help_dialog.visible: return
 	if event.ctrl_pressed and event.keycode == KEY_R:
-		_request_restart(invert_enabled)
+		_request_restart()
 		get_viewport().set_input_as_handled()
 		return
 	var action := ""

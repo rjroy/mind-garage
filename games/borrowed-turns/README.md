@@ -10,12 +10,11 @@ From the repository root:
 
 ```bash
 godot --path games/borrowed-turns
-godot --path games/borrowed-turns -- --invert
 ```
 
 The normal game opens directly into one baseline, identified internally as `R2`. The original V1–V6 chooser, variant launch modes, discard and wait are removed. The original build at `fd8e91d` and its archive/evidence remain historical records; the working game does not embed a parallel legacy engine.
 
-`--invert` starts the optional preview enabled. The same freely accessible GUI switch starts off normally. Changing it resets the encounter after confirmation if an unfinished changed run would be replaced. It enables pull instead of push for a released **shove only**, never burst or held backlash. No progression gate exists.
+The former Invert preview is not part of the current core rules; the retired `--invert` option is rejected. There is no progression gate.
 
 Requested window: 1280 × 800; minimum 1024 × 720. Native Controls follow actual viewport dimensions without globally shrinking fonts. A tiling compositor may refuse requested native dimensions. Phone/portrait/gamepad support is out of scope.
 
@@ -31,7 +30,7 @@ Reach the exit when it is open. Killing every pursuer is not required.
 
 Choose **Move**, **Capture**, **Release** or **End turn**, then choose a source/target if needed. Inspect the predicted board overlay and summary; the right rail's **Preview** tab lists exact ordered effects. A separate **Confirm** commits. **Cancel** or right click backs out without changing the model. End turn also previews and requires confirmation, even if no points remain. **Recent events** contains committed events only and remains one tab away.
 
-Keyboard: Tab / Shift+Tab traverses controls; Space / Enter activates. M selects Move, C Capture, L Release, E prepares End turn. With board focus, arrows inspect and Enter selects a cell; a separate Enter confirms. Esc cancels, Ctrl+R requests restart. Invert can toggle both directions without losing focus or requiring target reselection. Controls help does not advance play.
+Keyboard: Tab / Shift+Tab traverses controls; Space / Enter activates. M selects Move, C Capture, L Release, E prepares End turn. With board focus, arrows inspect and Enter selects a cell; a separate Enter confirms. Esc cancels, Ctrl+R requests restart. Controls help does not advance play.
 
 ## Storage, deadlines and backlash
 
@@ -49,7 +48,7 @@ Inspect the exact replacement preview. It may acquire the selected source, kill 
 - Teal outlines/dots: legal candidates. Solid routes, outlined effect cells and hollow pawn positions: the selected command's exact prediction. Cross marks show predicted deaths. The live board changes only after confirmation.
 - Cell inspection names overlapping enemy sources and held backlash. The right rail shows ability range/shape/strength and complete current intentions, with scrolling where needed. Complete Preview/history lines also scroll; they are not hidden in tooltips.
 
-Restart restores this fixture and configuration, including fresh budgets, empty storage and history. Win/failure leaves the final board/history visible and offers **Replay encounter**, with no confirmation needed for a finished run.
+Restart restores this fixture, including fresh budgets, empty storage and history. Win/failure leaves the final board/history visible and offers **Replay encounter**, with no confirmation needed for a finished run.
 
 ## Provisional production content
 
@@ -73,7 +72,7 @@ godot --headless --path games/borrowed-turns --script res://ui/smoke.gd
 godot --path games/borrowed-turns --script res://ui/smoke.gd -- --capture-dir=/tmp/opencode/borrowed-turns-r2-ui
 ```
 
-Focused UI smoke covers the 2-AP/4-MP interleaving example, repeated/zero-budget free capture, actual area replacement, acquisition failure/death, turn deadlines, explicit End turn, inherited release ranges, same-turn release, reset/history, terminal controls and both-direction BT-COR-001 Invert preview synchronization. It activates real button signals and emits board GUI events; it is **not physical OS mouse/keyboard evidence**, the independent model suite, or final acceptance.
+Focused UI smoke covers the 2-AP/4-MP interleaving example, repeated/zero-budget free capture, actual area replacement, acquisition failure/death, turn deadlines, explicit End turn, inherited release ranges, same-turn release, reset/history, terminal controls and normal shove preview synchronization. It activates real button signals and emits board GUI events; it is **not physical OS mouse/keyboard evidence**, the independent model suite, or final acceptance.
 
 Capture mode renders explicit-size Godot SubViewports at 1024 × 720, 1280 × 800 and 1600 × 900 plus controlled behavioral states. PNGs establish actual layout/rendering at those dimensions, not compositor-native resizing or HiDPI acceptance. Controlled screenshots deliberately show fixture budgets/HP/actors different from production; filenames name the tested state. Use a graphical renderer for captures, not the headless dummy renderer.
 

@@ -12,9 +12,9 @@ func check(condition: bool, label: String) -> void:
 		failures.append(label)
 		printerr("FAIL: ", label)
 
-func model(board: Dictionary = {}, invert: bool = false):
+func model(board: Dictionary = {}):
 	var g = Encounter.new()
-	g.configure(F.board() if board.is_empty() else board, "R2", invert)
+	g.configure(F.board() if board.is_empty() else board, "R2")
 	return g
 
 func enemy(state: Dictionary, id: String) -> Dictionary:
@@ -271,29 +271,26 @@ func test_end_turn_intentions_and_reset() -> void:
 	check(g.snapshot().get("status") == "won", "open exit wins immediately")
 	reject(g, {"type": "end_turn"}, "terminal state")
 
-func test_invert() -> void:
+func test_no_invert() -> void:
 	var b := F.board()
 	b.enemies = [F.foe("a", [2, 3], [1, 0], F.ability("shove", 3, 1, 0, true))]
-	var g = model(b, true)
-	if not apply(g, {"type": "capture", "source": "a"}, "capture shove"): return
-	if not apply(g, {"type": "move", "to": [0, 3]}, "step back before invert"): return
-	if not apply(g, {"type": "release", "target": [2, 3], "invert": true}, "inverted shove"): return
-	check(enemy(g.snapshot(), "a").get("pos") == [1, 3], "invert pulls toward player origin")
-	g = model(b, true)
+	var g = model(b)
+	check(not g.snapshot().has("invert_enabled"), "active snapshot has no invert configuration")
 	if not apply(g, {"type": "capture", "source": "a"}, "capture normal shove"): return
 	if not apply(g, {"type": "release", "target": [2, 3]}, "normal shove"): return
 	check(enemy(g.snapshot(), "a").get("pos") == [3, 3], "normal shove pushes away from origin")
-	b.enemies[0].pos = [2, 3]
-	g = model(b, false)
-	if not apply(g, {"type": "capture", "source": "a"}, "capture without preview"): return
-	reject(g, {"type": "release", "target": [2, 3], "invert": true}, "invert disabled")
-	g = model(F.board(), true)
-	if not apply(g, {"type": "capture", "source": "a"}, "capture bolt"): return
-	reject(g, {"type": "release", "target": [2, 3], "invert": true}, "bolt is not reversible")
+	var release_events := events(g.snapshot(), "release")
+	check(not release_events.is_empty() and not release_events[0].has("invert"), "release event has no invert configuration")
+	for flag in [true, false]:
+		g = model(b)
+		if not apply(g, {"type": "capture", "source": "a"}, "capture for unsupported invert"): continue
+		reject(g, {"type": "release", "target": [2, 3], "invert": flag}, "invert field %s is unsupported" % flag)
 
 func _initialize() -> void:
 	if OS.get_cmdline_user_args().has("--focus=budget"):
 		test_budget_boundary()
+	elif OS.get_cmdline_user_args().has("--focus=no-invert"):
+		test_no_invert()
 	else:
 		test_budget_boundary()
 		test_interleaving()
@@ -306,6 +303,6 @@ func _initialize() -> void:
 		test_action_budget()
 		test_area_release_and_moving_footprint()
 		test_end_turn_intentions_and_reset()
-		test_invert()
+		test_no_invert()
 	print("Checks: ", checks, "; failures: ", failures.size())
 	quit(0 if failures.is_empty() else 1)

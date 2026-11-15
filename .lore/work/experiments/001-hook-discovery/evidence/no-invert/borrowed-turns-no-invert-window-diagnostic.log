@@ -1,0 +1,82 @@
+Godot Engine v4.7.2.stable.arch_linux.ed1daf0bf (2026-08-17 01:18:38 UTC) - https://godotengine.org
+OpenGL API 4.6 (Core Profile) Mesa 26.2.5-arch1.1 - Compatibility - Using Device: AMD - AMD Radeon 8060S Graphics (radeonsi, strix_halo, ACO, DRM 3.64, 7.2.15-1-omarchy)
+
+WINDOW_DIAGNOSTIC start driver=X11 ticks_ms=305 unix_time=1794773485.57409 auto_accept_quit=false
+Borrowed Turns UI: start baseline=R2
+Borrowed Turns UI: start baseline=R2
+Borrowed Turns UI: submit turn=1 command={"to":[2,3],"type":"move"}
+Borrowed Turns UI: resolved turn=1 status=playing AP=2 MP=3 HP=20
+Borrowed Turns UI: submit turn=1 command={"to":[3,3],"type":"move"}
+Borrowed Turns UI: resolved turn=1 status=playing AP=2 MP=2 HP=20
+Borrowed Turns UI: submit turn=1 command={"source":"a","type":"capture"}
+Borrowed Turns UI: resolved turn=1 status=playing AP=2 MP=2 HP=20
+Borrowed Turns UI: submit turn=1 command={"to":[3,2],"type":"move"}
+Borrowed Turns UI: resolved turn=1 status=playing AP=2 MP=1 HP=20
+Borrowed Turns UI: submit turn=1 command={"target":[4,2],"type":"release"}
+Borrowed Turns UI: resolved turn=1 status=playing AP=1 MP=1 HP=20
+Borrowed Turns UI: submit turn=1 command={"to":[3,1],"type":"move"}
+Borrowed Turns UI: resolved turn=1 status=playing AP=1 MP=0 HP=20
+Borrowed Turns UI: submit turn=1 command={"type":"end_turn"}
+Borrowed Turns UI: resolved turn=2 status=playing AP=2 MP=4 HP=20
+Borrowed Turns UI: start baseline=R2
+Borrowed Turns UI: submit turn=1 command={"source":"a","type":"capture"}
+Borrowed Turns UI: resolved turn=1 status=playing AP=0 MP=0 HP=20
+Borrowed Turns UI: submit turn=1 command={"source":"b","type":"capture"}
+Borrowed Turns UI: resolved turn=1 status=playing AP=0 MP=0 HP=19
+Borrowed Turns UI: submit turn=1 command={"source":"c","type":"capture"}
+Borrowed Turns UI: resolved turn=1 status=playing AP=0 MP=0 HP=18
+Borrowed Turns UI: submit turn=1 command={"source":"d","type":"capture"}
+Borrowed Turns UI: resolved turn=1 status=playing AP=0 MP=0 HP=16
+Borrowed Turns UI: start baseline=R2
+Borrowed Turns UI: submit turn=1 command={"source":"burst","type":"capture"}
+Borrowed Turns UI: resolved turn=1 status=playing AP=2 MP=4 HP=20
+Borrowed Turns UI: submit turn=1 command={"source":"fragile","type":"capture"}
+Borrowed Turns UI: resolved turn=1 status=playing AP=2 MP=4 HP=17
+Borrowed Turns UI: start baseline=R2
+Borrowed Turns UI: submit turn=1 command={"source":"burst","type":"capture"}
+Borrowed Turns UI: resolved turn=1 status=playing AP=2 MP=4 HP=20
+Borrowed Turns UI: submit turn=1 command={"source":"moved","type":"capture"}
+Borrowed Turns UI: resolved turn=1 status=playing AP=2 MP=4 HP=19
+Borrowed Turns UI: start baseline=R2
+Borrowed Turns UI: submit turn=1 command={"source":"burst","type":"capture"}
+Borrowed Turns UI: resolved turn=1 status=playing AP=2 MP=1 HP=3
+Borrowed Turns UI: submit turn=1 command={"source":"new","type":"capture"}
+Borrowed Turns UI: resolved turn=1 status=lost AP=2 MP=1 HP=0
+Borrowed Turns UI: start baseline=R2
+Borrowed Turns UI: start baseline=R2
+Borrowed Turns UI: submit turn=1 command={"source":"a","type":"capture"}
+Borrowed Turns UI: resolved turn=1 status=playing AP=2 MP=4 HP=20
+Borrowed Turns UI: submit turn=1 command={"type":"end_turn"}
+Borrowed Turns UI: resolved turn=2 status=playing AP=2 MP=4 HP=20
+Borrowed Turns UI: submit turn=2 command={"to":[2,3],"type":"move"}
+Borrowed Turns UI: resolved turn=2 status=playing AP=2 MP=3 HP=20
+Borrowed Turns UI: submit turn=2 command={"type":"end_turn"}
+Borrowed Turns UI: resolved turn=3 status=playing AP=2 MP=4 HP=18
+Borrowed Turns UI: start baseline=R2
+Borrowed Turns UI: submit turn=1 command={"source":"source","type":"capture"}
+Borrowed Turns UI: resolved turn=1 status=playing AP=2 MP=4 HP=20
+Borrowed Turns UI: submit turn=1 command={"target":[5,3],"type":"release"}
+Borrowed Turns UI: resolved turn=1 status=playing AP=1 MP=4 HP=20
+Borrowed Turns UI: start baseline=R2
+Borrowed Turns UI: submit turn=1 command={"source":"source","type":"capture"}
+Borrowed Turns UI: resolved turn=1 status=playing AP=2 MP=4 HP=20
+Borrowed Turns UI: submit turn=1 command={"target":[3,3],"type":"release"}
+Borrowed Turns UI: resolved turn=1 status=playing AP=1 MP=4 HP=20
+Borrowed Turns UI: start baseline=R2
+Borrowed Turns UI: submit turn=1 command={"source":"source","type":"capture"}
+Borrowed Turns UI: resolved turn=1 status=playing AP=2 MP=4 HP=20
+Borrowed Turns UI: submit turn=1 command={"target":[3,3],"type":"release"}
+Borrowed Turns UI: resolved turn=1 status=playing AP=1 MP=4 HP=20
+Borrowed Turns UI: start baseline=R2
+Borrowed Turns UI: submit turn=1 command={"source":"shover","type":"capture"}
+Borrowed Turns UI: resolved turn=1 status=playing AP=2 MP=4 HP=20
+Borrowed Turns UI: submit turn=1 command={"target":[2,3],"type":"release"}
+Borrowed Turns UI: resolved turn=1 status=playing AP=1 MP=4 HP=20
+Borrowed Turns UI: start baseline=R2
+Borrowed Turns UI: start baseline=R2
+Borrowed Turns UI: submit turn=1 command={"to":[2,3],"type":"move"}
+Borrowed Turns UI: resolved turn=1 status=playing AP=2 MP=3 HP=20
+Borrowed Turns UI: start baseline=R2
+Borrowed Turns UI: submit turn=1 command={"to":[2,3],"type":"move"}
+Borrowed Turns UI: resolved turn=1 status=won AP=2 MP=3 HP=20
+R2 UI smoke: 179 checks, 0 failures. Injected GUI events, not physical OS input.

@@ -31,7 +31,7 @@ static func event_text(event: Dictionary) -> String:
 		"capture": return "Acquired %s from %s; this attack canceled." % [event.kind, source]
 		"capture_failed":
 			return "Capture failed: %s %s. Slot ends empty." % [source, "died" if event.reason == "source_dead" else "moved out of reach"]
-		"release": return "Released %s toward %s." % ["pull" if event.get("invert", false) else str(event.kind), cell(event.target)]
+		"release": return "Released %s toward %s." % [str(event.kind), cell(event.target)]
 		"backlash": return "Backlash · %s from %s discharges where you stand." % [str(event.kind).capitalize(), source]
 		"ray", "area": return "%s · %s footprint: %d cells." % [who, event.type, event.cells.size()]
 		"damage": return "%s took %d damage; %d HP left." % [who, event.amount, event.hp]

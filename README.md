@@ -16,13 +16,13 @@ Steal an enemy's announced action, then turn it against the hunt. An ordinary pe
 godot --path games/borrowed-turns
 ```
 
-The live game now uses one shared baseline: independent action/movement points, unlimited free capture, action-cost release, and ability-specific backlash on replacement or expiry. There is no discard. End Turn is explicit; reaching zero points does not advance time. The optional `--invert` flag enables a push/pull ability preview without unlocking it through play. See the [play instructions](games/borrowed-turns/README.md) and [experiment record](.lore/work/experiments/001-hook-discovery/record.md).
+The live game now uses one shared baseline: independent action/movement points, unlimited free capture, action-cost release, and ability-specific backlash on replacement or expiry. There is no discard. End Turn is explicit; reaching zero points does not advance time. Invert has been removed from the live prototype; it is not part of the core mechanic. See the [play instructions](games/borrowed-turns/README.md) and [experiment record](.lore/work/experiments/001-hook-discovery/record.md).
 
 This is a mechanic prototype, not a finished roguelite or a validated progression system. Revision 02 passed independent functional checks and correctness, visual and engineering-quality reviews. Human enjoyment and replay evidence are still pending; completion alone does not demonstrate that capture creates worthwhile decisions.
 
 The first six-variant prototype is preserved at `fd8e91d` and in its source archive; it is not a parallel mode in the live game. Subsequent human feedback and the unlimited-capture/backlash direction are recorded in [design revision 02](.lore/work/experiments/001-hook-discovery/design-revision-02.md), with provisional [executable rules](.lore/work/experiments/001-hook-discovery/revision-02-executable-rules.md).
 
-The separate [revision-02 replay package](.lore/work/experiments/001-hook-discovery/builds/revision-02/README.md) preserves the current source and test evidence without replacing the first-build record.
+The separate [revision-02 replay package](.lore/work/experiments/001-hook-discovery/builds/revision-02/README.md) preserves that checkpoint's source and test evidence without replacing the first-build record. It predates the subsequent Invert removal; archived features are history, not current requirements.
 
 ## Shared foundations
 

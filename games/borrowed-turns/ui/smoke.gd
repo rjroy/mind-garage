@@ -35,9 +35,8 @@ func settle() -> void:
 	await create_timer(0.21).timeout
 	await process_frame
 
-func load_fixture(data: Dictionary, invert: bool = false) -> void:
+func load_fixture(data: Dictionary) -> void:
 	game.fixture = data.duplicate(true)
-	game.invert_enabled = invert
 	game._start_encounter()
 	await process_frame
 
@@ -202,25 +201,31 @@ func _test_ability_ranges() -> void:
 			await image("r2-area-release.png")
 		await commit()
 
-func _test_invert(initial_pull: bool) -> void:
-	await load_fixture(F.encounter([F.enemy("shover", [2, 3], F.ability("shove", 1, 4, 0, true))]), true)
+func _test_normal_shove() -> void:
+	await load_fixture(F.encounter([F.enemy("shover", [2, 3], F.ability("shove", 1, 4, 0, true))]))
+	var forbidden_toggles: Array[String] = []
+	for node in game.find_children("*", "CheckButton", true, false):
+		if "invert" in node.text.to_lower() or "pull" in node.text.to_lower():
+			forbidden_toggles.append(node.text)
+	check(forbidden_toggles.is_empty(), "no Invert or pull controls exist")
+	check(not game.model.snapshot().has("invert_enabled"), "active encounter snapshot has no invert configuration")
 	await capture([2, 3])
-	await move([0, 3])
-	select("release", [2, 3])
-	game.pull_switch.set_pressed(initial_pull)
-	game.pull_switch.grab_focus()
 	var before: Dictionary = game.model.snapshot()
-	var target: Array = game.selected.duplicate()
-	check(preview_matches(), "initial push/pull preview is synchronized")
-	game.pull_switch.set_pressed(not initial_pull)
-	check(game.pull_switch.has_focus(), "Invert does not steal keyboard focus")
-	check(game.selected == target and game.model.snapshot() == before, "Invert needs no reselection and does not mutate")
-	check(game.prediction == game.model.assess(game.command).preview and preview_matches(), "BT-COR-001 all views use the toggled assessment")
-	check(game.preview_details.text.contains("Released pull" if not initial_pull else "Released shove"), "visible ordered text names the changed effect")
-	game.pull_switch.set_pressed(initial_pull)
-	check(preview_matches(), "reverse toggle also refreshes complete text")
-	await image("r2-invert-%s.png" % ("pull" if initial_pull else "push"))
+	select("release", [2, 3])
+	check(not game.command.has("invert"), "normal release command has no invert field")
+	check(game.model.snapshot() == before, "release selection and assessment do not mutate")
+	check(not game.prediction.is_empty() and game.prediction == game.model.assess(game.command).get("preview", {}) and preview_matches(), "normal release ordered text matches model prediction")
+	check(game.board.preview == game.prediction and game.board.selected == [2, 3], "normal release board and target match prediction")
+	var displacement := []
+	for event in game.prediction.get("events", []):
+		if event.get("type") == "displace" and event.get("actor") == "shover": displacement = event.get("to", [])
+	check(displacement == [3, 3], "normal shove preview pushes source away")
+	await image("r2-normal-shove.png")
 	await commit()
+	var pushed := false
+	for enemy in game.state.enemies:
+		if enemy.id == "shover" and enemy.pos == [3, 3]: pushed = true
+	check(pushed, "confirmed normal shove pushes source away")
 	press(game.restart_button)
 	check(game.restart_dialog.visible, "unfinished changed run protects restart")
 	game.restart_dialog.get_cancel_button().pressed.emit()
@@ -246,6 +251,13 @@ func _run() -> void:
 	await process_frame
 	check(game.state.variant == "R2" and game.state.status == "playing", "one R2 baseline opens immediately")
 	check(game.action_buttons.keys() == ["move", "capture", "release", "end_turn"], "only the four revised operations exist")
+	if OS.get_cmdline_user_args().has("--focus=no-invert"):
+		await _test_normal_shove()
+		print("R2 UI smoke: %d checks, %d failures. Injected GUI events, not physical OS input." % [checks, failures])
+		game.queue_free()
+		await process_frame
+		quit(1 if failures else 0)
+		return
 	if capture_view:
 		for size in [Vector2i(1280, 800), Vector2i(1024, 720), Vector2i(1600, 900)]:
 			capture_view.size = size
@@ -255,8 +267,7 @@ func _run() -> void:
 	await _test_replacements()
 	await _test_deadline()
 	await _test_ability_ranges()
-	await _test_invert(false)
-	await _test_invert(true)
+	await _test_normal_shove()
 	# Board Enter selects without committing; the next explicit confirmation acts.
 	await load_fixture(F.encounter([]))
 	var before_keyboard: Dictionary = game.model.snapshot()
