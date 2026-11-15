@@ -10,7 +10,7 @@ related: [.lore/work/intents/player-brief.md, .lore/work/research/game-hooks-and
 
 ## Inputs and provenance
 
-- **ID and stage:** `001-hook-discovery`; first playable Borrowed Turns comparison implemented and functionally verified, checkpointed at `fd8e91d`. Initial human design feedback produced an agreed new capture direction in [revision 02](design-revision-02.md); that revision is not implemented. Structured enjoyment/replay evidence is still pending. The original discovery proposals below are preserved as history.
+- **ID and stage:** `001-hook-discovery`; first playable Borrowed Turns comparison preserved at `fd8e91d`. Initial human design feedback produced [revision 02](design-revision-02.md), now implemented and independently functionally verified in the live game. Correctness, visual and engineering-quality reviews accepted the revision; source and evidence are preserved separately. Structured enjoyment/replay evidence is still pending. The original discovery proposals below are preserved as history.
 - **Request:** Ronald approved recording the player brief, defining the discovery skill and experiment template, and using them to propose first directions. No full game design yet.
 - **Input snapshot:** `inputs/` preserves the brief, instructions, foundation notes, research synthesis, both skills, and template used for this discovery. `inputs/manifest.json` records source paths and SHA-256 hashes. Later revisions must not overwrite these inputs.
 - **Agent:** Orchestrator, OpenAI `gpt-6.1-sol`. Prior source research and artifact-convention checks used the explorer; its configured model identity is not recorded here.
@@ -139,3 +139,58 @@ Next evidence must come from Ronald's play. This first fixture tests understanda
 Ronald challenged whether the original six variants offered enough diversity, distinguishing useful common constraints/tuning from distinct mechanics. He supplied a revised shared direction: separate interleavable movement/action budgets, unlimited free capture, action-cost release, ability-derived release range, forced release, ability-specific replacement/expiry backlash, and no discard. He explicitly chose backlash rather than a per-turn capture cap as the starting restriction.
 
 See [the full decision record](design-revision-02.md) for the human/AI contribution sequence, rejected cap proposal, rationale, open timing/geometry details, and proposed evidence. These are part of the experiment's method outcome: substantial human design judgment was needed after the first AI-led exploration. No claim of improved enjoyment is supported yet. The running game, original executable rules, input snapshots, and packaged first-build evidence remain unchanged.
+
+### Revision 02 implementation started
+
+Ronald authorized implementation with “begin that”. Feature `mind-garage-2kp` is claimed on `experiment/borrowed-turns-prototype`; `mind-garage-vu4` remains the separate human-feedback discussion. The original first-build commit `fd8e91d`, archive, inputs, and evidence remain preserved.
+
+The live game will move to one coherent revised baseline rather than retain a second legacy rules engine or manufacture six more tuning variants. The agents will make and record bounded provisional decisions for remaining timing, starting budgets, and ability geometry. This implements the selected capture/backlash direction, not a complete progression system or a claim that the fun has been found.
+
+Ownership: fixer authors controlled model tests and the revision executable contract before production changes; designer specifies the revised budget/turn/backlash interface in a separate document. A separate read-only fixer confirms behavioral RED, then GREEN and relevant runtime evidence. Oracle is selected for fresh correctness review, subsequent refactoring assessment, and independent engineering-quality assessment. Designer owns visual direction and review. The orchestrator reconciles scope and records evidence, without writing or testing game code.
+
+Verification focus: independent interleavable action/movement pools; same-turn capture/release; unlimited free captures without a hidden cap; actual ability-derived range, damage, and area backlash; exact turn deadline; replacement survival/death and source changes; no discard; preview/commit agreement; complete intentions; reset isolation; and UI synchronization including the existing Invert regression. Test-owned fixtures must remain independent of production tuning. At initialization no revision 02 test or runtime result was asserted; subsequent evidence is recorded below.
+
+The revision contracts are now [executable rules](revision-02-executable-rules.md) and [interface brief](revision-02-interface-brief.md). Provisional starting values are 2 AP, 1 MP and capture reach 1. Capturing on turn T permits release during T and T+1; ending T+1 discharges the held ability before enemies resolve. Actions/moves/captures do not automatically end the player turn. Replacement is previewed as an actual discharge first, followed by acquisition only if the player and selected source remain eligible; a source killed or pushed out of reach produces an explicit `capture_failed` outcome rather than rollback.
+
+Independent behavioral RED was established with `/usr/bin/godot --headless --path games/borrowed-turns --script res://tests/run.gd -- --focus=budget`: exit 1, 5 checks, 3 assertion failures (`movement does not advance turn`, `movement spends only one MP`, `enemy does not resolve on movement`). There were no parse/import/setup/runtime errors. Local log: `/tmp/opencode/borrowed-turns-r2-budget-red.log`. Model and interface implementation are now underway in disjoint scopes; full integration evidence waits for both writers to finish.
+
+Mechanical acceptance for this revision means the documented budget/backlash invariants, previews, reset and playable controls work on controlled scenarios without unresolved material review defects. It does not mean improved enjoyment. The human comparison will remain qualitative until actual reports are gathered; do not choose an enjoyment threshold retroactively from automated results or treat this narrowing to one baseline as a new six-variant experiment.
+
+### Revision 02 independent functional evidence
+
+Both implementation lanes completed before independent execution. The live model replaces the original variant branches; the UI has one baseline with no legacy chooser or discard. The shared provisional fixture includes bolt, shove, and burst sources so different release geometry and intentional area backlash can be inspected. Content is not claimed balanced.
+
+| Command from repository root, using `/usr/bin/godot` | Exit and result |
+| --- | --- |
+| `godot --headless --path games/borrowed-turns --script res://tests/run.gd` | 0; 282 checks, 0 failures |
+| `godot --headless --path games/borrowed-turns --script res://ui/smoke.gd` | 0; 176 checks, 0 failures |
+| `godot --path games/borrowed-turns --script res://ui/smoke.gd -- --capture-dir=/tmp/opencode/borrowed-turns-r2-independent` | 0; 204 checks, 0 failures |
+| `godot --headless --path games/borrowed-turns --quit-after 3` | 0; R2 starts with Invert off |
+| `godot --headless --path games/borrowed-turns --quit-after 3 -- --invert` | 0; R2 starts with Invert on |
+
+Local logs: `/tmp/opencode/borrowed-turns-r2-independent-{model,headless,rendered,launch,launch-invert}.log`. The full model suite includes the original focused RED budget checks. Coverage exercises the user's 2-AP/4-MP interleave, more than two free captures at zero budgets, actual ability backlash, source-death/displacement partial acquisition failures, legal lethal replacement, inherited range, turn-end deadlines, reset, full footprints, exact previews, and Invert text synchronization.
+
+A separate temporary real-model harness checked burst displacement for horizontal ties and both dominant axes, with exact preview/commit agreement, exit 0. It is evidence for the implementation convention, not a permanent regression in the model suite. Harness and log: `/tmp/opencode/borrowed-turns-r2-independent-axis.gd` and `.log`.
+
+Production diagnostic harness `/tmp/opencode/borrowed-turns-r2-independent-content.gd` exited 0. On the same fixture, a no-capture path escaped on turn 12 with 3 HP. Capturing burst C, replacing it with A to trigger area backlash, then releasing A and escaping finished with 1 HP. The log retains the fixture, commands, events and outcomes. This establishes reachable escape and deliberate backlash, not that capture is necessary, rewarding, or preferable to avoiding it.
+
+Rendered images were dimension-checked and inspected at the three documented viewport sizes, with replacement, failed acquisition, lethal, deadline and Invert states. The third intention row scrolls at minimum size; board footprints remain visible. Physical OS mouse/keyboard, native compositor resizing, and HiDPI remain unverified; injected control events and fixed-size SubViewports must not be described as physical-input acceptance.
+
+Independent correctness review found no material defect in the revised model, UI or affected boundaries. Visual review accepted all 14 dimension-verified captures within the prototype's bounded scope. Compact intention scrolling and long controlled-fixture pawn IDs are accepted limitations, not claims of universal accessibility. Neither review reran runtime tests or established physical input, balance, or enjoyment.
+
+The required read-only refactoring assessment found no worthwhile bounded refactor: ability resolution is shared, prediction views refresh through a common path, and model/UI test helpers protect distinct boundaries. No refactor was selected. Separate engineering-quality review found the bounded R2 implementation adequate, with no material blocker. It accepted the authoritative model, shared ability resolver, UI prediction lifecycle, test isolation, and interaction-driven assessment cost for this small fixture; it did not claim measured performance.
+
+The only nonblocking quality recommendation was to promote the existing off-axis displacement diagnostic into a normal controlled regression. Disposition: retain its runnable harness and evidence in the versioned R2 package, but defer promotion into the regular suite for this first playtest. Current behavior was directly checked against the model, including preview/commit agreement; the permanent suite does not explicitly protect the dominant-axis/tie branch. No additional production change or architectural work was justified. Future changes to displacement should revisit that test boundary.
+
+### Revision 02 source and evidence preservation
+
+The [R2 replay package](builds/revision-02/README.md) preserves 22 current game files plus four separately identified provenance documents. The original first-build archive, evidence and input snapshots were checked before and after packaging and remained unchanged.
+
+- Source archive: `builds/revision-02/borrowed-turns-r2-source.tar.gz`, 44,109 bytes.
+- Archive SHA-256: `41bf019d551f2df6d5df17fc24476e7248fb3394905b630a137d56efbdf8c604`.
+- [Current source manifest](builds/revision-02/source-files.sha256), [input manifest](builds/revision-02/input-files.sha256), and [copied evidence](evidence/revision-02/) identify exactly what was tested and preserved.
+- Packaging checks returned exit 0 for current/extracted hashes, archive membership, deterministic byte-identical regeneration, evidence-copy comparison, and original-history integrity. No behavioral suites were rerun merely for packaging.
+
+The source project is directly runnable with `godot --path games/borrowed-turns` or `godot --path games/borrowed-turns -- --invert`. The new package README gives safe extraction and harness replay commands. This is not a compiled export, and restoration cannot reset Ronald's prior experience. Native physical input, compositor resize, HiDPI, balance and enjoyment remain outside the established evidence.
+
+Final read-only handoff checks passed: 22 current source hashes, four input hashes, both R2 manifests, all 14 R2 evidence entries, exact archive membership, original first-build archive/evidence, all nine original input snapshots, 37 local documentation links, cache exclusion, and `git diff --check`. No gameplay source changed after the accepted functional/review evidence. Feature `mind-garage-2kp` is ready for closure and checkpoint; `mind-garage-vu4` remains the human playtest discussion. Nonblocking regular-suite promotion of the retained axis diagnostic is separately tracked as `mind-garage-2nx` and is not required for this first R2 playtest.

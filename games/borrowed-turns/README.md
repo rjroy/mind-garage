@@ -1,73 +1,80 @@
 # Borrowed Turns
 
-A first playable capture-bargain comparison for one small, turn-based escape encounter. This is a prototype, not evidence that any variant is enjoyable or original. Mind Garage is the research effort, not the game title.
+One small turn-based escape encounter built around stealing announced enemy abilities. This is revision 02's coherent shared baseline, following Ronald's rules revision. It is not a new six-way comparison or evidence of enjoyment. Mind Garage names the research effort, not this game.
 
 ## Run
 
-Requires the installed Godot 4.7.2 executable. There are no packages, downloaded fonts, plugins, generated art, persistence, analytics, or network services.
+Requires the installed Godot 4.7.2 executable. No packages, external services, downloaded fonts, generated assets, telemetry or persistent saves.
 
 From the repository root:
 
 ```bash
 godot --path games/borrowed-turns
-godot --path games/borrowed-turns -- --variant=V2
-godot --path games/borrowed-turns -- --variant=V6 --invert
+godot --path games/borrowed-turns -- --invert
 ```
 
-`--variant=V1` through `--variant=V6` launch each bargain independently. `--invert` enables the freely selectable push/pull preview; otherwise it starts off. The GUI provides the same six variant buttons and preview configuration without completing or unlocking anything. Changing configuration starts a clean encounter; a changed unfinished run first asks for confirmation. No other launch flags alter the rules or fixture.
+The normal game opens directly into one baseline, identified internally as `R2`. The original V1–V6 chooser, variant launch modes, discard and wait are removed. The original build at `fd8e91d` and its archive/evidence remain historical records; the working game does not embed a parallel legacy engine.
 
-Default requested window: 1280 × 800. Minimum: 1024 × 720. Native Control layout uses actual viewport dimensions without reducing text through a global stretch factor. A tiling compositor may override requested native window dimensions. Portrait, phone and gamepad support are not part of this prototype.
+`--invert` starts the optional preview enabled. The same freely accessible GUI switch starts off normally. Changing it resets the encounter after confirmation if an unfinished changed run would be replaced. It enables pull instead of push for a released **shove only**, never burst or held backlash. No progression gate exists.
 
-## Play and inspect
+Requested window: 1280 × 800; minimum 1024 × 720. Native Controls follow actual viewport dimensions without globally shrinking fonts. A tiling compositor may refuse requested native dimensions. Phone/portrait/gamepad support is out of scope.
 
-The top line shows health, exit position/opening turn, turn and action status. Reach the exit while it is open; defeating every pursuer is not required.
+## Turn and controls
 
-1. Choose **Move**, **Capture**, **Release**, **Wait**, or **Discard**.
-2. Choose a cell or, for capture, an enemy square/intention row.
-3. Inspect the predicted board overlay, health/position/outcome summary and the right rail's **Preview** tab. It lists the exact ordered effects from the model. **Recent events** remains available in the other tab and shows only committed events.
-4. Press **Confirm** to act. **Cancel** or right click backs out without advancing play.
+Reach the exit when it is open. Killing every pursuer is not required.
 
-Rust dashed arrows and hatched cells show every current enemy intention. Teal outlines mark legal targets; solid arrows and hollow pawns mark exact predicted movement/effects, not the live state. The numbered grid is `[x,y]`, increasing right/down. `Y` is you; squares `A` and `B` are pursuers. A teal cross marks V6's committed release cell. Overlap numbers count threatening plans; inspecting a cell names their sources.
+- **AP** means action points. Release uses 1 AP and no MP.
+- **MP** means movement points. A confirmed one-cell cardinal move uses 1 MP and no AP.
+- **Capture** is free, including replacement. It can interleave with movement/releases; no arbitrary per-turn cap applies. Each currently announced occurrence can be captured once. Capturing cancels that occurrence, not the source's future announcements.
+- A newly captured ability can be released this turn, within that ability's own range/shape.
+- **End turn** explicitly resolves due backlash and surviving uncanceled enemy plans, then refreshes AP/MP and announcements. Budgets reaching zero never auto-end the turn. Free capture can still be available at zero AP and MP.
 
-Capture cancels one current attack, not the source's future attacks. Stored plans can only be released on a later turn. There is one storage slot, no deck and no basic attack. Read the active bargain and stored-plan constraints in the right rail. Its upper information region scrolls when longer rules/constraints exceed the available height.
+Choose **Move**, **Capture**, **Release** or **End turn**, then choose a source/target if needed. Inspect the predicted board overlay and summary; the right rail's **Preview** tab lists exact ordered effects. A separate **Confirm** commits. **Cancel** or right click backs out without changing the model. End turn also previews and requires confirmation, even if no points remain. **Recent events** contains committed events only and remains one tab away.
 
-- **V1 · Action cost:** Capture and discard each use an action; no expiry.
-- **V2 · Adjacent capture:** Choose a source, then a legal optional approach endpoint if needed. Step and capture confirm together.
-- **V3 · Two-action expiry:** Use the plan by the second action after capture or lose it harmlessly.
-- **V4 · Source linked:** The source must survive until release consumes the plan.
-- **V5 · Delayed backlash:** One free capture per turn, then an ordinary action. That same-turn action counts toward the two-action deadline. Discard or missing the deadline deals 1 direct damage.
-- **V6 · Fixed target:** Choose a release cell as part of capture. Later release must use that same cell; reposition or discard if it becomes invalid.
+Keyboard: Tab / Shift+Tab traverses controls; Space / Enter activates. M selects Move, C Capture, L Release, E prepares End turn. With board focus, arrows inspect and Enter selects a cell; a separate Enter confirms. Esc cancels, Ctrl+R requests restart. Invert can toggle both directions without losing focus or requiring target reselection. Controls help does not advance play.
 
-With Invert preview enabled, a held shove offers **Pull instead of push** during release targeting. It changes only displacement, not damage or V6's committed cell. Bolt cannot invert. Selection and preview are free; only a confirmed model command changes the encounter.
+## Storage, deadlines and backlash
 
-**Restart** restores the same fixture, variant and preview configuration. A finished encounter offers **Replay this variant** without a replacement dialog. Win/failure leaves the board and history visible; all variants remain directly accessible.
+The single stored ability retains its source identity/direction, range, damage, radius and push capability. The top budget line always shows its exact deadline: **Release before ending turn N**. Capture during T permits release through all of T+1. Ending T+1 discharges storage before enemies; successful ordinary commands do not age an action-count timer.
 
-### Keyboard
+Capturing while holding an ability immediately discharges the old one at the player's position before attempting acquisition. Burst backlash centers the real area on the player. Line backlash hits the player and its stored direction. Damage and enemy displacement come from the held ability, not a generic fixed penalty. Backlash may harm pursuers and can be deliberate, but it always risks the player; there is no discard route.
 
-Tab / Shift+Tab traverses native controls; Space / Enter activates them. M selects Move, C Capture, L Release. When the board has focus, arrows move its inspection cursor without moving the player; Enter selects the cell and focuses Confirm. A separate Enter commits. Esc backs out one targeting stage; Ctrl+R requests restart. Controls help is available without advancing play. Mouse hover is inspection only.
+Inspect the exact replacement preview. It may acquire the selected source, kill the player without acquiring anything, or discharge successfully but fail acquisition because the selected source died or moved out of reach. **Capture failed** is that legal partial outcome, not a rolled-back or invalid command. The summary exposes it before confirmation; a legal lethal choice remains confirmable.
 
-## Structure and evidence boundaries
+### Reading the board
 
-- `content/escape.gd`: the one shared provisional production fixture, preserving integer coordinate types. Tests own their separate fixtures. Content has not been tuned for engagement.
-- `model/encounter.gd`: authoritative rules, legality, footprints, resolution and nonmutating predictions.
-- `ui/encounter_ui.gd`: native control composition, targeting transactions and presentation state.
-- `ui/board.gd`: drawing and screen/cell conversion only; receives model footprints and event geometry.
-- `ui/presentation.gd`: theme and display formatting.
-- `scenes/encounter.tscn`: runnable main scene.
+- Round `Y`: you; square labeled pawns: pursuers; double doorway labeled `EXIT`: escape. Coordinates are `[x,y]`, right/down.
+- Rust hatches and dashed arrows: current enemy intentions. Areas show all affected cells rather than a false ray through them. Inspect/select an enemy or intention row to identify its source and footprint.
+- **Double rust borders:** held ability's current **Backlash here** footprint, even before its deadline. Moving updates its center, not its deadline.
+- Teal outlines/dots: legal candidates. Solid routes, outlined effect cells and hollow pawn positions: the selected command's exact prediction. Cross marks show predicted deaths. The live board changes only after confirmation.
+- Cell inspection names overlapping enemy sources and held backlash. The right rail shows ability range/shape/strength and complete current intentions, with scrolling where needed. Complete Preview/history lines also scroll; they are not hidden in tooltips.
 
-The UI enumerates candidate commands and calls `assess`; it does not reproduce movement, capture or ray legality. Current threats come from `snapshot.intentions`; actual predicted and committed rays come from ordered events. The production encounter is intentionally unchanged from the executable rules. A no-capture route may exist; that is a content/experiment diagnostic, not permission to silently tune the board or claim meaningful capture choices.
+Restart restores this fixture and configuration, including fresh budgets, empty storage and history. Win/failure leaves the final board/history visible and offers **Replay encounter**, with no confirmation needed for a finished run.
 
-The lifecycle and run logs printed to stdout describe starts, submitted commands and results. They are runtime diagnostics, not stored player telemetry. History exists only in memory for the current encounter.
+## Provisional production content
 
-## Focused UI checks
+`content/escape.gd` is the one integer-typed shared fixture: 7 × 7, player at `[2,3]` with 6 HP, exit `[6,3]` opening on turn 3, and two wall cells. Starting rules are 2 AP, 1 MP and capture reach 1. Bolt, shove and burst sources start adjacent so capture, same-turn release and deliberate area replacement can be explored immediately. Their data differ in geometry, range, damage and displacement.
+
+These content choices are bounded AI implementation assumptions, not balance findings or permanent tuning. The encounter is not a mandatory-kill objective. The independent tester should diagnose escape/capture/replacement routes and dead ends rather than infer engagement from available commands. Smoke assertions use controlled test-owned fixtures, not these production numbers.
+
+## Implementation and focused checks
+
+- `model/encounter.gd`: authoritative legality, budgets, complete intentions/backlash footprint, exact nonmutating assessments and ordered resolution.
+- `ui/encounter_ui.gd`: native shell, selection/confirmation, input and presentation lifecycle. Enumerates candidate commands and assesses them; does not simulate geometry or damage.
+- `ui/board.gd`: grid rendering, screen/cell conversion and presentation of model footprints/events. Actor movement/death markers follow model events; no displacement convention is reimplemented.
+- `ui/presentation.gd`: theme, ability/event formatting and command summaries.
+- `ui/smoke.gd`, `ui/smoke_fixtures.gd`: focused integration checks through actual scene controls with controlled inputs. They contain no alternate gameplay path or test-only production command.
+- `scenes/encounter.tscn`: main scene.
 
 ```bash
 godot --headless --path games/borrowed-turns --editor --quit
-godot --headless --path games/borrowed-turns --quit-after 3 -- --variant=V6 --invert
+godot --headless --path games/borrowed-turns --quit-after 3
 godot --headless --path games/borrowed-turns --script res://ui/smoke.gd
-godot --path games/borrowed-turns --script res://ui/smoke.gd -- --capture-dir=/tmp/opencode/borrowed-turns-ui
+godot --path games/borrowed-turns --script res://ui/smoke.gd -- --capture-dir=/tmp/opencode/borrowed-turns-r2-ui
 ```
 
-The smoke runner instantiates the real scene, activates actual button signals and emits board GUI events. It checks selection/confirmation, nonmutating previews, variant isolation, V2/V6 staged capture, V5 free capture, Invert, history, restart protection and terminal controls against the real model. It has no alternate game behavior or gameplay shortcut. It does not replace native OS pointer/keyboard testing or the separate model suite in `TESTING.md`.
+Focused UI smoke covers the 2-AP/4-MP interleaving example, repeated/zero-budget free capture, actual area replacement, acquisition failure/death, turn deadlines, explicit End turn, inherited release ranges, same-turn release, reset/history, terminal controls and both-direction BT-COR-001 Invert preview synchronization. It activates real button signals and emits board GUI events; it is **not physical OS mouse/keyboard evidence**, the independent model suite, or final acceptance.
 
-Capture mode uses explicitly sized rendered Godot SubViewports because a tiling compositor can ignore native window resize requests. PNGs cover 1024 × 720, 1280 × 800 and 1600 × 900 plus targeting/stored/terminal states; they demonstrate actual Control layout and rendering, not native window-manager resize acceptance or high-DPI correctness. Do not use `--capture-dir` with the headless dummy renderer. The independent tester owns final native input/runtime checks, and the independent oracle owns correctness/engineering review.
+Capture mode renders explicit-size Godot SubViewports at 1024 × 720, 1280 × 800 and 1600 × 900 plus controlled behavioral states. PNGs establish actual layout/rendering at those dimensions, not compositor-native resizing or HiDPI acceptance. Controlled screenshots deliberately show fixture budgets/HP/actors different from production; filenames name the tested state. Use a graphical renderer for captures, not the headless dummy renderer.
+
+Runtime diagnostics print starts, submitted commands and results to stdout. Event history exists only in memory. The separate read-only tester owns runtime/input evidence; the oracle owns independent correctness and engineering review. See the revision-02 executable and interface briefs in `.lore/work/experiments/001-hook-discovery/` for authority and remaining evidence boundaries.

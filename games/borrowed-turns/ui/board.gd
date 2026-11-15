@@ -20,7 +20,7 @@ var pulse_tween: Tween
 func _ready() -> void:
 	focus_mode = Control.FOCUS_ALL
 	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	custom_minimum_size = Vector2(290, 290)
+	custom_minimum_size = Vector2(294, 294)
 	resized.connect(queue_redraw)
 	focus_entered.connect(queue_redraw)
 	focus_exited.connect(queue_redraw)
@@ -144,30 +144,39 @@ func _draw() -> void:
 			var tile := _cell_rect(cell).grow(-3)
 			draw_rect(tile, Color(P.DANGER, 0.08))
 			draw_line(tile.position + Vector2(2, 10), tile.position + Vector2(10, 2), P.DANGER, 1)
+			if intent.source == source: draw_rect(tile, P.DANGER, false, 2)
 			if threat_counts[key] > 1: _text(tile.position + Vector2(tile.size.x - 14, 14), str(threat_counts[key]), P.DANGER)
-		if not intent.cells.is_empty():
+		if intent.kind != "burst" and not intent.cells.is_empty():
 			for enemy in state.enemies:
 				if enemy.id == intent.source:
 					_arrow(cell_center(enemy.pos), cell_center(intent.cells.back()), P.DANGER, true)
+	var backlash: Dictionary = state.get("backlash_footprint", {})
+	if not backlash.is_empty():
+		for cell in backlash.cells:
+			draw_rect(_cell_rect(cell).grow(-2), P.DANGER, false, 2)
+			draw_rect(_cell_rect(cell).grow(-5), P.DANGER, false, 1)
 	for cell in candidates:
 		var tile := _cell_rect(cell).grow(-5)
 		draw_rect(tile, P.BORROWED, false, 1.5)
 		draw_circle(tile.position + Vector2(5, 5), 2, P.BORROWED)
 	var stored: Dictionary = state.get("stored", {})
-	if not stored.is_empty() and not stored.get("target", []).is_empty():
-		var center := cell_center(stored.target)
-		draw_line(center - Vector2(10, 10), center + Vector2(10, 10), P.BORROWED, 2)
-		draw_line(center - Vector2(10, -10), center + Vector2(10, -10), P.BORROWED, 2)
 	var effects: Array = preview.get("events", []) if not preview.is_empty() else last_events
+	var stage := "enemy"
+	var effect_positions := {"player": state.player.pos}
+	var death_cells: Array = []
+	for enemy in state.enemies: effect_positions[enemy.id] = enemy.pos
 	for event in effects:
-		if event.type == "ray":
-			var color := P.BORROWED if event.actor == "player" else P.DANGER
+		if event.type in ["release", "backlash"]: stage = event.type
+		if event.type in ["ray", "area"]:
+			var color := P.BORROWED if event.actor == "player" and stage == "release" else P.DANGER
 			for cell in event.cells:
 				draw_rect(_cell_rect(cell).grow(-7), color, false, 2)
-			if event.actor == "player" and not event.cells.is_empty():
+			if event.type == "ray" and event.actor == "player" and stage == "release" and not event.cells.is_empty():
 				_arrow(cell_center(state.player.pos), cell_center(event.cells.back()), P.BORROWED, false)
 		if event.type == "move" or event.type == "displace":
 			_arrow(cell_center(event.from), cell_center(event.to), P.BORROWED, false)
+			effect_positions[event.actor] = event.to
+		if event.type == "death" and effect_positions.has(event.actor): death_cells.append(effect_positions[event.actor])
 	for enemy in state.enemies:
 		var pawn := Rect2(cell_center(enemy.pos) - Vector2.ONE * cell_size * 0.23, Vector2.ONE * cell_size * 0.46)
 		draw_rect(pawn, P.INK)
@@ -187,6 +196,10 @@ func _draw() -> void:
 			for current in state.enemies:
 				if current.id == enemy.id and current.pos != enemy.pos:
 					draw_rect(_cell_rect(enemy.pos).grow(-cell_size * 0.23), P.BORROWED, false, 2)
+		for cell in death_cells:
+			var center := cell_center(cell)
+			draw_line(center - Vector2(12, 12), center + Vector2(12, 12), P.DANGER, 3)
+			draw_line(center - Vector2(12, -12), center + Vector2(12, -12), P.DANGER, 3)
 	for cell in [hover_cell, selected]:
 		if not cell.is_empty(): draw_rect(_cell_rect(cell).grow(-2), P.BORROWED, false, 2)
 	if has_focus():

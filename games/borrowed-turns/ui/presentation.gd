@@ -1,5 +1,5 @@
 extends RefCounted
-## Pure display formatting. Legality, affected geometry and outcomes belong to the model.
+## Display formatting only. Geometry, budgets and consequences belong to the model.
 
 const INK := Color("202e2b")
 const SECONDARY := Color("4a5d56")
@@ -11,74 +11,83 @@ const BORROWED := Color("00675f")
 const EXIT := Color("7a5d00")
 const WALL := Color("63756b")
 
-const NAMES := {
-	"V1": "Action cost", "V2": "Adjacent capture", "V3": "Two-action expiry",
-	"V4": "Source linked", "V5": "Delayed backlash", "V6": "Fixed target",
-}
-const RULES := {
-	"V1": "Capture uses your action. One stored plan; no expiry. Discard uses an action.",
-	"V2": "Capture beside the source, with an optional one-cell approach. Both happen in one action.",
-	"V3": "Release by the second action after capture, or the stored plan expires harmlessly.",
-	"V4": "The stored plan is lost if its source dies before release. Keep the source in view.",
-	"V5": "Capture is free once per turn. Release by the second action after capture, or take 1 damage. Discard also deals 1 damage.",
-	"V6": "Choose the release cell when you capture. It stays fixed, even after you move.",
-}
-
 static func cell(pos: Array) -> String:
-	if pos.size() != 2:
-		return "none"
-	return "(%d, %d)" % [pos[0], pos[1]]
+	return "(%d, %d)" % [pos[0], pos[1]] if pos.size() == 2 else "none"
 
 static func actor(id: String) -> String:
 	return "You" if id == "player" else id.to_upper()
+
+static func geometry(ability: Dictionary) -> String:
+	return "Area radius %d" % ability.radius if ability.kind == "burst" else "Line"
+
+static func ability_text(ability: Dictionary) -> String:
+	return "%s · %d damage\nRange %d · %s%s" % [str(ability.kind).capitalize(), ability.damage, ability.range, geometry(ability), " · Push" if ability.push else ""]
 
 static func event_text(event: Dictionary) -> String:
 	var who := actor(str(event.get("actor", "")))
 	var source := str(event.get("source", "")).to_upper()
 	match event.get("type", ""):
 		"move": return "%s moved to %s." % [who, cell(event.to)]
-		"capture": return "%s's %s captured; this attack canceled." % [source, event.kind]
-		"release":
-			var effect := "pull" if event.get("invert", false) else str(event.kind)
-			return "Released %s toward %s." % [effect, cell(event.target)]
-		"discard": return "Discarded %s's stored plan." % source
-		"ray": return "%s resolved %s across %d cells." % [who, event.kind, event.cells.size()]
+		"capture": return "Acquired %s from %s; this attack canceled." % [event.kind, source]
+		"capture_failed":
+			return "Capture failed: %s %s. Slot ends empty." % [source, "died" if event.reason == "source_dead" else "moved out of reach"]
+		"release": return "Released %s toward %s." % ["pull" if event.get("invert", false) else str(event.kind), cell(event.target)]
+		"backlash": return "Backlash · %s from %s discharges where you stand." % [str(event.kind).capitalize(), source]
+		"ray", "area": return "%s · %s footprint: %d cells." % [who, event.type, event.cells.size()]
 		"damage": return "%s took %d damage; %d HP left." % [who, event.amount, event.hp]
 		"displace": return "%s displaced to %s." % [who, cell(event.to)]
 		"death": return "%s fell." % who
-		"slot_lost":
-			return "Stored plan lost: source %s died." % source if event.reason == "source_dead" else "Stored plan expired."
-		"backlash": return "%s backlash: %d direct damage; no displacement." % [event.kind.capitalize(), event.amount]
-		"turn": return "Turn %d · Fresh enemy intentions." % event.number
+		"turn": return "Turn %d · AP and MP refreshed; fresh intentions." % event.number
 		"win": return "Escaped through the open exit."
 		"loss": return "Caught. Your health reached zero."
 	return str(event.get("type", ""))
 
-static func stored_text(state: Dictionary) -> String:
-	var stored: Dictionary = state.get("stored", {})
-	if stored.is_empty():
-		return "Empty\nCapture an announced plan to hold it here."
-	var lines: Array[String] = ["%s · Source %s" % [str(stored.kind).capitalize(), str(stored.source).to_upper()]]
-	lines.append("Bolt: 1 damage." if stored.kind == "bolt" else "Shove: 1 damage, then push one cell.")
-	match state.variant:
-		"V3":
-			var count := maxi(0, 2 - int(stored.actions_elapsed))
-			lines.append("%d %s left before expiry." % [count, "action" if count == 1 else "actions"])
-		"V5":
-			var count := maxi(0, 2 - int(stored.actions_elapsed))
-			lines.append("%d %s left before 1 damage backlash.\nDiscard: 1 damage now." % [count, "action" if count == 1 else "actions"])
-		"V4": lines.append("Linked to source %s's survival." % str(stored.source).to_upper())
-		"V6": lines.append("Fixed release cell: %s." % cell(stored.target))
-		_: lines.append("No expiry. Discard uses your action.")
-	if stored.captured_turn == state.turn:
-		lines.append("Release available on a later turn, not this turn.")
+static func preview_text(predicted: Dictionary) -> String:
+	if predicted.is_empty(): return "Choose a legal command to inspect its exact ordered effects. Previewing never advances play."
+	var lines: Array[String] = ["Command preview · exact order"]
+	for event in predicted.events: lines.append(event_text(event))
 	return "\n".join(lines)
+
+static func deadline(state: Dictionary) -> String:
+	if state.stored.is_empty(): return "Move and act in any order. End turn when ready."
+	var due: int = state.stored.deadline_turn
+	return "Release before ending turn %d%s" % [due, " · Backlash when you End turn" if state.turn >= due else ""]
+
+static func stored_text(state: Dictionary) -> String:
+	if state.stored.is_empty(): return "Empty\nCapture a nearby announced ability. Release can happen this turn."
+	var stored: Dictionary = state.stored
+	var ability: Dictionary = stored.ability
+	var effect := "Area centered on you" if ability.kind == "burst" else "You + the stored source-direction line"
+	return "%s · %d damage · Source %s\n%s\nBacklash here: %s; %d damage%s.\nRelease avoids you; backlash does not." % [
+		str(ability.kind).capitalize(), ability.damage, str(stored.source).to_upper(), ability_text(ability).get_slice("\n", 1), effect, ability.damage,
+		", pushes surviving enemies" if ability.push else "",
+	]
+
+static func command_summary(current: Dictionary, predicted: Dictionary, action: Dictionary) -> String:
+	var kind: String = action.type
+	var cost: String = {"move": "Move · 1 MP", "capture": "Capture · free", "release": "Release · 1 AP", "end_turn": "End turn"}[kind]
+	var end := "%d AP · %d MP · %d HP · %s" % [predicted.action_points, predicted.movement_points, predicted.player.hp, cell(predicted.player.pos)]
+	if kind == "end_turn": cost += " · Leaving %d AP / %d MP" % [current.action_points, current.movement_points]
+	var outcomes: Array[String] = []
+	if predicted.status == "lost":
+		outcomes.append("This discharge kills you. No new ability is acquired." if kind == "capture" else "This command kills you.")
+	elif predicted.status == "won": outcomes.append("You escape.")
+	else:
+		for event in predicted.events:
+			if event.type == "capture_failed": outcomes.append(event_text(event))
+		if kind == "capture" and not current.stored.is_empty() and not predicted.stored.is_empty():
+			var hits: Array[String] = []
+			for event in predicted.events:
+				if event.type == "damage": hits.append("%s -%d HP" % [actor(event.actor), event.amount])
+			outcomes.append("%s; acquired %s." % [", ".join(hits), predicted.stored.ability.kind])
+		if kind == "end_turn" and not current.stored.is_empty() and current.turn >= current.stored.deadline_turn:
+			outcomes.append("Held %s discharges before enemies." % current.stored.ability.kind)
+	return "%s → %s\n%s" % [cost, end, " ".join(outcomes) if not outcomes.is_empty() else "Exact effects: Preview tab. The live board has not changed."]
 
 static func make_theme() -> Theme:
 	var theme := Theme.new()
 	theme.default_font_size = 16
-	for type in ["Label", "Button", "CheckButton", "RichTextLabel"]:
-		theme.set_color("font_color", type, INK)
+	for type in ["Label", "Button", "CheckButton", "RichTextLabel"]: theme.set_color("font_color", type, INK)
 	for state in ["normal", "hover", "pressed", "disabled", "focus"]:
 		var box := StyleBoxFlat.new()
 		box.bg_color = FLOOR
@@ -97,8 +106,6 @@ static func make_theme() -> Theme:
 	theme.set_color("font_pressed_color", "Button", FLOOR)
 	theme.set_color("font_focus_color", "Button", INK)
 	theme.set_color("font_disabled_color", "Button", SECONDARY)
-	theme.set_constant("separation", "VBoxContainer", 8)
-	theme.set_constant("separation", "HBoxContainer", 10)
 	var surface := StyleBoxFlat.new()
 	surface.bg_color = FLOOR
 	surface.set_content_margin_all(8)
@@ -113,6 +120,5 @@ static func make_theme() -> Theme:
 			tab.border_color = INK
 			tab.set_border_width_all(2)
 		theme.set_stylebox(tab_state, "TabContainer", tab)
-	for color in ["font_selected_color", "font_unselected_color", "font_hovered_color", "font_focus_color"]:
-		theme.set_color(color, "TabContainer", INK)
+	for color in ["font_selected_color", "font_unselected_color", "font_hovered_color", "font_focus_color"]: theme.set_color(color, "TabContainer", INK)
 	return theme
