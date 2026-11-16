@@ -126,3 +126,7 @@ Independent focused tests passed 94/0. The actual-scene fixed-30-fps recording c
 Fresh correctness review, a separate refactoring assessment and lightweight engineering-quality assessment found no material blocker or worthwhile pre-feedback refinement for this disposable study. No profiling claim is made. Normal-game paths and approved stage PNGs are unchanged. Physical input, native resize, HiDPI, general casting and production-art appeal are not established.
 
 The replay instructions require the local temporary cutout pack; a fresh checkout alone cannot supply it. Recording and preparation outputs remain local. The actual clip was presented for Ronald's ownership judgment; technical verification does not supply that answer.
+
+## Human checkpoint
+
+Ronald selected **“Yes, direction is clear”** when asked whether the motion communicates the action being stolen and held well enough to continue, explicitly not as finished animation. This completes the pilot's communication checkpoint. It does not approve production artwork, a general director or further implementation. Leave the temporary study as-is rather than polishing it.
