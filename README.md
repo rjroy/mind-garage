@@ -44,7 +44,7 @@ godot --headless --editor --path games/borrowed-turns --import
 godot --path games/borrowed-turns -- --presentation=stage
 ```
 
-This view combines the approved backdrop and foreground with runtime-sized, perspective-projected paper cells. The grid, tactical marks and targeting share the same map; rules and source artwork are unchanged. The original `paper` default and `plain` view remain available. Existing figures and shove gestures are still provisional, not the proposed elaborate backdrop puppets or a lantern mechanic. See the [stage instructions](games/borrowed-turns/README.md#optional-theatre-stage). In-game visual acceptance remains pending.
+This view combines the approved backdrop and foreground with runtime-sized, perspective-projected paper cells. The grid, tactical marks and targeting share the same map; rules and source artwork are unchanged. Ronald accepted the stage and floor in game at checkpoint `dcbd13e`. The original `paper` default and `plain` view remain available. Existing figures and shove gestures are still provisional, not the proposed elaborate backdrop puppets or a lantern mechanic. See the [stage instructions](games/borrowed-turns/README.md#optional-theatre-stage). Acceptance of those remaining visual elements is separate.
 
 ## Shared foundations
 
