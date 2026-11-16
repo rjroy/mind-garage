@@ -47,6 +47,17 @@ var action_buttons: Dictionary = {}
 var restart_dialog: ConfirmationDialog
 var help_dialog: AcceptDialog
 var paper_switch: CheckButton
+var details_scroll: ScrollContainer
+var stage_held_details: Label
+var _flat_root: Control
+var _stage_root: Control
+var _stage_sheet: PanelContainer
+var _stage_sheet_margin: MarginContainer
+var _stage_title: Label
+var _stage_picker: OptionButton
+var _stage_plans: Button
+var _stage_controls: Button
+var _flat_positions: Array[Dictionary] = []
 
 func _ready() -> void:
 	theme = P.make_theme()
@@ -60,8 +71,8 @@ func _ready() -> void:
 			push_warning("Borrowed Turns: legacy variant selection is unsupported. Running the revised baseline.")
 		elif argument.begins_with("--presentation="):
 			presentation_mode = argument.trim_prefix("--presentation=")
-			if presentation_mode not in ["plain", "paper"]:
-				push_error("Borrowed Turns: presentation must be plain or paper.")
+			if presentation_mode not in ["plain", "paper", "stage"]:
+				push_error("Borrowed Turns: presentation must be plain, paper or stage.")
 				get_tree().quit(2)
 				return
 	_build_interface()
@@ -70,7 +81,7 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	if state.is_empty(): return
 	shadow.advance(delta)
-	if presentation_mode == "paper": board.set_presentation(true, shadow.frame())
+	if presentation_mode != "plain": board.set_presentation(true, shadow.frame())
 	if resolving:
 		baseline_feedback_left = maxf(0, baseline_feedback_left - delta)
 		if baseline_feedback_left <= 0 and (presentation_mode == "plain" or not shadow.frame().busy):
@@ -79,7 +90,7 @@ func _process(delta: float) -> void:
 			board.grab_focus()
 
 func set_presentation_mode(value: String) -> void:
-	if value not in ["plain", "paper"] or value == presentation_mode: return
+	if value not in ["plain", "paper", "stage"] or value == presentation_mode: return
 	presentation_mode = value
 	# A view switch cancels visual work only. Model, target, preview and history stay intact.
 	generation += 1
@@ -88,6 +99,7 @@ func set_presentation_mode(value: String) -> void:
 	resolving = false
 	board.clear_pulse()
 	paper_switch.set_pressed_no_signal(value == "paper")
+	_apply_view_layout()
 	_refresh()
 	print("Borrowed Turns UI: presentation=%s; gameplay unchanged" % value)
 
@@ -122,6 +134,7 @@ func _build_interface() -> void:
 	ground.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(ground)
 	var margin := MarginContainer.new()
+	_flat_root = margin
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	for edge in ["left", "top", "right", "bottom"]: margin.add_theme_constant_override("margin_" + edge, 20)
 	add_child(margin)
@@ -142,6 +155,7 @@ func _build_interface() -> void:
 	paper_switch.set_pressed_no_signal(presentation_mode == "paper")
 	paper_switch.toggled.connect(func(enabled: bool): set_presentation_mode("paper" if enabled else "plain"))
 	economy.add_child(paper_switch)
+	_button(economy, "Stage view", func(): set_presentation_mode("stage"))
 	_button(economy, "Controls", func(): help_dialog.popup_centered(Vector2i(650, 410)))
 	var main := _box(page, false)
 	main.add_theme_constant_override("separation", 20)
@@ -178,7 +192,7 @@ func _build_interface() -> void:
 	cancel_button = _button(confirmation_row, "Cancel", _cancel)
 	rail = _box(main)
 	rail.custom_minimum_size.x = 316
-	var details_scroll := ScrollContainer.new()
+	details_scroll = ScrollContainer.new()
 	details_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	details_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	details_scroll.size_flags_stretch_ratio = 2.5
@@ -189,6 +203,8 @@ func _build_interface() -> void:
 	stored = _label(details, "", 16, true)
 	stored.add_theme_color_override("font_color", P.BORROWED)
 	availability = _label(details, "", 14, true)
+	stage_held_details = _label(details, "", 14, true)
+	stage_held_details.visible = false
 	_label(details, "Enemy intentions · in order", 18)
 	intention_list = VBoxContainer.new()
 	details.add_child(intention_list)
@@ -225,11 +241,150 @@ func _build_interface() -> void:
 	help_dialog.title = "Controls and the capture bargain"
 	help_dialog.dialog_text = "Move and act in any order. AP (action points) and MP (movement points) are independent.\nCapture is free and unlimited across legal sources, even at zero AP/MP.\nRelease uses 1 AP and can happen on the capture turn.\nReplace a held ability or end its deadline turn: it discharges where you stand.\nEnemy plans resolve only when you End turn. There is no automatic turn ending.\n\nChoose an operation, choose its target, inspect, then Confirm.\nM: Move, C: Capture, L: Release, E: prepare End turn.\nTab / Shift+Tab: controls. Arrows on board: inspect.\nEnter selects a cell; a separate Enter confirms. Esc / right click: cancel.\nCtrl+R: restart. Nothing advances during inspection or preview.\n\nY: you; squares: pursuers; EXIT: escape.\nRust hatches/dashed routes: enemy intentions. Double rust border: held backlash here.\nTeal outlines: legal choices. Solid arrows/hollow pawns: exact command preview.\nPreview lists ordered effects; Recent events contains only confirmed commands."
 	add_child(help_dialog)
+	_build_stage_shell()
 	resized.connect(_resize_rail)
+	_apply_view_layout()
 	_resize_rail()
 
 func _resize_rail() -> void:
-	if rail: rail.custom_minimum_size.x = clampf(316 + (size.x - 1024) * 0.18, 316, 360)
+	if presentation_mode == "stage": _layout_stage()
+	elif rail: rail.custom_minimum_size.x = clampf(316 + (size.x - 1024) * 0.18, 316, 360)
+
+func _stage_theme() -> Theme:
+	var result_theme := P.make_theme()
+	result_theme.default_font_size = 14
+	result_theme.set_color("font_color", "Label", Color("f2ddba"))
+	for type in ["Button", "OptionButton"]:
+		for visual_state in ["normal", "hover", "pressed", "disabled", "focus"]:
+			var box := StyleBoxFlat.new()
+			box.set_content_margin_all(6)
+			box.bg_color = Color("ead6b2")
+			box.border_color = Color("ad8575")
+			box.set_border_width_all(1)
+			if visual_state == "hover": box.bg_color = Color("f7e7c9")
+			if visual_state == "pressed": box.bg_color = Color("493144")
+			if visual_state == "disabled": box.bg_color = Color("51414c")
+			if visual_state == "focus":
+				box.bg_color = Color.TRANSPARENT
+				box.border_color = Color("ffdea4")
+				box.set_border_width_all(2)
+			result_theme.set_stylebox(visual_state, type, box)
+		result_theme.set_color("font_color", type, P.INK)
+		result_theme.set_color("font_hover_color", type, P.INK)
+		result_theme.set_color("font_pressed_color", type, Color("f7e7c9"))
+		result_theme.set_color("font_disabled_color", type, Color("c8b7b1"))
+	return result_theme
+
+func _build_stage_shell() -> void:
+	_stage_root = Control.new()
+	_stage_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_stage_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_stage_root.theme = _stage_theme()
+	add_child(_stage_root)
+	var background := ColorRect.new()
+	background.color = Color("241b29")
+	background.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_stage_root.add_child(background)
+	_stage_title = _label(_stage_root, "Borrowed Turns", 18)
+	_stage_picker = OptionButton.new()
+	for text in ["Plain", "Paper pilot", "Stage"]: _stage_picker.add_item(text)
+	_stage_picker.item_selected.connect(func(index: int): set_presentation_mode(["plain", "paper", "stage"][index]))
+	_stage_root.add_child(_stage_picker)
+	_stage_plans = _button(_stage_root, "Plans / events", func():
+		_stage_sheet.visible = not _stage_sheet.visible
+		if _stage_sheet.visible: event_tabs.current_tab = 2
+	)
+	_stage_controls = _button(_stage_root, "Controls", func(): help_dialog.popup_centered(Vector2i(650, 410)))
+	_stage_sheet = PanelContainer.new()
+	_stage_sheet.z_index = 5
+	_stage_sheet.theme = P.make_theme()
+	var sheet_style := StyleBoxFlat.new()
+	sheet_style.bg_color = Color("f3e1c1")
+	sheet_style.border_color = Color("754958")
+	sheet_style.set_border_width_all(2)
+	_stage_sheet.add_theme_stylebox_override("panel", sheet_style)
+	_stage_root.add_child(_stage_sheet)
+	_stage_sheet_margin = MarginContainer.new()
+	for edge in ["left", "top", "right", "bottom"]: _stage_sheet_margin.add_theme_constant_override("margin_" + edge, 7)
+	_stage_sheet.add_child(_stage_sheet_margin)
+	_stage_root.visible = false
+	_stage_sheet.visible = false
+
+func _apply_view_layout() -> void:
+	var stage := presentation_mode == "stage"
+	if stage and _flat_positions.is_empty():
+		var moved: Array = [board, objective, phase, budgets, stored, instruction, consequence, inspection,
+			result, confirm_button, cancel_button, restart_button, rail, details_scroll]
+		moved.append_array(action_buttons.values())
+		# Capture every original parent/index before moving siblings.
+		for node in moved:
+			_flat_positions.append({"node": node, "parent": node.get_parent(), "index": node.get_index(),
+				"minimum": node.custom_minimum_size, "font": node.get_theme_font_size("font_size"), "visible": node.visible})
+		for entry in _flat_positions:
+			var node: Control = entry.node
+			if node == rail: node.reparent(_stage_sheet_margin, false)
+			elif node == details_scroll:
+				node.reparent(event_tabs, false)
+				node.name = "Plans"
+			else: node.reparent(_stage_root, false)
+			node.custom_minimum_size = Vector2.ZERO
+			if node is Label or node is Button: node.add_theme_font_size_override("font_size", 13)
+		event_tabs.custom_minimum_size.y = 0
+		history.custom_minimum_size.y = 0
+	elif not stage and not _flat_positions.is_empty():
+		for entry in _flat_positions:
+			var node: Control = entry.node
+			node.reparent(entry.parent, false)
+			entry.parent.move_child(node, mini(entry.index, entry.parent.get_child_count() - 1))
+			node.custom_minimum_size = entry.minimum
+			# TabContainer hides inactive children; that flag does not belong to the rail.
+			if node == details_scroll: node.visible = entry.visible
+			if node is Label or node is Button: node.add_theme_font_size_override("font_size", entry.font)
+		_flat_positions.clear()
+		event_tabs.custom_minimum_size.y = 150
+		history.custom_minimum_size.y = 120
+	_flat_root.visible = not stage
+	_stage_root.visible = stage
+	stage_held_details.visible = stage
+	_stage_picker.select(["plain", "paper", "stage"].find(presentation_mode))
+	_stage_sheet.visible = stage and not prediction.is_empty()
+	if stage: _layout_stage()
+	else: _resize_rail()
+
+func _place(control: Control, rect: Rect2) -> void:
+	control.position = rect.position
+	control.size = rect.size
+
+func _layout_stage() -> void:
+	if _stage_root == null or presentation_mode != "stage": return
+	var width := maxf(1, size.x - 16)
+	var x := 8.0
+	_place(_stage_title, Rect2(x, 8, 145, 32))
+	_place(objective, Rect2(x + 153, 8, width - 735, 34))
+	_place(phase, Rect2(size.x - 574, 8, 80, 34))
+	_place(_stage_picker, Rect2(size.x - 486, 8, 130, 32))
+	_place(_stage_plans, Rect2(size.x - 348, 8, 116, 32))
+	_place(_stage_controls, Rect2(size.x - 224, 8, 80, 32))
+	_place(restart_button, Rect2(size.x - 136, 8, 128, 32))
+	_place(budgets, Rect2(x, 46, width * 0.49, 36))
+	_place(stored, Rect2(x + width * 0.51, 46, width * 0.49, 36))
+	_place(board, Rect2(x, 86, width, maxf(1, size.y - 206)))
+	var action_y := size.y - 112
+	var action_width := (width - 250) / 4.0
+	var index := 0
+	for action in action_buttons:
+		_place(action_buttons[action], Rect2(x + index * (action_width + 6), action_y, action_width, 36))
+		index += 1
+	_place(confirm_button, Rect2(size.x - 234, action_y, 140, 36))
+	_place(cancel_button, Rect2(size.x - 88, action_y, 80, 36))
+	_place(instruction, Rect2(x, action_y + 42, width * 0.38, 44))
+	_place(consequence, Rect2(x + width * 0.40, action_y + 42, width * 0.60, 44))
+	_place(inspection, Rect2(x, size.y - 23, width, 18))
+	_place(result, Rect2(x, action_y + 44, width, 42))
+	var stage_rect: Rect2 = board._stage_rect()
+	_place(_stage_sheet, Rect2(board.position + stage_rect.position + stage_rect.size * Vector2(0.17, 0.12),
+		stage_rect.size * Vector2(0.66, 0.26)))
 
 func _start_encounter() -> void:
 	generation += 1
@@ -270,13 +425,23 @@ func _clear_selection() -> void:
 	confirm_button.disabled = true
 	confirm_button.text = "Confirm"
 	event_tabs.current_tab = 0
+	if _stage_sheet: _stage_sheet.visible = false
 
 func _refresh() -> void:
 	objective.text = "%d HP · Exit %s\nReach %s%s" % [state.player.hp, "open" if state.turn >= state.exit.opens else "opens turn %d" % state.exit.opens, P.cell(state.exit.pos), "" if state.turn >= state.exit.opens else " when open"]
 	var terminal: bool = state.status != "playing"
 	phase.text = "Turn %d\n%s" % [state.turn, "Escaped" if state.status == "won" else ("Caught" if terminal else ("Resolving" if resolving else "Your turn"))]
 	budgets.text = "AP %d / %d · MP %d / %d · Capture: free · Reach %d\n%s" % [state.action_points, state.rules.actions, state.movement_points, state.rules.movement, state.rules.capture_range, P.deadline(state)]
+	stage_held_details.text = P.stored_text(state)
 	stored.text = P.stored_text(state)
+	stored.add_theme_color_override("font_color", Color("ade4d1") if presentation_mode == "stage" else P.BORROWED)
+	if presentation_mode == "stage":
+		if state.stored.is_empty(): stored.text = "Held: empty\nCapture an announced action; release uses 1 AP."
+		else:
+			var held: Dictionary = state.stored
+			stored.text = "Held: %s · %s · %d damage · range %d\nBacklash: %d damage here%s · deadline turn %d" % [
+				str(held.ability.kind).capitalize(), str(held.source).to_upper(), held.ability.damage,
+				held.ability.range, held.ability.damage, ", pushes" if held.ability.push else "", held.deadline_turn]
 	var info: Array[String] = ["AP: action points · MP: movement points"]
 	if state.action_points == 0: info.append("No AP: move/capture can still be available.")
 	if state.movement_points == 0: info.append("No MP: capture/release can still be available.")
@@ -294,12 +459,23 @@ func _refresh() -> void:
 	instruction.visible = not terminal
 	consequence.visible = not terminal
 	confirmation_row.visible = not terminal
+	confirm_button.visible = not terminal
+	cancel_button.visible = not terminal
 	restart_button.text = "Replay encounter" if terminal else "Restart"
 	if terminal or resolving: confirm_button.disabled = true
 	preview_details.text = P.preview_text(prediction)
+	if not prediction.is_empty():
+		var danger: bool = prediction.player.hp < state.player.hp or prediction.status == "lost"
+		consequence.add_theme_color_override("font_color", (Color("ffc09a") if danger else Color("ade4d1")) if presentation_mode == "stage" else (P.DANGER if danger else P.BORROWED))
+		if presentation_mode == "stage": _stage_sheet.visible = true
+	else:
+		var invalid := not command.is_empty()
+		consequence.add_theme_color_override("font_color",
+			(Color("ffc09a") if invalid else Color("e3c8af")) if presentation_mode == "stage" else (P.DANGER if invalid else P.SECONDARY))
 	_refresh_intentions()
 	_inspect_cell(selected if not selected.is_empty() else board.cursor)
 	_update_board()
+	if presentation_mode == "stage": _layout_stage()
 
 func _refresh_intentions() -> void:
 	for child in intention_list.get_children():
@@ -327,7 +503,8 @@ func _inspect_cell(cell: Array) -> void:
 
 func _update_board() -> void:
 	board.set_view(state, prediction, candidates, selected, source)
-	board.set_presentation(presentation_mode == "paper", shadow.frame())
+	board.set_stage_mode(presentation_mode == "stage")
+	board.set_presentation(presentation_mode != "plain", shadow.frame())
 
 func _choose_action(action: String) -> void:
 	if resolving or state.status != "playing": return

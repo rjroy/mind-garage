@@ -4,21 +4,24 @@ One small turn-based escape encounter built around stealing announced enemy abil
 
 ## Run
 
-Requires the installed Godot 4.7.2 executable. No packages, external services, downloaded fonts, generated assets, telemetry or persistent saves.
+Requires the installed Godot 4.7.2 executable. No packages, external services, downloaded fonts, telemetry or persistent saves. The optional stage uses three approved source images.
 
 From the repository root:
 
 ```bash
+# Import source textures once after a fresh checkout, or open the Godot editor.
+godot --headless --editor --path games/borrowed-turns --import
 godot --path games/borrowed-turns
 godot --path games/borrowed-turns -- --presentation=plain
 godot --path games/borrowed-turns -- --presentation=paper
+godot --path games/borrowed-turns -- --presentation=stage
 ```
 
 The normal game opens directly into one baseline, identified internally as `R2`. The original V1–V6 chooser, variant launch modes, discard and wait are removed. The original build at `fd8e91d` and its archive/evidence remain historical records; the working game does not embed a parallel legacy engine.
 
 The former Invert preview is not part of the current core rules; the retired `--invert` option is rejected. There is no progression gate.
 
-The default candidate view is **paper**: a reversible one-shove presentation pilot, not accepted production art. **Paper pilot** switches between that view and the plain renderer without resetting the encounter, spending points, changing a selected command or replaying history. A view switch cancels only in-flight visual feedback and restores settled ownership facts. The immutable comparison baseline remains `ba3ab7a`; both current view modes use the same model and fixture. Unknown presentation values are rejected.
+The default candidate view is **paper**: a reversible one-shove presentation pilot, not accepted production art. **Paper pilot** switches between that view and the plain renderer. **Stage view** opens the optional theatre; its view selector returns to either baseline. Switching does not reset the encounter, spend points, change a selected command or replay history. It cancels only in-flight visual feedback and restores settled ownership facts. The immutable comparison baseline remains `ba3ab7a`; all views use the same model and fixture. Unknown presentation values are rejected.
 
 Requested window: 1280 × 800; minimum 1024 × 720. Native Controls follow actual viewport dimensions without globally shrinking fonts. A tiling compositor may refuse requested native dimensions. Phone/portrait/gamepad support is out of scope.
 
@@ -32,7 +35,7 @@ Reach the exit when it is open. Killing every pursuer is not required.
 - A newly captured ability can be released this turn, within that ability's own range/shape.
 - **End turn** explicitly resolves due backlash and surviving uncanceled enemy plans, then refreshes AP/MP and announcements. Budgets reaching zero never auto-end the turn. Free capture can still be available at zero AP and MP.
 
-Choose **Move**, **Capture**, **Release** or **End turn**, then choose a source/target if needed. Inspect the predicted board overlay and summary; the right rail's **Preview** tab lists exact ordered effects. A separate **Confirm** commits. **Cancel** or right click backs out without changing the model. End turn also previews and requires confirmation, even if no points remain. **Recent events** contains committed events only and remains one tab away.
+Choose **Move**, **Capture**, **Release** or **End turn**, then choose a source/target if needed. Inspect the predicted board overlay and summary; **Preview** lists exact ordered effects in the right rail, or an upper-stage sheet in stage view. A separate **Confirm** commits. **Cancel** or right click backs out without changing the model. End turn also previews and requires confirmation, even if no points remain. **Recent events** contains committed events only and remains one tab away.
 
 Keyboard: Tab / Shift+Tab traverses controls; Space / Enter activates. M selects Move, C Capture, L Release, E prepares End turn. With board focus, arrows inspect and Enter selects a cell; a separate Enter confirms. Esc cancels, Ctrl+R requests restart. Controls help does not advance play.
 
@@ -63,6 +66,25 @@ Capture removes only that turn's announced gesture. A source that can announce n
 All finite shadow cues are event-driven and complete independently of persistent idle/held loops. Gameplay input waits for finite feedback, not for an arbitrary scene sleep or an endlessly looping animation. Restart and view changes cancel old visual work. The model commits once on confirmation; animation never decides gameplay results. Backlash/release/transfer duration is part of this bundled presentation experiment, not evidence isolating one visual cause.
 
 FY3 remains **open pending Ronald's visual reaction**, and the next mechanics step remains blocked. Passing technical checks or an agent's visual review is not final style acceptance.
+
+## Optional theatre stage
+
+The approved backdrop, paper floor and transparent foreground are composed in Godot 2D without changing their source pixels. The theatre receives the main viewport width rather than the old board column. Status and action strips remain visible; **Plans / events** opens the upper-screen details sheet. Legal command previews open that sheet automatically. Long ordered previews, plans and history scroll within it, not over the playable floor.
+
+The grid follows the model's runtime width and height, not an image's painted cell count. Stable crops, quarter-turns, subtle color variation and seams make cells read as separate paper pieces. The floor shader, board marks, actor feet and mouse targeting share one perspective map. This slice does not add a player-facing grid-size setting. On the dark floor, threats use light coral and legal choices use pale mint; their meaning is unchanged.
+
+The floor starts higher than the concept study to give rows more usable depth at 1024 × 720. That trades some future puppet-screen space for targeting space. Existing figures and shove feedback are still limited placeholders; this is not the elaborate backdrop-puppet performance or a lantern mechanic. Source-art approval does not establish in-game visual acceptance. Minimum-size legibility, overlap and interaction still require Ronald's review.
+
+Focused stage checks and actual rendered captures:
+
+```bash
+godot --headless --path games/borrowed-turns --script res://tests/stage_projection_run.gd
+godot --headless --path games/borrowed-turns --script res://ui/smoke.gd -- --focus=stage
+godot --path games/borrowed-turns --script res://ui/smoke.gd -- \
+  --focus=stage --capture-dir=/tmp/opencode/borrowed-turns-stage-inspection
+```
+
+Captures named `stage-*-encounter.png` use the actual encounter. `stage-*-shove-preview.png` and `stage-*-shove-held.png` use controlled fixtures. These focused checks do not replace the full rendered completion gate or independent review.
 
 ## Provisional production content
 

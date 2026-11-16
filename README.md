@@ -37,6 +37,15 @@ The in-game presentation toggle also preserves the current encounter. This is a 
 
 `mind-garage-fy3` remains open for Ronald's reaction and the next visual decision. The later short-run/progression discussion, `mind-garage-7am`, remains blocked on it. Technical checks do not replace either decision.
 
+Following that review, Ronald approved three actual stage source images and authorized their integration into an optional theatre view:
+
+```bash
+godot --headless --editor --path games/borrowed-turns --import
+godot --path games/borrowed-turns -- --presentation=stage
+```
+
+This view combines the approved backdrop and foreground with runtime-sized, perspective-projected paper cells. The grid, tactical marks and targeting share the same map; rules and source artwork are unchanged. The original `paper` default and `plain` view remain available. Existing figures and shove gestures are still provisional, not the proposed elaborate backdrop puppets or a lantern mechanic. See the [stage instructions](games/borrowed-turns/README.md#optional-theatre-stage). In-game visual acceptance remains pending.
+
 ## Shared foundations
 
 All experiments start from the notes in [`.lore/work/notes/`](.lore/work/notes/):

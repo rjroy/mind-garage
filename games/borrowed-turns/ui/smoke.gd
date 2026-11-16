@@ -3,6 +3,7 @@ extends SceneTree
 
 const F = preload("res://ui/smoke_fixtures.gd")
 const P = preload("res://ui/presentation.gd")
+const Production = preload("res://content/escape.gd")
 var game: Control
 var checks := 0
 var failures := 0
@@ -242,13 +243,15 @@ func _test_normal_shove() -> void:
 func _test_shadow_integration() -> void:
 	var reference: Array = []
 	var reference_history: Array[String] = []
-	for view in ["plain", "paper"]:
+	for view in ["plain", "paper", "stage"]:
 		game.set_presentation_mode(view)
+		check(game.presentation_mode == view, "explicit presentation selection accepts " + view)
 		await load_fixture(F.shadow_single())
 		var observed: Array = []
 		for step in [["capture", [2, 3]], ["end_turn", []], ["release", [2, 3]]]:
 			select(step[0], step[1])
 			observed.append(game.prediction.duplicate(true))
+			observed.append(game.board.effect_footprints().duplicate(true))
 			await commit()
 			observed.append(game.state.duplicate(true))
 			if step[0] == "end_turn":
@@ -258,7 +261,7 @@ func _test_shadow_integration() -> void:
 			reference = observed
 			reference_history = game.history_lines.duplicate()
 		else:
-			check(observed == reference and game.history_lines == reference_history, "plain/paper actual controls yield identical assessments, model state, events and history")
+			check(observed == reference and game.history_lines == reference_history, view + ": actual controls yield baseline-identical assessments, model state, events and history")
 	game.set_presentation_mode("paper")
 	await load_fixture(F.shadow_single())
 	var before: Dictionary = game.model.snapshot()
@@ -319,6 +322,186 @@ func _test_shadow_integration() -> void:
 		await image("fy3-1024-held-source-dead.png")
 		capture_view.size = Vector2i(1280, 800)
 
+func _stage_setup() -> bool:
+	for method in ["set_stage_mode", "cell_polygon", "piece_appearance", "figure_layout"]:
+		if not game.board.has_method(method):
+			printerr("SETUP REQUIRED: loadable shared stage board seams before RED; missing " + method + ". See tests/stage_projection_run.gd and stage integration brief.")
+			return false
+	return true
+
+func _stage_resize(viewport_size: Vector2i) -> void:
+	if capture_view: capture_view.size = viewport_size
+	else: root.size = viewport_size
+	await process_frame
+	await process_frame
+
+func _stage_gui_click(local_point: Vector2) -> void:
+	# Through the actual viewport GUI path, so decorative layers cannot silently
+	# eat clicks. This is still injected input, not physical OS input evidence.
+	var event := InputEventMouseButton.new()
+	event.button_index = MOUSE_BUTTON_LEFT
+	event.pressed = true
+	event.position = game.board.get_global_transform() * local_point
+	game.get_viewport().push_input(event)
+	await process_frame
+	event = InputEventMouseButton.new()
+	event.button_index = MOUSE_BUTTON_LEFT
+	event.pressed = false
+	event.position = game.board.get_global_transform() * local_point
+	game.get_viewport().push_input(event)
+	await process_frame
+
+func _stage_controls_fit(label: String) -> void:
+	var viewport_rect := Rect2(Vector2.ZERO, Vector2(game.get_viewport_rect().size))
+	check(game.board.size.x > game.size.x * 0.8, label + ": theatre gets full-width allocation, not the legacy board column")
+	for control in [game.budgets, game.stored, game.phase, game.objective, game.instruction, game.consequence]:
+		check(control.is_visible_in_tree(), label + ": persistent tactical information stays visible: " + str(control.name))
+		var bounds: Rect2 = control.get_global_rect()
+		check(viewport_rect.encloses(bounds) and bounds.size.x > 0 and bounds.size.y > 0, label + ": tactical information is within the viewport")
+	for action in game.action_buttons:
+		var bounds: Rect2 = game.action_buttons[action].get_global_rect()
+		check(game.action_buttons[action].is_visible_in_tree() and viewport_rect.encloses(bounds), label + ": operation remains visible and in bounds: " + action)
+
+func _test_stage_return_panels() -> void:
+	# STAGE-C01: leaving a TabContainer must restore the rail's actual controls,
+	# not retain the inactive Plans tab's hidden flag. Active Plans is a distinct
+	# control case. Held storage plus a fresh announcement exercises both panels.
+	await _stage_resize(Vector2i(1024, 720))
+	game.set_presentation_mode("paper")
+	await load_fixture(F.shadow_single())
+	await capture([2, 3])
+	select("end_turn")
+	await commit()
+	check(not game.state.stored.is_empty() and game.state.intentions.size() == 1,
+		"STAGE-C01 fixture has held details and a fresh enemy intention")
+	for baseline in ["plain", "paper"]:
+		for panel in ["preview", "events", "plans"]:
+			game.set_presentation_mode("stage")
+			press(game._stage_plans)
+			var tab: Control = game.preview_details if panel == "preview" else (game.history.get_parent() if panel == "events" else game.details_scroll)
+			var tab_index: int = game.event_tabs.get_tab_idx_from_control(tab)
+			check(tab_index >= 0, "STAGE-C01 requested stage tab exists: " + panel)
+			if tab_index < 0: continue
+			game.event_tabs.current_tab = tab_index
+			await process_frame
+			await process_frame
+			check(game.details_scroll.is_visible_in_tree() == (panel == "plans"),
+				"STAGE-C01 tab visibility precondition: " + panel)
+			var before: Dictionary = game.model.snapshot()
+			var history_before: Array[String] = game.history_lines.duplicate()
+			game.set_presentation_mode(baseline)
+			await process_frame
+			await process_frame
+			var label: String = "STAGE-C01 stage/" + panel + " -> " + baseline
+			var viewport_bounds: Rect2 = game.get_viewport_rect()
+			var rail_bounds: Rect2 = game.rail.get_global_rect()
+			var details_bounds: Rect2 = game.details_scroll.get_global_rect()
+			check(game.details_scroll.get_parent() == game.rail and game.details_scroll.is_visible_in_tree(),
+				label + ": details return as a visible rail panel, not a hidden tab")
+			check(details_bounds.size.x > 0 and details_bounds.size.y > 0 and rail_bounds.encloses(details_bounds) and viewport_bounds.encloses(details_bounds),
+				label + ": restored details have nonzero in-viewport rail allocation")
+			check(game.stored.is_visible_in_tree() and game.stored.text == P.stored_text(before),
+				label + ": complete held-ability details are visible, not the compact stage summary")
+			check(game.intention_list.is_visible_in_tree(), label + ": enemy intention controls return visibly")
+			game.details_scroll.ensure_control_visible(game.stored)
+			await process_frame
+			await process_frame
+			var stored_bounds: Rect2 = game.stored.get_global_rect()
+			var line_height: float = game.stored.get_theme_font("font").get_height(game.stored.get_theme_font_size("font_size"))
+			check(stored_bounds.size.x > 0 and details_bounds.intersection(stored_bounds).size.y >= line_height,
+				label + ": stored text occupies readable space inside the scroll viewport")
+			var plan_button: Button
+			for child in game.intention_list.get_children():
+				if child is Button:
+					plan_button = child
+					break
+			check(plan_button != null, label + ": fresh model intention has a real source control")
+			if plan_button == null: continue
+			game.details_scroll.ensure_control_visible(plan_button)
+			await process_frame
+			await process_frame
+			var button_bounds := plan_button.get_global_rect()
+			check(plan_button.is_visible_in_tree() and details_bounds.encloses(button_bounds) and viewport_bounds.encloses(button_bounds)
+				and button_bounds.size.y >= plan_button.get_combined_minimum_size().y,
+				label + ": intention row can be scrolled fully into usable viewport space")
+			press(plan_button)
+			check(game.source == "a" and game.selected == [2, 3],
+				label + ": restored intention control selects its actual source")
+			check(game.model.snapshot() == before and game.history_lines == history_before,
+				label + ": restoring and using panels does not advance gameplay or rewrite history")
+
+func _test_stage_integration() -> void:
+	game.set_presentation_mode("stage")
+	check(game.presentation_mode == "stage", "optional stage presentation is selectable")
+	if game.presentation_mode != "stage": return
+	for viewport_size in [Vector2i(1024, 720), Vector2i(1600, 900)]:
+		await _stage_resize(viewport_size)
+		for dimensions in [Vector2i(4, 3), Vector2i(9, 5)]:
+			var data := F.encounter([F.enemy("a", [2, 1], F.ability("shove", 1, 3, 0, true), 12, [-1, 0])])
+			data.width = dimensions.x
+			data.height = dimensions.y
+			data.player.pos = [1, 1]
+			data.exit.pos = [dimensions.x - 1, dimensions.y - 1]
+			await load_fixture(data)
+			var before: Dictionary = game.model.snapshot()
+			_stage_controls_fit("stage %s / %s" % [viewport_size, dimensions])
+			for cell in [[0, 0], [dimensions.x - 1, 0], [0, dimensions.y - 1], [dimensions.x - 1, dimensions.y - 1]]:
+				var center: Vector2 = game.board.cell_center(cell)
+				await _stage_gui_click(center)
+				check(game.selected == cell and game.model.snapshot() == before, "actual viewport targeting reaches every corner without spending a turn")
+			var selected_before: Array = game.selected.duplicate()
+			await _stage_gui_click(Vector2(1, 1))
+			check(game.selected == selected_before and game.model.snapshot() == before, "decorative stage background does not select a board cell")
+			press(game.action_buttons.capture)
+			await _stage_gui_click(game.board.cell_center([2, 1]))
+			check(game.command == {"type": "capture", "source": "a"} and not game.confirm_button.disabled, "stage click selects the real capture source")
+			check(preview_matches() and game.preview_details.is_visible_in_tree(), "ordered preview stays accessible and visible before commitment")
+			for control in [game.preview_details, game.confirm_button, game.cancel_button]:
+				check(control.is_visible_in_tree() and game.get_viewport_rect().encloses(control.get_global_rect()),
+					"stage preview/confirmation remains within the actual viewport")
+			var selected_command: Dictionary = game.command.duplicate(true)
+			var selected_prediction: Dictionary = game.prediction.duplicate(true)
+			var paper_piece: Dictionary = game.board.piece_appearance([1, 1])
+			await _stage_resize(Vector2i(1280, 800))
+			check(game.command == selected_command and game.prediction == selected_prediction and game.model.snapshot() == before, "resize preserves target, preview and authoritative state")
+			check(game.board._from_pixel(game.board.cell_center([2, 1])) == [2, 1], "resized stage shares drawing/target mapping")
+			check(game.board.piece_appearance([1, 1]) == paper_piece, "resizing leaves stable cell paper unchanged")
+			press(game.confirm_button)
+			check(game.resolving, "stage command starts existing finite feedback")
+			check(game.board.piece_appearance([1, 1]) == paper_piece, "capture outcomes do not change the paper field")
+			var committed: Dictionary = game.model.snapshot()
+			var committed_history: Array[String] = game.history_lines.duplicate()
+			game.set_presentation_mode("plain")
+			check(not game.resolving and not game.shadow.frame().busy, "leaving stage during feedback cancels stale visual work")
+			check(game.model.snapshot() == committed and game.history_lines == committed_history, "leaving stage preserves committed outcomes and history")
+			game.set_presentation_mode("stage")
+			check(game.shadow.frame().held == committed.stored and game.shadow.frame().cues.is_empty(), "returning to stage restores ownership without replay")
+			select("end_turn")
+			press(game.confirm_button)
+			check(game.resolving and game.board.piece_appearance([1, 1]) == paper_piece, "new-turn feedback preserves the same visual paper seed")
+			var old_generation: int = game.generation
+			game._apply_restart()
+			await settle()
+			check(game.generation > old_generation and game.state == before and game.shadow.frame().held.is_empty() and not game.shadow.frame().busy, "stage restart during feedback removes old held state and stale work")
+			check(game.board.piece_appearance([1, 1]) == paper_piece, "restart does not reshuffle the same visual field")
+			await _stage_resize(viewport_size)
+	# Actual unchanged encounter and separately labeled controlled shove captures.
+	# Production data is used only at this integration boundary, never as unit
+	# expectations. Do not invent readability from pixel positions.
+	for viewport_size in [Vector2i(1024, 720), Vector2i(1600, 900)]:
+		await _stage_resize(viewport_size)
+		await load_fixture(Production.DATA)
+		_stage_controls_fit("actual encounter " + str(viewport_size))
+		await image("stage-%d-encounter.png" % viewport_size.x)
+		await load_fixture(F.shadow_single())
+		select("capture", [2, 3])
+		await image("stage-%d-shove-preview.png" % viewport_size.x)
+		await commit()
+		await image("stage-%d-shove-held.png" % viewport_size.x)
+	await _test_stage_return_panels()
+	game.set_presentation_mode("paper")
+	await _stage_resize(Vector2i(1280, 800))
+
 func _run() -> void:
 	game = load("res://scenes/encounter.tscn").instantiate()
 	if capture_dir.is_empty(): root.add_child(game)
@@ -348,6 +531,18 @@ func _run() -> void:
 		await process_frame
 		quit(1 if failures else 0)
 		return
+	if not _stage_setup():
+		game.queue_free()
+		await process_frame
+		quit(2)
+		return
+	if OS.get_cmdline_user_args().has("--focus=stage"):
+		await _test_stage_integration()
+		print("R2 UI smoke: %d checks, %d failures. Injected GUI events, not physical OS input." % [checks, failures])
+		game.queue_free()
+		await process_frame
+		quit(1 if failures else 0)
+		return
 	if capture_view:
 		for size in [Vector2i(1280, 800), Vector2i(1024, 720), Vector2i(1600, 900)]:
 			capture_view.size = size
@@ -359,6 +554,7 @@ func _run() -> void:
 	await _test_ability_ranges()
 	await _test_normal_shove()
 	await _test_shadow_integration()
+	await _test_stage_integration()
 	# Board Enter selects without committing; the next explicit confirmation acts.
 	await load_fixture(F.encounter([]))
 	var before_keyboard: Dictionary = game.model.snapshot()
