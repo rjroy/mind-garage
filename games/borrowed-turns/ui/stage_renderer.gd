@@ -11,6 +11,8 @@ var _rect := Rect2()
 var _dimensions := Vector2i.ZERO
 var _seed := -1
 var _loaded := false
+var _inverse := PackedFloat64Array()
+var _apron_depth := 0.06
 
 func attach(canvas: Control) -> void:
 	print("Borrowed Turns stage: loading approved backdrop, floor and foreground sources")
@@ -69,12 +71,15 @@ func _piece(polygon: PackedVector2Array, material: ShaderMaterial) -> void:
 	paper.material = material
 	floor_root.add_child(paper)
 
-func configure(rect: Rect2, dimensions: Vector2i, projection, sample_piece: Callable, visual_seed: int) -> void:
+func configure(rect: Rect2, dimensions: Vector2i, projection, sample_piece: Callable, visual_seed: int, apron_depth: float = 0.06) -> void:
 	if not _loaded or projection.inverse_coefficients().is_empty(): return
-	if rect == _rect and dimensions == _dimensions and visual_seed == _seed: return
+	var inverse: PackedFloat64Array = projection.inverse_coefficients()
+	if rect == _rect and dimensions == _dimensions and visual_seed == _seed and inverse == _inverse and apron_depth == _apron_depth: return
 	_rect = rect
 	_dimensions = dimensions
 	_seed = visual_seed
+	_inverse = inverse
+	_apron_depth = apron_depth
 	backdrop.position = rect.position
 	foreground.position = rect.position
 	backdrop.scale = rect.size / SOURCE_SIZE
@@ -83,8 +88,8 @@ func configure(rect: Rect2, dimensions: Vector2i, projection, sample_piece: Call
 		floor_root.remove_child(child)
 		child.queue_free()
 	# Extend the same plane behind the frame. This apron has no implied cells.
-	var origin := Vector2(-dimensions.x * 0.45, -dimensions.y * 0.06)
-	var span := Vector2(dimensions.x * 1.9, dimensions.y * 1.55)
+	var origin := Vector2(-dimensions.x * 0.45, -dimensions.y * apron_depth)
+	var span := Vector2(dimensions.x * 1.9, dimensions.y * (1.49 + apron_depth))
 	var apron := PackedVector2Array([projection.project(origin), projection.project(origin + Vector2(span.x, 0)),
 		projection.project(origin + span), projection.project(origin + Vector2(0, span.y))])
 	var clip := PackedVector2Array([rect.position, Vector2(rect.end.x, rect.position.y), rect.end, Vector2(rect.position.x, rect.end.y)])

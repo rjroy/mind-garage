@@ -17,11 +17,11 @@ godot --path games/borrowed-turns -- --presentation=paper
 godot --path games/borrowed-turns -- --presentation=stage
 ```
 
-The normal game opens directly into one baseline, identified internally as `R2`. The original V1–V6 chooser, variant launch modes, discard and wait are removed. The original build at `fd8e91d` and its archive/evidence remain historical records; the working game does not embed a parallel legacy engine.
+The normal game defaults to the original escape encounter, identified internally as `R2`. The optional **Two pursuers** encounter uses the same rules/model for a playable visual experiment. The original V1–V6 chooser, variant launch modes, discard and wait are removed. The original build at `fd8e91d` and its archive/evidence remain historical records; the working game does not embed a parallel legacy engine.
 
 The former Invert preview is not part of the current core rules; the retired `--invert` option is rejected. There is no progression gate.
 
-The default candidate view is **paper**: a reversible one-shove presentation pilot, not accepted production art. **Paper pilot** switches between that view and the plain renderer. **Stage view** opens the optional theatre; its view selector returns to either baseline. Switching does not reset the encounter, spend points, change a selected command or replay history. It cancels only in-flight visual feedback and restores settled ownership facts. The immutable comparison baseline remains `ba3ab7a`; all views use the same model and fixture. Unknown presentation values are rejected.
+The default candidate view is **paper**: a reversible one-shove presentation pilot, not accepted production art. **Paper pilot** switches between that view and the plain renderer. **Stage view** opens the optional theatre; its view selector returns to either baseline. Switching does not reset the encounter, spend points, change a selected command or replay history. It cancels only in-flight visual feedback and restores settled ownership facts. The immutable comparison baseline remains `ba3ab7a`; all views use the same model and selected fixture. Unknown presentation or encounter values are rejected.
 
 Requested window: 1280 × 800; minimum 1024 × 720. Native Controls follow actual viewport dimensions without globally shrinking fonts. A tiling compositor may refuse requested native dimensions. Phone/portrait/gamepad support is out of scope.
 
@@ -69,11 +69,41 @@ FY3 remains **open pending Ronald's visual reaction**, and the next mechanics st
 
 ## Optional theatre stage
 
-The approved backdrop, paper floor and transparent foreground are composed in Godot 2D without changing their source pixels. The theatre receives the main viewport width rather than the old board column. Status and action strips remain visible; **Plans / events** opens the upper-screen details sheet. Legal command previews open that sheet automatically. Long ordered previews, plans and history scroll within it, not over the playable floor.
+The approved backdrop, paper floor and transparent foreground are composed in Godot 2D without changing their source pixels. The theatre receives the main viewport width rather than the old board column. Status and action strips remain visible; **Details** explicitly opens the upper-screen sheet, choosing Preview when a command is prepared, otherwise Plans. Selecting a command no longer automatically covers the performers. Long ordered previews, plans and history scroll within the sheet, not over the playable floor.
 
 The grid follows the model's runtime width and height, not an image's painted cell count. Stable crops, quarter-turns, subtle color variation and seams make cells read as separate paper pieces. The floor shader, board marks, actor feet and mouse targeting share one perspective map. This slice does not add a player-facing grid-size setting. On the dark floor, threats use light coral and legal choices use pale mint; their meaning is unchanged.
 
-The floor starts higher than the concept study to give rows more usable depth at 1024 × 720. That trades some future puppet-screen space for targeting space. Existing figures and shove feedback are still limited placeholders; this is not the elaborate backdrop-puppet performance or a lantern mechanic. Source-art approval does not establish in-game visual acceptance. Minimum-size legibility, overlap and interaction still require Ronald's review.
+The original encounter retains its provisional figures/shove feedback. The two-pursuer Stage profile below uses the approved standee candidates and temporary backdrop puppets. Neither introduces a lantern mechanic. Source-art approval does not establish in-game visual acceptance. Minimum-size legibility, overlap and interaction still require Ronald's review.
+
+### Playable two-pursuer visual slice
+
+```bash
+godot --path games/borrowed-turns -- \
+  --presentation=stage --encounter=two-pursuers \
+  --puppet-pack="$PWD/.lore/local/experiments/002-shadow-paper/dual-layer/puppets"
+```
+
+The visible encounter selector also opens **Two pursuers** from normal play. Changing encounters explicitly confirms a new run; Cancel keeps the existing one. Restart restores the selected encounter. View changes preserve its state, selected command and history. Omitting `--encounter` still opens the original encounter; omitting `--presentation` still selects paper.
+
+**Local material prerequisite:** the temporary pack must contain native RGBA `a-body.png`, `a-hands.png`, `b-body.png`, `b-hands.png` (290×145) and `p-lantern.png` (145×145). The default directory is the repository-local path in the command above; `--puppet-pack` overrides it. These derivatives and their inspected extraction recipes remain local, not bundled source assets. A fresh checkout alone cannot supply them. Missing/invalid material fails clearly on direct launch; a chooser failure keeps the existing run and reports the setup problem. No generated substitutes or tiny primitive fallback are used for this selected Stage encounter.
+
+The 5×5, wall-free fixture deliberately starts A behind the player and B in front, in the same column. Both announce existing shoves. Larger figures keep their feet on true cells; their labeled paper foot markers stay accessible above overlapping art. Click visible figure pixels or a foot marker; transparent image padding clicks through. Hover/focus a rear marker to reduce front-piece opacity. With board focus, **[ / ]** cycles figures and Enter selects; arrows still inspect floor cells. **Alt-click** explicitly selects floor through figures. A legal floor target also takes priority when the overlapping actor is not a legal target for the chosen operation.
+
+The upper theatre is not a map projection: A stays left, B right, player central. Only currently player-threatening announcements press forward; others stay watchful. Capture either source on the actual board: its current performance departs into a mint-tethered held motif beside/above the lantern handle, while the other source continues. B's held hands turn outward rather than continue attacking the player. Source ID plus turn distinguishes an old held action from a fresh announcement. No damage occurs during rehearsal or preview.
+
+Confirmed release, backlash and enemy actions follow the shared controller's actual ordered event slices. Player reaction requires recorded player damage/displacement, including zero-damage pushes; enemy-only actions never invent a player hit. Map motion replays recorded movement/displacement and settles at the exact committed state. The ordinary Move/Capture/Release/End turn controls, deadlines, replacement failure, escape/failure and replay remain usable beyond the first exchange. In particular, A-to-B replacement can push B out of capture reach: that real partial failure is not forced into a transfer.
+
+**Composition tradeoff:** taller standees overlap more depth rows. The playable grid begins lower, with an extended ungridded floor apron retaining the stage seam; this separates faces from the performance without moving logical actors apart. Face/lantern identity, rear-source access and source tabs need actual human play review at 1024×720 and normal size. Temporary puppets remain lower-resolution concept cutouts, not a finished matching cast or a general crowd director.
+
+Focused checks (the real-scene checks require that local pack):
+
+```bash
+godot --headless --path games/borrowed-turns --script res://tests/standee_board_run.gd
+godot --headless --path games/borrowed-turns --script res://tests/two_pursuer_presentation_run.gd
+godot --headless --path games/borrowed-turns --script res://ui/smoke.gd -- --focus=two-pursuers
+godot --headless --path games/borrowed-turns --script res://ui/smoke.gd -- \
+  --focus=two-pursuers-cli --presentation=stage --encounter=two-pursuers
+```
 
 Focused stage checks and actual rendered captures:
 

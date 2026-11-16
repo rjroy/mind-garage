@@ -455,7 +455,12 @@ func _test_stage_integration() -> void:
 			press(game.action_buttons.capture)
 			await _stage_gui_click(game.board.cell_center([2, 1]))
 			check(game.command == {"type": "capture", "source": "a"} and not game.confirm_button.disabled, "stage click selects the real capture source")
-			check(preview_matches() and game.preview_details.is_visible_in_tree(), "ordered preview stays accessible and visible before commitment")
+			check(preview_matches(), "ordered preview stays synchronized before commitment")
+			# Details are explicit in the playable theatre, rather than automatically
+			# covering the performers after every board selection.
+			if not game._stage_sheet.visible: press(game._stage_plans)
+			await process_frame # Let Containers lay out the newly visible sheet.
+			check(game.preview_details.is_visible_in_tree(), "ordered preview is visibly accessible through Details before commitment")
 			for control in [game.preview_details, game.confirm_button, game.cancel_button]:
 				check(control.is_visible_in_tree() and game.get_viewport_rect().encloses(control.get_global_rect()),
 					"stage preview/confirmation remains within the actual viewport")
@@ -502,6 +507,239 @@ func _test_stage_integration() -> void:
 	game.set_presentation_mode("paper")
 	await _stage_resize(Vector2i(1280, 800))
 
+func _two_pursuers_setup() -> bool:
+	var properties: Array[String] = []
+	for property in game.get_property_list(): properties.append(property.name)
+	for name in ["encounter_id", "encounter_picker", "encounter_dialog"]:
+		if name not in properties:
+			printerr("SETUP REQUIRED: loadable playable encounter UI seam: " + name + "; not behavioral RED")
+			return false
+	if not game.has_method("request_encounter") or not game.encounter_picker is OptionButton \
+		or not game.encounter_dialog is ConfirmationDialog:
+		printerr("SETUP REQUIRED: request_encounter(id), real encounter_picker and encounter_dialog controls")
+		return false
+	for method in ["configure_standees", "standee_layout", "actor_at", "pick_cell", "focus_actor"]:
+		if not game.board.has_method(method):
+			printerr("SETUP REQUIRED: board." + method + "; not behavioral RED")
+			return false
+	return true
+
+func _choose_encounter_ui(id: String) -> void:
+	var picker: OptionButton = game.encounter_picker
+	var index := -1
+	for item in range(picker.item_count):
+		if picker.get_item_metadata(item) == id: index = item
+	check(index >= 0, "visible encounter chooser exposes " + id)
+	if index >= 0:
+		picker.select(index)
+		picker.item_selected.emit(index)
+	await process_frame
+
+func _two_pursuers_pack_ready() -> bool:
+	var directory := ProjectSettings.globalize_path("res://../../.lore/local/experiments/002-shadow-paper/dual-layer/puppets")
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--puppet-pack="): directory = arg.trim_prefix("--puppet-pack=")
+	for name in ["a-body.png", "a-hands.png", "b-body.png", "b-hands.png", "p-lantern.png"]:
+		if not FileAccess.file_exists(directory.path_join(name)):
+			printerr("SETUP REQUIRED: temporary puppet pack missing " + directory.path_join(name)
+				+ ". Supply --puppet-pack=<prepared-directory>; not behavioral RED.")
+			return false
+	return true
+
+func _standee_entry(id: String) -> Dictionary:
+	for row in game.board.standee_layout():
+		if row.get("actor", "") == id: return row
+	return {}
+
+func _standee_body_point(id: String) -> Vector2:
+	var row := _standee_entry(id)
+	if not row.get("rect") is Rect2 or not row.get("texture") is Texture2D:
+		return Vector2(INF, INF)
+	var texture: Texture2D = row.texture
+	var pixels := texture.get_image()
+	var rect: Rect2 = row.rect
+	if pixels == null or pixels.is_empty(): return Vector2(INF, INF)
+	# Find actual visible body, above its floor cell, not a synthetic rectangle
+	# or its separate foot marker. No portrait-specific facial coordinates.
+	for y in range(0, pixels.get_height(), 24):
+		for x in range(0, pixels.get_width(), 24):
+			if pixels.get_pixel(x, y).a < 0.5: continue
+			var point := rect.position + Vector2(x + 0.5, y + 0.5) / Vector2(pixels.get_size()) * rect.size
+			if game.board.actor_at(point) == id and game.board._from_pixel(point) != row.cell:
+				return point
+	return Vector2(INF, INF)
+
+func _test_two_pursuers_startup() -> void:
+	check(game.encounter_id == "two-pursuers" and game.presentation_mode == "stage",
+		"actual command-line encounter and presentation select the normal playable scene")
+	check(game.state.width == 5 and game.state.height == 5 and game.state.player.pos == [2, 2],
+		"command-line entry starts the agreed board instead of the old motion-study fixture")
+	var picker: OptionButton = game.encounter_picker
+	check(picker.get_selected_metadata() == "two-pursuers", "visible chooser reflects the command-line encounter")
+	var sources: Array = []
+	for intent in game.state.intentions:
+		if game.state.player.pos in intent.cells: sources.append(intent.source)
+	check(sources.size() == 2 and "A" in sources and "B" in sources,
+		"command-line entry exposes both actual threats")
+	check(game.board.standee_layout().size() == 3, "command-line entry loads all three approved standee actors")
+
+func _test_two_pursuers_integration() -> void:
+	check(game.encounter_id == "escape" and game.fixture == Production.DATA,
+		"default encounter remains the existing source fixture")
+	game.set_presentation_mode("stage")
+	await _stage_resize(Vector2i(1024, 720))
+	var original: Dictionary = game.model.snapshot()
+	await _choose_encounter_ui("two-pursuers")
+	check(game.encounter_dialog.visible and game.model.snapshot() == original,
+		"choosing another encounter requests a new run without changing the current model")
+	if game.encounter_dialog.visible:
+		game.encounter_dialog.get_cancel_button().pressed.emit()
+		game.encounter_dialog.hide()
+	check(game.encounter_id == "escape" and game.model.snapshot() == original,
+		"canceling encounter replacement preserves the current run")
+	await _choose_encounter_ui("two-pursuers")
+	if game.encounter_dialog.visible:
+		game.encounter_dialog.confirmed.emit()
+		game.encounter_dialog.hide()
+	await process_frame
+	check(game.encounter_id == "two-pursuers", "confirmed chooser starts the real playable two-pursuer encounter")
+	if game.encounter_id != "two-pursuers": return
+	var initial: Dictionary = game.state.duplicate(true)
+	check(initial.width == 5 and initial.height == 5 and initial.player.pos == [2, 2],
+		"selected encounter opens the agreed five-by-five central-player stress case")
+	var cells := {}
+	for enemy in initial.enemies: cells[enemy.id] = enemy.pos
+	check(cells == {"A": [2, 1], "B": [2, 3]}, "both pursuers remain in the deliberately overlapping depth column")
+	var threats: Array = []
+	for intent in initial.intentions:
+		if initial.player.pos in intent.cells: threats.append(intent.source)
+	check(threats.size() == 2 and "A" in threats and "B" in threats,
+		"both real model announcements initially threaten the player")
+	var source_paths := {"player": "player.png", "A": "enemy-a.png", "B": "enemy-b.png"}
+	for viewport_size in [Vector2i(1024, 720), Vector2i(1600, 900)]:
+		await _stage_resize(viewport_size)
+		game._apply_restart()
+		await process_frame
+		_stage_controls_fit("two-pursuers " + str(viewport_size))
+		check(game.encounter_picker.is_visible_in_tree()
+			and game.get_viewport_rect().encloses(game.encounter_picker.get_global_rect()),
+			"encounter choice stays accessible in the real Stage layout")
+		var rows: Array = game.board.standee_layout()
+		check(rows.size() == 3, "real board uses three authored standee draw instances")
+		for id in ["player", "A", "B"]:
+			var row := _standee_entry(id)
+			var texture = row.get("texture")
+			check(texture is Texture2D, id + ": approved candidate artwork is loaded by the actual board")
+			if not texture is Texture2D: continue
+			check(texture.resource_path == "res://assets/standees/two-pursuers/" + source_paths[id],
+				id + ": source texture is the approved unchanged standee, not a primitive fallback")
+			check(row.get("foot") is Vector2 and row.get("cell") is Array
+				and row.foot.distance_to(game.board.cell_center(row.cell)) < 0.01,
+				id + ": actual figure is attached to the projected owning cell")
+		await image("dual-layer-%d-initial.png" % viewport_size.x)
+		# Both choices matter: the B handoff is not assumed from the older A-only
+		# motion pilot. Orientation/taste are judged in actual render evidence.
+		for id in ["A", "B"]:
+			press(game.action_buttons.capture)
+			var point := _standee_body_point(id)
+			check(point.is_finite(), id + ": some actual visible body can be picked above its owning floor cell")
+			if not point.is_finite(): continue
+			await _stage_gui_click(point)
+			check(game.command == {"type": "capture", "source": id} and not game.confirm_button.disabled,
+				id + ": actual viewport body click prepares the correct source capture")
+			check(game.state == initial, "body selection and preview do not advance the encounter")
+			check(not game._stage_sheet.visible, "selection leaves the puppet performance unobscured")
+			check(not game.consequence.text.is_empty() and game.consequence.is_visible_in_tree()
+				and game.confirm_button.is_visible_in_tree() and game.cancel_button.is_visible_in_tree(),
+				"cost/consequence and confirmation stay present without the opaque Details sheet")
+			press(game._stage_plans)
+			await process_frame
+			check(game._stage_sheet.visible and game.preview_details.is_visible_in_tree() and preview_matches(),
+				"explicit Details reveals the exact selected ordered preview")
+			var floor_bounds: Rect2 = game.board._board_rect()
+			floor_bounds.position += game.board.global_position
+			check(not game._stage_sheet.get_global_rect().intersects(floor_bounds),
+				"explicit Details never covers the playable floor")
+			press(game._stage_plans)
+			await image("dual-layer-%d-%s-preview.png" % [viewport_size.x, id.to_lower()])
+			await commit()
+			check(game.state.stored.get("source", "") == id and game.state.enemies.size() == 2,
+				id + ": capture stores that occurrence and leaves both standees alive")
+			var other: String = "B" if id == "A" else "A"
+			check(game.state.intentions.size() == 1 and game.state.intentions[0].source == other,
+				id + ": capture removes only that source announcement; the other remains authoritative")
+			await image("dual-layer-%d-%s-held.png" % [viewport_size.x, id.to_lower()])
+			var committed: Dictionary = game.state.duplicate(true)
+			var lines: Array[String] = game.history_lines.duplicate()
+			select("end_turn")
+			var prepared: Dictionary = game.prediction.duplicate(true)
+			var submitted: Dictionary = game.command.duplicate(true)
+			for view in ["plain", "paper", "stage"]:
+				game.set_presentation_mode(view)
+				await process_frame
+				check(game.encounter_id == "two-pursuers" and game.state == committed
+					and game.history_lines == lines and game.command == submitted and game.prediction == prepared,
+					view + ": view changes preserve selected encounter, command, prediction and progress")
+			await commit()
+			check(game.state.turn > committed.turn and not game.state.stored.is_empty(),
+				"real End turn continues the encounter while retaining the old held occurrence")
+			select("release")
+			var target: Array = []
+			for candidate in game.candidates:
+				if candidate != game.state.player.pos:
+					target = candidate
+					break
+			check(not target.is_empty(), "continuing encounter offers a real legal release target")
+			if not target.is_empty():
+				click(target)
+				await commit()
+				check(game.state.stored.is_empty(), "actual release clears storage and returns to continued play")
+			game._apply_restart()
+			await process_frame
+			check(game.encounter_id == "two-pursuers" and game.state == initial
+				and game.shadow.frame().held.is_empty() and not game.resolving,
+				"Restart restores this selected encounter and clears stale held/performance work")
+	# A selected rear source can be reached without clicking an obscured body.
+	game.board.cursor = [2, 3]
+	var cycle := InputEventKey.new()
+	cycle.keycode = KEY_BRACKETRIGHT
+	cycle.pressed = true
+	game.board.gui_input.emit(cycle)
+	check(game.board.cursor == [2, 1], "real bracket-key source cycling reaches the rear actor without a body click")
+	var enter := InputEventKey.new()
+	enter.keycode = KEY_ENTER
+	enter.pressed = true
+	press(game.action_buttons.capture)
+	game.board.gui_input.emit(enter)
+	check(game.command == {"type": "capture", "source": "A"} and game.state == initial,
+		"keyboard rear-source focus prepares capture without committing it")
+	press(game.cancel_button)
+	var winning := F.encounter([
+		F.enemy("A", [2, 1], F.ability("shove", 2, 2, 0, true), 9, [0, 1]),
+		F.enemy("B", [2, 3], F.ability("shove", 2, 2, 0, true), 9, [0, -1]),
+	], 2, 13)
+	winning.width = 5
+	winning.height = 5
+	winning.player.pos = [2, 2]
+	winning.exit = {"pos": [3, 2], "opens": 1}
+	await load_fixture(winning)
+	await move([3, 2])
+	check(game.state.status == "won" and game.result.is_visible_in_tree()
+		and game.action_buttons.capture.disabled, "selected Stage encounter supports a real terminal result, not a capture-only script")
+	press(game.restart_button)
+	check(game.encounter_id == "two-pursuers" and game.state.status == "playing"
+		and game.state.stored.is_empty(), "terminal replay retains the selected encounter identity")
+	var before_switch: Dictionary = game.state.duplicate(true)
+	await _choose_encounter_ui("escape")
+	check(game.encounter_dialog.visible and game.state == before_switch, "returning to the original encounter is also an explicit new run")
+	if game.encounter_dialog.visible:
+		game.encounter_dialog.confirmed.emit()
+		game.encounter_dialog.hide()
+	await process_frame
+	check(game.encounter_id == "escape" and game.fixture == Production.DATA,
+		"original content remains available unchanged through the real chooser")
+	game.set_presentation_mode("paper")
+
 func _run() -> void:
 	game = load("res://scenes/encounter.tscn").instantiate()
 	if capture_dir.is_empty(): root.add_child(game)
@@ -527,6 +765,22 @@ func _run() -> void:
 	if OS.get_cmdline_user_args().has("--focus=shadow"):
 		await _test_shadow_integration()
 		print("R2 UI smoke: %d checks, %d failures. Injected GUI events, not physical OS input." % [checks, failures])
+		game.queue_free()
+		await process_frame
+		quit(1 if failures else 0)
+		return
+	if OS.get_cmdline_user_args().has("--focus=two-pursuers") \
+		or OS.get_cmdline_user_args().has("--focus=two-pursuers-cli"):
+		if not _two_pursuers_setup() or not _two_pursuers_pack_ready():
+			game.queue_free()
+			await process_frame
+			quit(2)
+			return
+		if OS.get_cmdline_user_args().has("--focus=two-pursuers-cli"):
+			_test_two_pursuers_startup()
+		else:
+			await _test_two_pursuers_integration()
+		print("Two-pursuers UI smoke: %d checks, %d failures. Injected viewport input, not human playability approval." % [checks, failures])
 		game.queue_free()
 		await process_frame
 		quit(1 if failures else 0)

@@ -6,9 +6,24 @@ const Board = preload("res://ui/board.gd")
 const P = preload("res://ui/presentation.gd")
 const Production = preload("res://content/escape.gd")
 const Shadow = preload("res://ui/shadow_presentation.gd")
+const TwoPursuers = preload("res://content/two_pursuers.gd")
+const SliceAssets = preload("res://ui/two_pursuer_assets.gd")
+const TwoSourcePresentation = preload("res://ui/two_pursuer_presentation.gd")
+const TwoSourceRig = preload("res://ui/two_pursuer_rig.gd")
 var model = Encounter.new()
 var shadow = Shadow.new()
 var presentation_mode := "paper"
+var encounter_id := "escape"
+var encounter_picker: OptionButton
+var encounter_dialog: ConfirmationDialog
+var _pending_encounter := ""
+var _puppet_pack := ""
+var _slice_art: Dictionary = {}
+var _puppet_art: Dictionary = {}
+var _asset_error := ""
+var _asset_dialog: AcceptDialog
+var _puppet_rig: Node2D
+var _two_source_presentation = TwoSourcePresentation.new()
 var baseline_feedback_left := 0.0
 var fixture: Dictionary
 var state: Dictionary = {}
@@ -62,6 +77,7 @@ var _flat_positions: Array[Dictionary] = []
 func _ready() -> void:
 	theme = P.make_theme()
 	fixture = Production.DATA.duplicate(true)
+	_puppet_pack = ProjectSettings.globalize_path("res://../../.lore/local/experiments/002-shadow-paper/dual-layer/puppets")
 	for argument in OS.get_cmdline_user_args():
 		if argument == "--invert" or argument.begins_with("--invert="):
 			push_error("Borrowed Turns: --invert is no longer supported.")
@@ -75,6 +91,20 @@ func _ready() -> void:
 				push_error("Borrowed Turns: presentation must be plain, paper or stage.")
 				get_tree().quit(2)
 				return
+		elif argument.begins_with("--encounter="):
+			encounter_id = argument.trim_prefix("--encounter=")
+			if encounter_id not in ["escape", "two-pursuers"]:
+				push_error("Borrowed Turns: encounter must be escape or two-pursuers.")
+				get_tree().quit(2)
+				return
+		elif argument.begins_with("--puppet-pack="):
+			_puppet_pack = argument.trim_prefix("--puppet-pack=")
+	if encounter_id == "two-pursuers":
+		if not _prepare_slice_assets():
+			push_error("Borrowed Turns: " + _asset_error)
+			get_tree().quit(2)
+			return
+		fixture = TwoPursuers.DATA.duplicate(true)
 	_build_interface()
 	_start_encounter()
 
@@ -82,6 +112,7 @@ func _process(delta: float) -> void:
 	if state.is_empty(): return
 	shadow.advance(delta)
 	if presentation_mode != "plain": board.set_presentation(true, shadow.frame())
+	_present_theatre()
 	if resolving:
 		baseline_feedback_left = maxf(0, baseline_feedback_left - delta)
 		if baseline_feedback_left <= 0 and (presentation_mode == "plain" or not shadow.frame().busy):
@@ -102,6 +133,95 @@ func set_presentation_mode(value: String) -> void:
 	_apply_view_layout()
 	_refresh()
 	print("Borrowed Turns UI: presentation=%s; gameplay unchanged" % value)
+
+func _prepare_slice_assets() -> bool:
+	_asset_error = ""
+	if _slice_art.is_empty():
+		var standees: Dictionary = SliceAssets.standees()
+		if standees.has("error"):
+			_asset_error = standees.error
+			return false
+		_slice_art = standees
+	if _puppet_art.is_empty():
+		var puppets: Dictionary = SliceAssets.puppets(_puppet_pack)
+		if puppets.has("error"):
+			_asset_error = puppets.error
+			return false
+		_puppet_art = puppets.textures
+	return true
+
+func _sync_encounter_picker() -> void:
+	for i in range(encounter_picker.item_count):
+		if encounter_picker.get_item_metadata(i) == encounter_id: encounter_picker.select(i)
+
+func request_encounter(id: String) -> void:
+	if id not in ["escape", "two-pursuers"] or id == encounter_id:
+		_sync_encounter_picker()
+		return
+	_pending_encounter = id
+	print("Borrowed Turns UI: encounter change requested current=%s candidate=%s" % [encounter_id, id])
+	encounter_dialog.dialog_text = "Start %s?\nThis replaces the current run, including held actions, budgets and history." % ("Two pursuers" if id == "two-pursuers" else "the original encounter")
+	# A cancel button can still have a deferred hide pending. Reopening after
+	# that notification prevents the new request being hidden by the old one.
+	encounter_dialog.popup_centered.call_deferred(Vector2i(560, 210))
+
+func _cancel_encounter_request() -> void:
+	if not _pending_encounter.is_empty(): print("Borrowed Turns UI: encounter change canceled candidate=", _pending_encounter)
+	_pending_encounter = ""
+	_sync_encounter_picker()
+
+func _confirm_encounter_request() -> void:
+	var id := _pending_encounter
+	print("Borrowed Turns UI: encounter change confirmation candidate=", id)
+	if id.is_empty(): return
+	if id == "two-pursuers" and not _prepare_slice_assets():
+		push_warning("Borrowed Turns: encounter unchanged; " + _asset_error)
+		_asset_dialog.dialog_text = _asset_error + "\nThe current encounter has been kept."
+		_asset_dialog.popup_centered(Vector2i(660, 260))
+		_cancel_encounter_request()
+		return
+	print("Borrowed Turns UI: replacing encounter %s -> %s" % [encounter_id, id])
+	encounter_id = id
+	fixture = (TwoPursuers.DATA if id == "two-pursuers" else Production.DATA).duplicate(true)
+	_pending_encounter = ""
+	_sync_encounter_picker()
+	_start_encounter()
+
+func _configure_theatre() -> void:
+	if encounter_id != "two-pursuers":
+		board.configure_standees({}, {})
+		board.theatre_mode = false
+		if _puppet_rig: _puppet_rig.visible = false
+		return
+	if not board.configure_standees(_slice_art.textures, _slice_art.assembly):
+		push_error("Borrowed Turns: approved standee assembly failed; no substitute will be used.")
+		get_tree().quit(2)
+		return
+	if _puppet_rig == null:
+		_puppet_rig = TwoSourceRig.new()
+		_puppet_rig.name = "TwoSourcePerformance"
+		_puppet_rig.show_behind_parent = true
+		board.add_child(_puppet_rig)
+		if not _puppet_rig.configure_assets(_puppet_art):
+			push_error("Borrowed Turns: temporary puppet assembly failed.")
+			get_tree().quit(2)
+			return
+	_present_theatre()
+
+func _present_theatre() -> void:
+	if _puppet_rig == null: return
+	var active := encounter_id == "two-pursuers" and presentation_mode == "stage"
+	board.theatre_mode = active
+	if not active:
+		_puppet_rig.visible = false
+		return
+	if board.stage_renderer:
+		# Explicit source-layer order: backdrop / performers / floor / board /
+		# foreground. All three approved stage source textures stay unchanged.
+		board.move_child(board.stage_renderer.backdrop, 0)
+		board.move_child(_puppet_rig, 1)
+	var description: Dictionary = _two_source_presentation.compose(state, shadow.frame(), generation, ["A", "B"], source)
+	_puppet_rig.present(description, board._stage_rect())
 
 func _label(parent: Node, text: String = "", font_size: int = 16, wrap: bool = false) -> Label:
 	var label := Label.new()
@@ -128,6 +248,22 @@ func _box(parent: Node, vertical: bool = true) -> BoxContainer:
 	return box
 
 func _build_interface() -> void:
+	encounter_picker = OptionButton.new()
+	encounter_picker.add_item("Original encounter")
+	encounter_picker.set_item_metadata(0, "escape")
+	encounter_picker.add_item("Two pursuers")
+	encounter_picker.set_item_metadata(1, "two-pursuers")
+	encounter_picker.item_selected.connect(func(index: int): request_encounter(encounter_picker.get_item_metadata(index)))
+	_sync_encounter_picker()
+	encounter_dialog = ConfirmationDialog.new()
+	encounter_dialog.title = "Start a different encounter?"
+	encounter_dialog.confirmed.connect(_confirm_encounter_request)
+	encounter_dialog.canceled.connect(_cancel_encounter_request)
+	encounter_dialog.get_cancel_button().pressed.connect(_cancel_encounter_request)
+	add_child(encounter_dialog)
+	_asset_dialog = AcceptDialog.new()
+	_asset_dialog.title = "Temporary artwork unavailable"
+	add_child(_asset_dialog)
 	var ground := ColorRect.new()
 	ground.color = P.GROUND
 	ground.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -157,6 +293,7 @@ func _build_interface() -> void:
 	economy.add_child(paper_switch)
 	_button(economy, "Stage view", func(): set_presentation_mode("stage"))
 	_button(economy, "Controls", func(): help_dialog.popup_centered(Vector2i(650, 410)))
+	economy.add_child(encounter_picker)
 	var main := _box(page, false)
 	main.add_theme_constant_override("separation", 20)
 	main.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -240,6 +377,7 @@ func _build_interface() -> void:
 	help_dialog = AcceptDialog.new()
 	help_dialog.title = "Controls and the capture bargain"
 	help_dialog.dialog_text = "Move and act in any order. AP (action points) and MP (movement points) are independent.\nCapture is free and unlimited across legal sources, even at zero AP/MP.\nRelease uses 1 AP and can happen on the capture turn.\nReplace a held ability or end its deadline turn: it discharges where you stand.\nEnemy plans resolve only when you End turn. There is no automatic turn ending.\n\nChoose an operation, choose its target, inspect, then Confirm.\nM: Move, C: Capture, L: Release, E: prepare End turn.\nTab / Shift+Tab: controls. Arrows on board: inspect.\nEnter selects a cell; a separate Enter confirms. Esc / right click: cancel.\nCtrl+R: restart. Nothing advances during inspection or preview.\n\nY: you; squares: pursuers; EXIT: escape.\nRust hatches/dashed routes: enemy intentions. Double rust border: held backlash here.\nTeal outlines: legal choices. Solid arrows/hollow pawns: exact command preview.\nPreview lists ordered effects; Recent events contains only confirmed commands."
+	help_dialog.dialog_text += "\n\nStage: click figure or foot marker; [ / ] cycles figures.\nAlt-click targets floor through figures. Details opens exact effects.\nTheatre positions identify actors, not compass directions; rehearsal does not advance time."
 	add_child(help_dialog)
 	_build_stage_shell()
 	resized.connect(_resize_rail)
@@ -291,9 +429,9 @@ func _build_stage_shell() -> void:
 	for text in ["Plain", "Paper pilot", "Stage"]: _stage_picker.add_item(text)
 	_stage_picker.item_selected.connect(func(index: int): set_presentation_mode(["plain", "paper", "stage"][index]))
 	_stage_root.add_child(_stage_picker)
-	_stage_plans = _button(_stage_root, "Plans / events", func():
+	_stage_plans = _button(_stage_root, "Details", func():
 		_stage_sheet.visible = not _stage_sheet.visible
-		if _stage_sheet.visible: event_tabs.current_tab = 2
+		if _stage_sheet.visible: event_tabs.current_tab = 1 if not prediction.is_empty() else 2
 	)
 	_stage_controls = _button(_stage_root, "Controls", func(): help_dialog.popup_centered(Vector2i(650, 410)))
 	_stage_sheet = PanelContainer.new()
@@ -315,7 +453,7 @@ func _apply_view_layout() -> void:
 	var stage := presentation_mode == "stage"
 	if stage and _flat_positions.is_empty():
 		var moved: Array = [board, objective, phase, budgets, stored, instruction, consequence, inspection,
-			result, confirm_button, cancel_button, restart_button, rail, details_scroll]
+			result, confirm_button, cancel_button, restart_button, rail, details_scroll, encounter_picker]
 		moved.append_array(action_buttons.values())
 		# Capture every original parent/index before moving siblings.
 		for node in moved:
@@ -348,7 +486,7 @@ func _apply_view_layout() -> void:
 	_stage_root.visible = stage
 	stage_held_details.visible = stage
 	_stage_picker.select(["plain", "paper", "stage"].find(presentation_mode))
-	_stage_sheet.visible = stage and not prediction.is_empty()
+	_stage_sheet.visible = false
 	if stage: _layout_stage()
 	else: _resize_rail()
 
@@ -361,14 +499,15 @@ func _layout_stage() -> void:
 	var width := maxf(1, size.x - 16)
 	var x := 8.0
 	_place(_stage_title, Rect2(x, 8, 145, 32))
-	_place(objective, Rect2(x + 153, 8, width - 735, 34))
-	_place(phase, Rect2(size.x - 574, 8, 80, 34))
-	_place(_stage_picker, Rect2(size.x - 486, 8, 130, 32))
-	_place(_stage_plans, Rect2(size.x - 348, 8, 116, 32))
+	_place(phase, Rect2(x + 153, 8, 80, 34))
+	_place(encounter_picker, Rect2(size.x - 628, 8, 164, 32))
+	_place(_stage_picker, Rect2(size.x - 456, 8, 112, 32))
+	_place(_stage_plans, Rect2(size.x - 336, 8, 104, 32))
 	_place(_stage_controls, Rect2(size.x - 224, 8, 80, 32))
 	_place(restart_button, Rect2(size.x - 136, 8, 128, 32))
-	_place(budgets, Rect2(x, 46, width * 0.49, 36))
-	_place(stored, Rect2(x + width * 0.51, 46, width * 0.49, 36))
+	_place(objective, Rect2(x, 46, width * 0.25, 36))
+	_place(budgets, Rect2(x + width * 0.26, 46, width * 0.36, 36))
+	_place(stored, Rect2(x + width * 0.64, 46, width * 0.36, 36))
 	_place(board, Rect2(x, 86, width, maxf(1, size.y - 206)))
 	var action_y := size.y - 112
 	var action_width := (width - 250) / 4.0
@@ -395,13 +534,14 @@ func _start_encounter() -> void:
 	changed = false
 	resolving = false
 	board.clear_pulse()
+	_configure_theatre()
 	board.cursor = state.player.pos.duplicate()
-	history_lines = ["Turn 1 · Revised baseline\nReach the exit. Capture is free; End turn when ready."]
+	history_lines = ["Turn 1 · %s\nReach the exit. Capture is free; End turn when ready." % ("Two pursuers" if encounter_id == "two-pursuers" else "Revised baseline")]
 	history.text = "\n".join(history_lines)
 	new_events.visible = false
 	_clear_selection()
 	_refresh()
-	print("Borrowed Turns UI: start baseline=R2 presentation=%s" % presentation_mode)
+	print("Borrowed Turns UI: start baseline=R2 encounter=%s presentation=%s" % [encounter_id, presentation_mode])
 
 func _request_restart() -> void:
 	if changed and state.status == "playing":
@@ -439,9 +579,9 @@ func _refresh() -> void:
 		if state.stored.is_empty(): stored.text = "Held: empty\nCapture an announced action; release uses 1 AP."
 		else:
 			var held: Dictionary = state.stored
-			stored.text = "Held: %s · %s · %d damage · range %d\nBacklash: %d damage here%s · deadline turn %d" % [
-				str(held.ability.kind).capitalize(), str(held.source).to_upper(), held.ability.damage,
-				held.ability.range, held.ability.damage, ", pushes" if held.ability.push else "", held.deadline_turn]
+			stored.text = "Held %s · %s · %d damage / range %d\nDeadline T%d · backlash here: %d%s" % [
+				str(held.source).to_upper(), str(held.ability.kind).capitalize(), held.ability.damage,
+				held.ability.range, held.deadline_turn, held.ability.damage, " + push" if held.ability.push else ""]
 	var info: Array[String] = ["AP: action points · MP: movement points"]
 	if state.action_points == 0: info.append("No AP: move/capture can still be available.")
 	if state.movement_points == 0: info.append("No MP: capture/release can still be available.")
@@ -467,7 +607,6 @@ func _refresh() -> void:
 	if not prediction.is_empty():
 		var danger: bool = prediction.player.hp < state.player.hp or prediction.status == "lost"
 		consequence.add_theme_color_override("font_color", (Color("ffc09a") if danger else Color("ade4d1")) if presentation_mode == "stage" else (P.DANGER if danger else P.BORROWED))
-		if presentation_mode == "stage": _stage_sheet.visible = true
 	else:
 		var invalid := not command.is_empty()
 		consequence.add_theme_color_override("font_color",
@@ -505,6 +644,8 @@ func _update_board() -> void:
 	board.set_view(state, prediction, candidates, selected, source)
 	board.set_stage_mode(presentation_mode == "stage")
 	board.set_presentation(presentation_mode != "plain", shadow.frame())
+	board.theatre_mode = encounter_id == "two-pursuers" and presentation_mode == "stage"
+	_present_theatre()
 
 func _choose_action(action: String) -> void:
 	if resolving or state.status != "playing": return
@@ -519,6 +660,12 @@ func _choose_action(action: String) -> void:
 			command = {"type": "end_turn"}
 			_assess_command()
 	if mode == "capture" and not state.stored.is_empty(): instruction.text = "Capture replaces %s. Inspect its discharge before confirming." % state.stored.ability.kind
+	if presentation_mode == "stage" and encounter_id == "two-pursuers":
+		if mode == "capture":
+			instruction.text = "Capture: choose a figure or foot marker. [ / ] cycles sources."
+			if not state.stored.is_empty(): instruction.text += " Replaces held action."
+		elif mode in ["move", "release"]:
+			instruction.text += " Alt-click targets floor through figures."
 	_rebuild_candidates()
 	_refresh()
 	if command.is_empty(): board.grab_focus()
@@ -586,6 +733,7 @@ func _confirm() -> void:
 		return
 	var submitted := command.duplicate(true)
 	var before: Dictionary = state.duplicate(true)
+	if _puppet_rig and encounter_id == "two-pursuers": _puppet_rig.remember_held(before.stored)
 	print("Borrowed Turns UI: submit turn=%d command=%s" % [state.turn, JSON.stringify(submitted)])
 	if not model.act(submitted):
 		push_error("Borrowed Turns UI: model rejected reassessed command.")
@@ -600,6 +748,7 @@ func _confirm() -> void:
 	baseline_feedback_left = 0.16
 	_refresh()
 	board.pulse(state.events)
+	board.show_transition(before)
 
 func _append_events(events: Array) -> void:
 	var scrollbar := history.get_v_scroll_bar()
@@ -621,7 +770,7 @@ func _cancel() -> void:
 
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not event is InputEventKey or not event.pressed or event.echo: return
-	if restart_dialog.visible or help_dialog.visible: return
+	if restart_dialog.visible or help_dialog.visible or encounter_dialog.visible or _asset_dialog.visible: return
 	if event.ctrl_pressed and event.keycode == KEY_R:
 		_request_restart()
 		get_viewport().set_input_as_handled()

@@ -30,6 +30,13 @@ var hover_cell: Array = []
 var last_events: Array = []
 var accent := 0.0
 var pulse_tween: Tween
+var theatre_mode := false
+var _standee_textures: Dictionary = {}
+var _standee_images: Dictionary = {}
+var _standee_assembly: Dictionary = {}
+var _focused_actor := ""
+var _hover_actor := ""
+var _motion_before: Dictionary = {}
 
 func _ready() -> void:
 	focus_mode = Control.FOCUS_ALL
@@ -38,7 +45,7 @@ func _ready() -> void:
 	resized.connect(_on_resized)
 	focus_entered.connect(queue_redraw)
 	focus_exited.connect(queue_redraw)
-	mouse_exited.connect(func(): hover_cell = []; queue_redraw())
+	mouse_exited.connect(func(): hover_cell = []; _hover_actor = ""; queue_redraw())
 	gui_input.connect(_on_gui_input)
 	_sync_stage()
 
@@ -58,6 +65,7 @@ func set_view(snapshot: Dictionary, predicted: Dictionary, legal_cells: Array, t
 func set_presentation(paper: bool, frame: Dictionary) -> void:
 	paper_mode = paper
 	shadow_frame = frame
+	if not frame.get("busy", false) and accent <= 0.0: _motion_before.clear()
 	queue_redraw()
 
 func set_stage_mode(enabled: bool) -> void:
@@ -66,6 +74,151 @@ func set_stage_mode(enabled: bool) -> void:
 	clip_contents = enabled
 	_sync_stage()
 	queue_redraw()
+
+func configure_standees(textures: Dictionary, assembly: Dictionary) -> bool:
+	_standee_textures.clear()
+	_standee_images.clear()
+	_standee_assembly.clear()
+	_focused_actor = ""
+	_hover_actor = ""
+	_projection_size = Vector2(-1, -1)
+	for id in ["player", "A", "B"]:
+		var meta: Dictionary = assembly.get(id, {})
+		var texture = textures.get(id)
+		if not texture is Texture2D or not meta.get("canvas") is Vector2 or not meta.get("foot") is Vector2 \
+			or not meta.get("height_fraction") is float:
+			_sync_stage()
+			return false
+		var canvas: Vector2 = meta.canvas
+		var foot: Vector2 = meta.foot
+		if not canvas.is_finite() or canvas.x <= 0 or canvas.y <= 0 or texture.get_size() != canvas \
+			or not foot.is_finite() or foot.x < 0 or foot.y < 0 or foot.x > canvas.x or foot.y > canvas.y \
+			or not is_finite(meta.height_fraction) or meta.height_fraction <= 0:
+			_sync_stage()
+			return false
+	var images := {}
+	for id in ["player", "A", "B"]:
+		var image: Image = textures[id].get_image()
+		if image == null or image.is_empty(): return false
+		if image.is_compressed() and image.decompress() != OK: return false
+		images[id] = image
+	_standee_textures = textures.duplicate()
+	_standee_images = images
+	_standee_assembly = assembly.duplicate(true)
+	_sync_stage()
+	queue_redraw()
+	return true
+
+func show_transition(before: Dictionary) -> void:
+	_motion_before = before.duplicate(true) if theatre_mode else {}
+
+func _visual_actors() -> Array:
+	var actors: Dictionary = {}
+	if state.is_empty(): return []
+	actors.player = {"actor": "player", "cell": state.player.pos.duplicate(), "hp": state.player.hp}
+	for enemy in state.enemies:
+		actors[enemy.id] = {"actor": enemy.id, "cell": enemy.pos.duplicate(), "hp": enemy.hp}
+	for row in actors.values(): row["grid"] = Vector2(row.cell[0] + 0.5, row.cell[1] + 0.5)
+	if not _motion_before.is_empty():
+		var cue: Dictionary = shadow_frame.get("cue", {})
+		var events: Array = state.get("events", [])
+		var positions := {"player": _motion_before.player.pos}
+		var old: Dictionary = {"player": _motion_before.player}
+		for enemy in _motion_before.enemies:
+			positions[enemy.id] = enemy.pos
+			old[enemy.id] = enemy
+		var end := events.size()
+		var start: int = cue.get("event_index", -1)
+		for planned in shadow_frame.get("cues", []):
+			if planned.event_index > start: end = mini(end, planned.event_index)
+		var progress: float = cue.get("progress", clampf((1.0 - accent) / 0.88, 0.0, 1.0))
+		var alive := positions.keys()
+		for i in range(events.size()):
+			if not cue.is_empty() and i >= end: break
+			var event: Dictionary = events[i]
+			var amount := smoothstep(0.18, 0.80, progress) if i >= start else 1.0
+			if event.type in ["move", "displace"]:
+				var from := Vector2(event.from[0], event.from[1])
+				var to := Vector2(event.to[0], event.to[1])
+				positions[event.actor] = from.lerp(to, amount)
+			if event.type == "death" and amount >= 1.0: alive.erase(event.actor)
+		for id in old:
+			if id not in alive:
+				actors.erase(id)
+				continue
+			if not actors.has(id):
+				actors[id] = {"actor": id, "cell": old[id].pos.duplicate(), "hp": old[id].hp}
+			var pos = positions[id]
+			actors[id]["grid"] = Vector2(pos[0] + 0.5, pos[1] + 0.5)
+	return actors.values()
+
+func standee_layout() -> Array:
+	if not stage_mode or _standee_textures.is_empty() or state.is_empty(): return []
+	var rows: Array = []
+	var projection = _ensure_projection()
+	for actor in _visual_actors():
+		var id: String = actor.actor
+		if not _standee_textures.has(id): continue
+		var meta: Dictionary = _standee_assembly[id]
+		var factor: float = _stage_rect().size.y * meta.height_fraction / meta.canvas.y
+		var foot: Vector2 = projection.project(actor.grid)
+		var rect := Rect2(foot - meta.foot * factor, meta.canvas * factor)
+		rows.append({"actor": id, "cell": actor.cell.duplicate(), "rect": rect, "foot": foot,
+			"tab_rect": Rect2(foot + Vector2(-31, -2), Vector2(62, 21)), "opacity": 1.0,
+			"texture": _standee_textures[id], "hp": actor.hp})
+	rows.sort_custom(func(a: Dictionary, b: Dictionary): return a.foot.y < b.foot.y)
+	var focus: String = _hover_actor if not _hover_actor.is_empty() else _focused_actor
+	var focus_index := -1
+	for i in range(rows.size()):
+		if rows[i].actor == focus: focus_index = i
+	if focus_index >= 0:
+		for i in range(focus_index + 1, rows.size()):
+			if rows[i].rect.intersects(rows[focus_index].rect): rows[i].opacity = 0.32
+	return rows
+
+func actor_at(local_pixel: Vector2) -> String:
+	var rows := standee_layout()
+	for row in rows:
+		if row.tab_rect.has_point(local_pixel): return row.actor
+	rows.reverse()
+	for row in rows:
+		var rect: Rect2 = row.rect
+		if not rect.has_point(local_pixel): continue
+		var image: Image = _standee_images[row.actor]
+		var uv := (local_pixel - rect.position) / rect.size
+		var pixel := Vector2i(uv * Vector2(image.get_size()))
+		if image.get_pixel(pixel.x, pixel.y).a >= 0.1: return row.actor
+	return ""
+
+func pick_cell(local_pixel: Vector2) -> Array:
+	var id := actor_at(local_pixel)
+	if not id.is_empty():
+		for row in standee_layout():
+			if row.actor == id: return row.cell.duplicate()
+	return _from_pixel(local_pixel)
+
+func _input_cell(local_pixel: Vector2, floor_only: bool = false) -> Array:
+	var floor_cell := _from_pixel(local_pixel)
+	if floor_only: return floor_cell
+	var picked := pick_cell(local_pixel)
+	# Tall art must not make a legal floor destination inaccessible behind an
+	# actor that is not itself a legal target for the current operation.
+	if not candidates.is_empty() and picked not in candidates and floor_cell in candidates:
+		return floor_cell
+	return picked
+
+func focus_actor(actor: String) -> void:
+	if actor.is_empty():
+		_focused_actor = ""
+		queue_redraw()
+		return
+	for row in standee_layout():
+		if row.actor == actor:
+			_focused_actor = actor
+			cursor = row.cell.duplicate()
+			cell_inspected.emit(cursor)
+			queue_redraw()
+			return
 
 func _stage_rect() -> Rect2:
 	var extent := Vector2(1672, 941)
@@ -80,7 +233,10 @@ func _ensure_projection():
 		_projection_dimensions = dimensions
 		var rect := _stage_rect()
 		var quad := PackedVector2Array()
-		for point in [Vector2(0.25, 0.46), Vector2(0.75, 0.46), Vector2(0.77, 0.885), Vector2(0.20, 0.885)]:
+		var points := [Vector2(0.25, 0.46), Vector2(0.75, 0.46), Vector2(0.77, 0.885), Vector2(0.20, 0.885)]
+		if not _standee_textures.is_empty():
+			points = [Vector2(0.23, 0.54), Vector2(0.77, 0.54), Vector2(0.79, 0.90), Vector2(0.20, 0.90)]
+		for point in points:
 			quad.append(rect.position + point * rect.size)
 		stage_projection.configure(dimensions.x, dimensions.y, quad)
 	return stage_projection
@@ -95,7 +251,8 @@ func _sync_stage() -> void:
 		stage_renderer = StageRenderer.new()
 		stage_renderer.attach(self)
 	var projection = _ensure_projection()
-	stage_renderer.configure(_stage_rect(), Vector2i(state.width, state.height), projection, piece_appearance, visual_seed)
+	stage_renderer.configure(_stage_rect(), Vector2i(state.width, state.height), projection, piece_appearance, visual_seed,
+		0.33 if not _standee_textures.is_empty() else 0.06)
 	stage_renderer.set_visible(true)
 
 func pulse(events: Array) -> void:
@@ -110,6 +267,7 @@ func clear_pulse() -> void:
 	if pulse_tween and pulse_tween.is_valid(): pulse_tween.kill()
 	last_events = []
 	accent = 0.0
+	_motion_before.clear()
 	queue_redraw()
 
 func _process(_delta: float) -> void:
@@ -172,7 +330,11 @@ func _from_pixel(pixel: Vector2) -> Array:
 
 func _on_gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion:
-		var cell := _from_pixel(event.position)
+		var actor := actor_at(event.position)
+		if actor != _hover_actor:
+			_hover_actor = actor
+			queue_redraw()
+		var cell := _input_cell(event.position, event.alt_pressed)
 		if cell != hover_cell:
 			hover_cell = cell
 			if not cell.is_empty(): cell_inspected.emit(cell)
@@ -182,7 +344,7 @@ func _on_gui_input(event: InputEvent) -> void:
 			cancel_requested.emit()
 			accept_event()
 		elif event.button_index == MOUSE_BUTTON_LEFT:
-			var cell := _from_pixel(event.position)
+			var cell := _input_cell(event.position, event.alt_pressed)
 			if not cell.is_empty():
 				cursor = cell.duplicate()
 				grab_focus()
@@ -190,6 +352,15 @@ func _on_gui_input(event: InputEvent) -> void:
 				queue_redraw()
 			accept_event()
 	if event is InputEventKey and event.pressed and not event.echo and not state.is_empty():
+		if event.keycode in [KEY_BRACKETLEFT, KEY_BRACKETRIGHT] and not standee_layout().is_empty():
+			var rows := standee_layout()
+			var index := -1
+			for i in range(rows.size()):
+				if rows[i].cell == cursor: index = i
+			index = posmod(index + (1 if event.keycode == KEY_BRACKETRIGHT else -1), rows.size())
+			focus_actor(rows[index].actor)
+			accept_event()
+			return
 		var step := Vector2i.ZERO
 		match event.keycode:
 			KEY_LEFT: step.x = -1
@@ -200,6 +371,7 @@ func _on_gui_input(event: InputEvent) -> void:
 				cell_selected.emit(cursor.duplicate())
 				accept_event()
 		if step != Vector2i.ZERO:
+			_focused_actor = ""
 			cursor = [clampi(cursor[0] + step.x, 0, state.width - 1), clampi(cursor[1] + step.y, 0, state.height - 1)]
 			cell_inspected.emit(cursor)
 			queue_redraw()
@@ -300,12 +472,39 @@ func _draw_player() -> void:
 	var diamond := player + Vector2(player_size * 0.30, -player_size * 0.20)
 	draw_polyline(PackedVector2Array([diamond + Vector2(0, -5), diamond + Vector2(5, 0), diamond + Vector2(0, 5), diamond + Vector2(-5, 0), diamond + Vector2(0, -5)]), _borrowed(), 2, true)
 
+func _draw_standees() -> void:
+	var rows := standee_layout()
+	for row in rows:
+		var emphasized: bool = row.actor in [source, _focused_actor, _hover_actor]
+		if emphasized:
+			for offset in [Vector2(-2, 0), Vector2(2, 0), Vector2(0, -2), Vector2(0, 2)]:
+				draw_texture_rect(row.texture, Rect2(row.rect.position + offset, row.rect.size), false, Color(0.66, 0.94, 0.83, row.opacity))
+		draw_texture_rect(row.texture, row.rect, false, Color(1, 1, 1, row.opacity))
+	# Source markers are deliberately above every tall body, not depth-occluded.
+	for row in rows:
+		var tab: Rect2 = row.tab_rect
+		draw_style_box(_tab_style(row.actor == source), tab)
+		var mark := tab.position + Vector2(9, 10)
+		if row.actor == "A":
+			draw_polyline(PackedVector2Array([mark + Vector2(0, -4), mark + Vector2(4, 0), mark + Vector2(0, 4), mark + Vector2(-4, 0), mark + Vector2(0, -4)]), P.INK, 1.3, true)
+		elif row.actor == "B": draw_arc(mark, 4, 0, TAU, 16, P.INK, 1.3, true)
+		_text(tab.position + Vector2(17 if row.actor != "player" else 5, 15),
+			"%s %dHP" % ["P" if row.actor == "player" else row.actor, row.hp], P.INK, 12)
+
+func _tab_style(active: bool) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color("b6ebd5") if active else Color("f2ddba")
+	style.border_color = Color("714852")
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(3)
+	return style
+
 func _draw() -> void:
 	if state.is_empty(): return
 	var cell_size := _cell_size()
 	var rect := _board_rect()
 	if not stage_mode: draw_rect(rect, P.FLOOR)
-	if paper_mode:
+	if paper_mode and not theatre_mode:
 		shadow_renderer.draw_shadows(self, state, shadow_frame, cell_center, cell_size, source)
 	for x in range(state.width + 1):
 		var start := rect.position + Vector2(x * cell_size, 0)
@@ -339,10 +538,12 @@ func _draw() -> void:
 			var tile := _cell_rect(cell).grow(-3)
 			_tile(cell, 3, Color(_danger(), 0.16 if stage_mode else 0.08), true)
 			var hatch := cell_center(cell) + Vector2(-6, -2) if stage_mode else tile.position + Vector2(2, 10)
-			draw_line(hatch, hatch + Vector2(8, -8), _danger(), 1)
+			if _standee_textures.is_empty() or not stage_mode:
+				draw_line(hatch, hatch + Vector2(8, -8), _danger(), 1)
 			if intent.source == source: _tile(cell, 3, _danger(), false, 2)
-			if threat_counts[key] > 1: _text(tile.position + Vector2(tile.size.x - 14, 14), str(threat_counts[key]), _danger())
-		if intent.kind != "burst" and not intent.cells.is_empty():
+			if threat_counts[key] > 1 and (_standee_textures.is_empty() or not stage_mode):
+				_text(tile.position + Vector2(tile.size.x - 14, 14), str(threat_counts[key]), _danger())
+		if intent.kind != "burst" and not intent.cells.is_empty() and (_standee_textures.is_empty() or not stage_mode):
 			for enemy in state.enemies:
 				if enemy.id == intent.source:
 					_arrow(cell_center(enemy.pos), cell_center(intent.cells.back()), _danger(), true)
@@ -377,12 +578,26 @@ func _draw() -> void:
 	var enemies: Array = state.enemies.duplicate()
 	if stage_mode: enemies.sort_custom(func(a: Dictionary, b: Dictionary): return cell_center(a.pos).y < cell_center(b.pos).y)
 	var player_drawn := false
-	for enemy in enemies:
-		if stage_mode and not player_drawn and cell_center(state.player.pos).y <= cell_center(enemy.pos).y:
-			_draw_player()
-			player_drawn = true
-		_draw_enemy(enemy, stored)
-	if not player_drawn: _draw_player()
+	if not standee_layout().is_empty():
+		_draw_standees()
+		# Source-marked warning tabs sit beside, rather than underneath, the tall
+		# silhouettes. Every model-authored cell/source remains represented.
+		var labels_per_cell := {}
+		for intent in state.intentions:
+			for cell in intent.cells:
+				var key := str(cell)
+				var index: int = labels_per_cell.get(key, 0)
+				labels_per_cell[key] = index + 1
+				var tile := _cell_rect(cell)
+				var point := tile.position + Vector2(4 + index * 14, 15)
+				_text(point, str(intent.source), _danger(), 12)
+	else:
+		for enemy in enemies:
+			if stage_mode and not player_drawn and cell_center(state.player.pos).y <= cell_center(enemy.pos).y:
+				_draw_player()
+				player_drawn = true
+			_draw_enemy(enemy, stored)
+		if not player_drawn: _draw_player()
 	if not preview.is_empty():
 		var ghost := cell_center(preview.player.pos)
 		draw_arc(ghost, cell_size * 0.29, 0, TAU, 32, _borrowed(), 2, true)
