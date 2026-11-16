@@ -10,6 +10,7 @@ const ShadowRenderer = preload("res://ui/shadow_renderer.gd")
 const PaperCells = preload("res://ui/paper_cells.gd")
 const StageProjection = preload("res://ui/stage_projection.gd")
 const StageRenderer = preload("res://ui/stage_renderer.gd")
+const BoardInk = preload("res://ui/board_ink.gd")
 var shadow_renderer = ShadowRenderer.new()
 var paper_cells = PaperCells.new()
 var stage_projection = StageProjection.new()
@@ -37,6 +38,9 @@ var _standee_assembly: Dictionary = {}
 var _focused_actor := ""
 var _hover_actor := ""
 var _motion_before: Dictionary = {}
+var _telegraph := "current"
+var _contour := "current"
+var board_ink = BoardInk.new()
 
 func _ready() -> void:
 	focus_mode = Control.FOCUS_ALL
@@ -75,7 +79,35 @@ func set_stage_mode(enabled: bool) -> void:
 	_sync_stage()
 	queue_redraw()
 
+func set_board_comparison(telegraph: String, contour: String) -> bool:
+	if telegraph not in ["current", "ribbons", "stamps"] or contour not in ["current", "black", "rim"]:
+		return false
+	_telegraph = telegraph
+	_contour = contour
+	queue_redraw()
+	return true
+
+func board_comparison() -> Dictionary:
+	return {"telegraph": _telegraph, "contour": _contour}
+
+func announcement_marks() -> Array:
+	if not stage_mode or not theatre_mode or state.is_empty(): return []
+	var marks: Array = []
+	for intent in state.get("intentions", []):
+		if intent.source not in ["A", "B"] or intent.kind != "shove": continue
+		for enemy in state.get("enemies", []):
+			if enemy.id != intent.source or enemy.get("hp", 0) <= 0: continue
+			marks.append({"source": intent.source, "turn": state.turn, "kind": intent.kind,
+				"origin": enemy.pos.duplicate(), "direction": enemy.dir.duplicate(),
+				"cells": intent.cells.duplicate(true), "lane": 0 if intent.source == "A" else 1})
+			break
+	return marks
+
+func _uses_board_ink() -> bool:
+	return stage_mode and theatre_mode and not _standee_textures.is_empty() and _telegraph != "current"
+
 func configure_standees(textures: Dictionary, assembly: Dictionary) -> bool:
+	board_ink.clear_contours()
 	_standee_textures.clear()
 	_standee_images.clear()
 	_standee_assembly.clear()
@@ -436,6 +468,17 @@ func _draw_effect_footprint(footprint: Dictionary, active_shadow: bool = false) 
 	if footprint.type == "ray" and footprint.actor == "player" and footprint.stage == "release" and not footprint.cells.is_empty():
 		_arrow(cell_center(state.player.pos), cell_center(footprint.cells.back()), _borrowed(), false)
 
+func _draw_backlash_and_choices() -> void:
+	var backlash: Dictionary = state.get("backlash_footprint", {})
+	if not backlash.is_empty():
+		for cell in backlash.cells:
+			_tile(cell, 2, _danger(), false, 2)
+			_tile(cell, 5, _danger(), false, 1)
+	for cell in candidates:
+		var tile := _cell_rect(cell).grow(-5)
+		_tile(cell, 5, _borrowed(), false, 1.5)
+		draw_circle(cell_center(cell) + Vector2(-5, 0) if stage_mode else tile.position + Vector2(5, 5), 2, _borrowed())
+
 func _draw_enemy(enemy: Dictionary, stored: Dictionary) -> void:
 	var placement := figure_layout(enemy.pos)
 	var origin: Vector2 = placement.origin
@@ -475,11 +518,23 @@ func _draw_player() -> void:
 func _draw_standees() -> void:
 	var rows := standee_layout()
 	for row in rows:
+		if theatre_mode and _contour != "current":
+			board_ink.draw_contour(self, row, _standee_images[row.actor], _contour)
 		var emphasized: bool = row.actor in [source, _focused_actor, _hover_actor]
 		if emphasized:
 			for offset in [Vector2(-2, 0), Vector2(2, 0), Vector2(0, -2), Vector2(0, 2)]:
 				draw_texture_rect(row.texture, Rect2(row.rect.position + offset, row.rect.size), false, Color(0.66, 0.94, 0.83, row.opacity))
 		draw_texture_rect(row.texture, row.rect, false, Color(1, 1, 1, row.opacity))
+	if _uses_board_ink():
+		board_ink.draw_announcements(self, announcement_marks(), _telegraph)
+		# Command consequences stay above the new paper marks, but below source
+		# tabs. This is the same exact footprint/event path as the baseline.
+		_draw_backlash_and_choices()
+		for footprint in effect_footprints(): _draw_effect_footprint(footprint, _uses_shadow_effects())
+		var effects: Array = preview.get("events", []) if not preview.is_empty() else last_events
+		for event in effects:
+			if event.type in ["move", "displace"]:
+				_arrow(cell_center(event.from), cell_center(event.to), _borrowed(), false)
 	# Source markers are deliberately above every tall body, not depth-occluded.
 	for row in rows:
 		var tab: Rect2 = row.tab_rect
@@ -531,7 +586,11 @@ func _draw() -> void:
 	_tile(state.exit.pos, 9, exit_color, false, 1)
 	_text(cell_center(state.exit.pos) + Vector2(-14, 4) if stage_mode else exit_rect.position + Vector2(3, exit_rect.size.y - 6), "EXIT", exit_color, 12)
 	var threat_counts := {}
+	var ink_sources: Array = []
+	if _uses_board_ink():
+		for mark in announcement_marks(): ink_sources.append(mark.source)
 	for intent in state.get("intentions", []):
+		if intent.source in ink_sources and intent.kind == "shove": continue
 		for cell in intent.cells:
 			var key := str(cell)
 			threat_counts[key] = threat_counts.get(key, 0) + 1
@@ -547,20 +606,12 @@ func _draw() -> void:
 			for enemy in state.enemies:
 				if enemy.id == intent.source:
 					_arrow(cell_center(enemy.pos), cell_center(intent.cells.back()), _danger(), true)
-	var backlash: Dictionary = state.get("backlash_footprint", {})
-	if not backlash.is_empty():
-		for cell in backlash.cells:
-			_tile(cell, 2, _danger(), false, 2)
-			_tile(cell, 5, _danger(), false, 1)
-	for cell in candidates:
-		var tile := _cell_rect(cell).grow(-5)
-		_tile(cell, 5, _borrowed(), false, 1.5)
-		draw_circle(cell_center(cell) + Vector2(-5, 0) if stage_mode else tile.position + Vector2(5, 5), 2, _borrowed())
+	if not _uses_board_ink(): _draw_backlash_and_choices()
 	var stored: Dictionary = state.get("stored", {})
 	var effects: Array = preview.get("events", []) if not preview.is_empty() else last_events
 	var footprints := effect_footprints()
 	var shadow_effects := _uses_shadow_effects()
-	if shadow_effects:
+	if shadow_effects and not _uses_board_ink():
 		for footprint in footprints: _draw_effect_footprint(footprint, true)
 	var footprint_index := 0
 	var effect_positions := {"player": state.player.pos}
@@ -570,9 +621,9 @@ func _draw() -> void:
 		if not shadow_effects and event.type in ["ray", "area"]:
 			var footprint: Dictionary = footprints[footprint_index]
 			footprint_index += 1
-			_draw_effect_footprint(footprint)
+			if not _uses_board_ink(): _draw_effect_footprint(footprint)
 		if event.type == "move" or event.type == "displace":
-			_arrow(cell_center(event.from), cell_center(event.to), _borrowed(), false)
+			if not _uses_board_ink(): _arrow(cell_center(event.from), cell_center(event.to), _borrowed(), false)
 			effect_positions[event.actor] = event.to
 		if event.type == "death" and effect_positions.has(event.actor): death_cells.append(effect_positions[event.actor])
 	var enemies: Array = state.enemies.duplicate()
@@ -584,6 +635,7 @@ func _draw() -> void:
 		# silhouettes. Every model-authored cell/source remains represented.
 		var labels_per_cell := {}
 		for intent in state.intentions:
+			if intent.source in ink_sources and intent.kind == "shove": continue
 			for cell in intent.cells:
 				var key := str(cell)
 				var index: int = labels_per_cell.get(key, 0)

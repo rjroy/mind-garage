@@ -16,6 +16,8 @@ var presentation_mode := "paper"
 var encounter_id := "escape"
 var encounter_picker: OptionButton
 var encounter_dialog: ConfirmationDialog
+var telegraph_picker: OptionButton
+var contour_picker: OptionButton
 var _pending_encounter := ""
 var _puppet_pack := ""
 var _slice_art: Dictionary = {}
@@ -133,6 +135,15 @@ func set_presentation_mode(value: String) -> void:
 	_apply_view_layout()
 	_refresh()
 	print("Borrowed Turns UI: presentation=%s; gameplay unchanged" % value)
+
+func set_board_comparison(telegraph: String, contour: String) -> bool:
+	if not board.set_board_comparison(telegraph, contour): return false
+	for pair in [[telegraph_picker, telegraph], [contour_picker, contour]]:
+		var picker: OptionButton = pair[0]
+		for index in range(picker.item_count):
+			if picker.get_item_metadata(index) == pair[1]: picker.select(index)
+	print("Borrowed Turns UI: board appearance telegraph=%s contour=%s; gameplay unchanged" % [telegraph, contour])
+	return true
 
 func _prepare_slice_assets() -> bool:
 	_asset_error = ""
@@ -342,6 +353,28 @@ func _build_interface() -> void:
 	availability = _label(details, "", 14, true)
 	stage_held_details = _label(details, "", 14, true)
 	stage_held_details.visible = false
+	var comparison_controls := VBoxContainer.new()
+	comparison_controls.name = "BoardAppearance"
+	comparison_controls.visible = false
+	details.add_child(comparison_controls)
+	_label(comparison_controls, "Board appearance", 18)
+	_label(comparison_controls, "Telegraph", 14)
+	telegraph_picker = OptionButton.new()
+	for entry in [["current", "Current"], ["ribbons", "Paper shove ribbons"], ["stamps", "Shove-hand stamps"]]:
+		telegraph_picker.add_item(entry[1])
+		telegraph_picker.set_item_metadata(telegraph_picker.item_count - 1, entry[0])
+	comparison_controls.add_child(telegraph_picker)
+	_label(comparison_controls, "Standee edge", 14)
+	contour_picker = OptionButton.new()
+	for entry in [["current", "Current"], ["black", "Thin black edge"], ["rim", "Black + warm paper rim"]]:
+		contour_picker.add_item(entry[1])
+		contour_picker.set_item_metadata(contour_picker.item_count - 1, entry[0])
+	comparison_controls.add_child(contour_picker)
+	telegraph_picker.item_selected.connect(func(index: int):
+		set_board_comparison(telegraph_picker.get_item_metadata(index), board.board_comparison().contour))
+	contour_picker.item_selected.connect(func(index: int):
+		set_board_comparison(board.board_comparison().telegraph, contour_picker.get_item_metadata(index)))
+	_label(comparison_controls, "Appearance only. No turn or selection changes.", 13, true)
 	_label(details, "Enemy intentions · in order", 18)
 	intention_list = VBoxContainer.new()
 	details.add_child(intention_list)
@@ -378,6 +411,7 @@ func _build_interface() -> void:
 	help_dialog.title = "Controls and the capture bargain"
 	help_dialog.dialog_text = "Move and act in any order. AP (action points) and MP (movement points) are independent.\nCapture is free and unlimited across legal sources, even at zero AP/MP.\nRelease uses 1 AP and can happen on the capture turn.\nReplace a held ability or end its deadline turn: it discharges where you stand.\nEnemy plans resolve only when you End turn. There is no automatic turn ending.\n\nChoose an operation, choose its target, inspect, then Confirm.\nM: Move, C: Capture, L: Release, E: prepare End turn.\nTab / Shift+Tab: controls. Arrows on board: inspect.\nEnter selects a cell; a separate Enter confirms. Esc / right click: cancel.\nCtrl+R: restart. Nothing advances during inspection or preview.\n\nY: you; squares: pursuers; EXIT: escape.\nRust hatches/dashed routes: enemy intentions. Double rust border: held backlash here.\nTeal outlines: legal choices. Solid arrows/hollow pawns: exact command preview.\nPreview lists ordered effects; Recent events contains only confirmed commands."
 	help_dialog.dialog_text += "\n\nStage: click figure or foot marker; [ / ] cycles figures.\nAlt-click targets floor through figures. Details opens exact effects.\nTheatre positions identify actors, not compass directions; rehearsal does not advance time."
+	help_dialog.dialog_text += "\nTwo pursuers: compare board marks in Details → Plans."
 	add_child(help_dialog)
 	_build_stage_shell()
 	resized.connect(_resize_rail)
@@ -484,6 +518,7 @@ func _apply_view_layout() -> void:
 		history.custom_minimum_size.y = 120
 	_flat_root.visible = not stage
 	_stage_root.visible = stage
+	telegraph_picker.get_parent().visible = stage and encounter_id == "two-pursuers"
 	stage_held_details.visible = stage
 	_stage_picker.select(["plain", "paper", "stage"].find(presentation_mode))
 	_stage_sheet.visible = false
@@ -641,6 +676,7 @@ func _inspect_cell(cell: Array) -> void:
 	inspection.text = "%s · %s · %s" % [P.cell(cell), ", ".join(occupants) if not occupants.is_empty() else "Empty", "Threats: " + ", ".join(threats) if not threats.is_empty() else "No announced threat"]
 
 func _update_board() -> void:
+	telegraph_picker.get_parent().visible = presentation_mode == "stage" and encounter_id == "two-pursuers"
 	board.set_view(state, prediction, candidates, selected, source)
 	board.set_stage_mode(presentation_mode == "stage")
 	board.set_presentation(presentation_mode != "plain", shadow.frame())

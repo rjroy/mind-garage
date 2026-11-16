@@ -95,6 +95,30 @@ Confirmed release, backlash and enemy actions follow the shared controller's act
 
 **Composition tradeoff:** taller standees overlap more depth rows. The playable grid begins lower, with an extended ungridded floor apron retaining the stage seam; this separates faces from the performance without moving logical actors apart. Face/lantern identity, rear-source access and source tabs need actual human play review at 1024×720 and normal size. Temporary puppets remain lower-resolution concept cutouts, not a finished matching cast or a general crowd director.
 
+### Board readability comparison
+
+Ronald accepted the Director images and standee sizes. The next bounded comparison changes only standee edges and board announcements, using the same actual encounter and unchanged source artwork.
+
+In **Two pursuers / Stage**, open **Details → Plans → Board appearance**. If a prepared command opens the Preview tab, choose Plans. Both controls are keyboard accessible and the panel scrolls:
+
+- **Telegraph:** Current, Paper shove ribbons, or Shove-hand stamps. Ribbons connect the source foot marker to separate paper segments carrying printed shove hands. Stamps print an independent hand in each threatened cell. Diamond/A and circle/B identify sources; opposite warnings remain separate at their shared cells.
+- **Standee edge:** Current, Thin black edge, or Black + warm paper rim. These are runtime contours derived from the actual texture alpha, not new standee PNGs, changed hit regions or rescaled figures.
+
+Start at **Current / Current** for the before view. Compare the two new telegraph languages using the same **Black + warm paper rim** setting. Separately compare all three edge settings with Current telegraphs. Appearance changes keep the selected command, exact prediction, held occurrence, controller progress and history; they do not start a new run or advance a turn. Preferences survive Restart and view changes. The controls are hidden outside the two-pursuer Stage view.
+
+Threatened cells and directions still come from the model. A ribbon's narrow attachment at its source is not another threatened cell or a walking route. Capturing removes only that current source warning, not its standee or future announcements. Double rust borders still mean held backlash here; mint marks still show legal choices and exact command predictions. These candidate treatments are not final visual acceptance.
+
+The focused scene runner reuses the existing controls. Its behavioral assertions use controlled fixtures; optional graphical evidence then uses the actual two-pursuer encounter:
+
+```bash
+godot --headless --path games/borrowed-turns --script res://tests/board_warning_run.gd
+godot --headless --path games/borrowed-turns --script res://ui/board_comparison_smoke.gd
+godot --path games/borrowed-turns --script res://ui/board_comparison_smoke.gd -- \
+  --capture-dir=/tmp/opencode/borrowed-turns-board-comparison
+```
+
+The same local puppet pack is required. Captures include both 1024×720 and 1600×900: three matched initial outline views, each new telegraph language before capture/holding A/holding B with a fixed rim, and supplementary release previews. Only scene processing is paused during each matched readback, after normal settlement, to preserve the same Director pose. Use a graphical renderer and a fresh output directory. These are injected-control author/test evidence, not physical input, human legibility judgments or independent proof of enjoyment.
+
 Focused checks (the real-scene checks require that local pack):
 
 ```bash
