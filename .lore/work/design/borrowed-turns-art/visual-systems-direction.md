@@ -92,3 +92,11 @@ After one handoff edit, Ronald said it still reads more like lantern decoration,
 Keep concept candidates and inspection evidence under gitignored `.lore/local/`. Preserve approved source artwork and the accepted stage/floor. Description approval, image creation, exact-image approval and runtime integration remain separate decisions. No production batch or game implementation is authorized by this document.
 
 Actionable work and blockers remain in Beads (`mind-garage-fy3`); the next mechanics item `mind-garage-7am` remains blocked. This note records intent and hypotheses, not a second task tracker.
+
+## Proposed next checkpoint: play both layers together
+
+After the one-source motion checkpoint communicated ownership clearly enough, Ronald asked to consider the complete playable relationship. He said the current map figures are imperceptible and need larger standee artwork. The next proposal therefore combines standee readability, source-marked board warnings and two simultaneous rehearsals with either capture choice—not another isolated effect clip.
+
+The [draft playable-slice proposal](dual-layer-playable-slice-brief.md) uses an adjacent, same-column player/A/B encounter to expose overlap instead of arranging it away. Three distinct candidate standee silhouettes, true-cell foot anchors and accessible selection would make the actual board the place of play. Temporary puppet art would remain, with stable A-left/P-center/B-right theatrical identities.
+
+This remains creative discussion. Ronald clarified that the agent should recommend a useful next step without interpreting broader scope discussion as permission to execute it. Candidate generation, processing and implementation are not yet authorized.
