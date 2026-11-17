@@ -10,7 +10,7 @@ related: [.lore/work/intents/player-brief.md, .lore/work/experiments/002-shadow-
 
 ## Inputs and provenance
 
-- Experiment ID: `003-active-opponents`. Current stage: positive puzzle-like feedback on `744fca3`; the 7×7 Stage-capacity candidate is technically verified/reviewed and awaits Ronald's visual judgment before opponent expansion.
+- Experiment ID: `003-active-opponents`. Current stage: Ronald accepts the 7×7 Stage-capacity candidate; a gameplay-first opponent shortlist is the next design discussion.
 - Source baseline: `37026b6`, following packaged-resource checkpoint `8587639` and cleanup `144c1a9`. Accepted presentation and 2.7-second telegraph waves are the starting point.
 - Input procedures: repository experiment-record template and `implement`/`verification-planning` workflows. This is a revision of the selected capture mechanic, not fresh hook discovery.
 - Audience: Ronald only. Godot, existing packaged artwork, no new dependencies or asset generation.
@@ -371,6 +371,8 @@ Fresh bounded correctness review finds no material defect. It confirms coordinat
 The subsequent separate refactor assessment recommends no further change; independent lightweight engineering-quality assessment finds the localized reuse of the cached projection and ordinary encounter data proportionate, with no material concerns. It confirms the 90-file frozen manifest and reads recorded checks without claiming new execution. Final README/status wording changes only after these assessments. No screenshots, recordings, compositor operations or new art were used.
 
 Capacity handoff: close an old game process and launch normally. Judge the far row's tile/threat readability, actor-foot location and access, front-edge/foreground relationship, and overall use of the Stage floor. The candidate's 7×7 selection is revisable; 8×8 misses the provisional minimum-window clearance heuristic, not a universal aesthetic law. Do not infer complete-fight balance or enjoyment from these layout guards, or change AP/AI to compensate before live feedback.
+
+Ronald's live response to capacity checkpoint `8275a48` is “works great”; he asks to move on to a list of potential opponents. This accepts the usable board presentation for proceeding, not a claim that 7×7 is the only future footprint or that its current fight is balanced. Close `mind-garage-p4z`; continue gameplay-first opponent proposals under `mind-garage-dxm`, without art or implementation authorization.
 
 ### Capture limitation investigation after `d230a48`
 

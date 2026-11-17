@@ -1,6 +1,6 @@
 # Borrowed Turns
 
-One small turn-based fight built around enduring an enemy attack to acquire its ability, then using it through Shine. Ronald reports the 5×5 version at `744fca3` felt good, engaging and puzzle-like, but not particularly replayable as the same encounter. Current normal launch is a 7×7 board-capacity candidate, not a newly validated fight. It is not a run, unlock system or general enjoyment finding. Mind Garage names the research effort, not this game.
+One small turn-based fight built around enduring an enemy attack to acquire its ability, then using it through Shine. Ronald reports the 5×5 version at `744fca3` felt good, engaging and puzzle-like, but not particularly replayable as the same encounter. Normal launch uses the accepted 7×7 Stage extent from `8275a48`, not a newly validated fight. It is not a run, unlock system or general enjoyment finding. Mind Garage names the research effort, not this game.
 
 ## Run
 
@@ -67,7 +67,7 @@ The earlier visual pilot does not establish enjoyment. The current active-oppone
 
 The approved backdrop, paper floor and transparent foreground are composed in Godot 2D without changing their source pixels. The theatre receives the main viewport width rather than the old board column. Status and action strips remain visible; **Details** explicitly opens the upper-screen sheet, choosing Preview when a command is prepared, otherwise Plans. Selecting a command no longer automatically covers the performers. Long ordered previews, plans and history scroll within the sheet, not over the playable floor.
 
-The grid follows the model's runtime width and height, not an image's painted cell count. The current capacity candidate is 7×7, player `[0,3]` and opponents `[6,0]`/`[6,6]`, using a wider/taller floor fit with no edge coordinate labels. Standee scale, Director and roster remain unchanged. At minimum 1024×720 the grid spans about 674×262 pixels; at 1280×800 about 779×303. Sampled cell centres remain clear of the original foreground artwork, but actual visual acceptance is still needed.
+The grid follows the model's runtime width and height, not an image's painted cell count. The accepted extent is 7×7, player `[0,3]` and opponents `[6,0]`/`[6,6]`, using a wider/taller floor fit with no edge coordinate labels. Standee scale, Director and roster remain unchanged. At minimum 1024×720 the grid spans about 674×262 pixels; at 1280×800 about 779×303. Sampled cell centres remain clear of the original foreground artwork; Ronald accepts this presentation as “works great.” Other encounter footprints remain future design choices.
 
 Stable crops, quarter-turns, subtle color variation and seams make cells read as separate paper pieces. The floor shader, board marks, actor feet and mouse targeting share one perspective map. This slice does not add a player-facing grid-size setting. On the dark floor, threats use light coral and legal choices use pale mint; their meaning is unchanged.
 
