@@ -1,6 +1,6 @@
-# Borrowed Turns revision 02 model checks
+# Borrowed Turns checks
 
-These deterministic checks exercise the real `res://model/encounter.gd` with test-owned fixtures and data-owned ability parameters. They do not assert production board tuning, enjoyment, or novelty. The [revision 02 executable contract](../../.lore/work/experiments/001-hook-discovery/revision-02-executable-rules.md) defines this suite. The original six-variant source, executable rules and results remain in their historical package; this suite replaces superseded assertions instead of maintaining a second live rules engine.
+Deterministic checks exercise the real `res://model/encounter.gd` with controlled, test-owned fixtures. They do not assert production tuning, enjoyment or novelty. Current rules and executed evidence are recorded in [experiment 003](../../.lore/work/experiments/003-active-opponents/record.md). Historical revision-02 contracts are not current requirements or another supported rules engine.
 
 From repository root, with Godot 4.7.2 installed:
 
@@ -8,19 +8,19 @@ From repository root, with Godot 4.7.2 installed:
 /usr/bin/godot --headless --path games/borrowed-turns --script res://tests/run.gd
 ```
 
-The runner prints the check and failure counts and exits 1 on assertion failures. A parse error, import error, crash, or setup failure is not a behavior-specific RED. The independent tester owns RED and GREEN validation. Before the model revision is implemented, a focused check can demonstrate the changed explicit turn and budget behavior without depending on unimplemented new snapshot fields or an alternate test model:
+The runner prints check/failure counts and exits 1 on assertion failures. A parse/import error, crash or invalid fixture is not behavior-specific RED. The independent tester owns RED/GREEN execution. Focus the armed-Capture/Shine contract with:
 
 ```sh
-/usr/bin/godot --headless --path games/borrowed-turns --script res://tests/run.gd -- --focus=budget
+/usr/bin/godot --headless --path games/borrowed-turns --script res://tests/run.gd -- --focus=armed-capture-shine
 ```
 
-Expected old-model RED: successful movement advances the old turn and has no revised AP/MP fields, failing `movement does not advance turn`, `movement spends only one MP`, and `enemy does not resolve on movement`. If there is a parse/import/runtime error instead, report it separately; do not count it as the requested RED. Once implemented, both commands must exit 0. The test runner's `apply` helper checks nonmutating assessment and exact preview-to-commit equality for every successfully exercised command; invalid commands check reason and complete atomicity.
+The model helper checks nonmutating assessment and exact preview-to-commit equality for successfully exercised commands. Invalid commands check rejection and complete atomicity. The current full suite additionally covers armed/held/terminal reset, movement and aim policies, combat/escape objectives, geometry, push and source-linked storage.
 
-The suite covers four movement points interleaved with free capture and same-turn AP release; unlimited distinct capture occurrences and refresh; area replacement, stronger damage, source death/displacement and lethal outcomes; exact two-turn release/expiry boundary; range, LOS, budgets and no discard; complete lethal intentions/backlash footprints; ordered enemy turns; reset, isolation, normal shove, and rejection of removed inversion command fields. Each scenario uses controlled test data. The UI must consume model intentions, `backlash_footprint` and assessed event footprints, including a legal lethal replacement, rather than recomputing geometry. Native UI behavior and actual human enjoyment require separate validation.
+The candidate pays AP to arm, takes an enemy attack's complete normal effects before acquisition, permits repeated Shine without consuming storage, and loses the held ability when its source dies. Old free acquisition, threat-free adjacency, attack cancellation, expiry and backlash assertions are superseded. UI consumers must use model-authored events/cells, not recompute combat.
 
-Invert was explicitly removed from the live baseline. Focused removal regressions run with `-- --focus=no-invert` on either the model test runner or UI smoke runner. Historical builds and evidence may still contain the earlier optional feature; they are not current requirements.
+Invert and the plain/paper display modes are removed. Preserve rejection coverage where applicable, not parallel compatibility paths.
 
-The controlled burst-push axis regression, promoted from the retained revision-02 diagnostic, runs independently with:
+The controlled push-axis regression runs independently with:
 
 ```sh
 /usr/bin/godot --headless --path games/borrowed-turns --script res://tests/run.gd -- --focus=burst-axis
@@ -28,24 +28,29 @@ The controlled burst-push axis regression, promoted from the retained revision-0
 
 It checks the horizontal tie and dominant horizontal/vertical destinations, plus nonmutating assessment and preview-to-commit equality. The regular model command above also runs this regression. These test-owned positions and ability values do not constrain production tuning.
 
-## Rendered smoke completion gate
+## Presentation integration
 
-The two earlier rendered runs recorded in `evidence/no-invert/README.md` exited 0 without a full summary or terminal capture. Their cause is unknown; they are not passes. The gate below protects automation without changing normal game window-close behavior or requiring desktop changes.
-
-The intended CLI is `games/borrowed-turns/tools/rendered_smoke_gate.py`, run with Python 3 standard library only. Required `--capture-dir` names a **new, nonexistent** directory; reject an existing path before launching rather than accepting stale images. Optional `--godot` defaults to `/usr/bin/godot`; optional `--timeout` is a positive number of seconds, default 120. The gate creates the fresh directory, invokes the actual project runner with `--path <absolute-game-root> --script res://ui/smoke.gd -- --capture-dir=<absolute-new-dir>`, captures and forwards combined stdout/stderr, and terminates/reaps the child on timeout. Do not forward a focused smoke flag: this gate accepts the full rendered run only.
-
-Exit 0 is permitted only when the child itself exits 0 within the timeout, its output includes exactly one whole-line full-run summary of the form `R2 UI smoke: N checks, 0 failures. Injected GUI events, not physical OS input.` with positive integer N, and that new run produced a nonempty `r2-escaped.png` with the PNG file signature. Reject missing, malformed or embedded summaries, zero checks, missing or non-PNG terminal capture, output lines beginning `ERROR:` or `SCRIPT ERROR:`, nonzero or signal termination, and timeout. Rejections exit nonzero and explain why. Checking the caller-selected new directory avoids stale output; no persistent marker or nonce is needed. A pre-existing output path must remain untouched.
-
-Once implemented, run a full rendered check from the repository root with a unique path that does not yet exist:
+Use the existing headless runners for finite controller order, detached two-source performance, actual drawing commands and scene controls:
 
 ```sh
-python3 games/borrowed-turns/tools/rendered_smoke_gate.py --capture-dir /tmp/opencode/borrowed-turns-rendered-unique
+godot --headless --path games/borrowed-turns --script res://tests/shadow_presentation_run.gd
+godot --headless --path games/borrowed-turns --script res://tests/two_pursuer_presentation_run.gd
+godot --headless --path games/borrowed-turns --script res://tests/shadow_rendering_run.gd
+godot --headless --path games/borrowed-turns --script res://tests/board_warning_run.gd
+godot --headless --path games/borrowed-turns --script res://ui/smoke.gd -- --focus=armed-capture-shine
 ```
 
-The test-owned fake executable in `tests/fake_smoke_process.py` supplies controlled subprocess outcomes and is not a game implementation. `tests/test_rendered_smoke_gate.py` drives the actual gate CLI, checking successful completion, clean early exit, stale/missing/corrupt screenshots, nonzero assertions, malformed/fake summaries, runtime errors, signal interruption and timeout. It uses test-owned temporary inputs and no production level data. Run the focused tests with:
+Important boundaries include full strike/damage/push before acquisition, independent subsequent attacks, persistent/replaced held ownership, repeated Shine, source-loss clearing, generation cancellation and ordered slides. Rendering checks observe actual arrow/tile calls and preserve selected endpoints for narrow, wide and wall-clipped abilities.
+
+The migrated complete scene and board-integration checks run with:
 
 ```sh
-python3 -m unittest discover -s games/borrowed-turns/tests -p 'test_rendered_smoke_gate.py' -v
+godot --headless --path games/borrowed-turns --script res://ui/smoke.gd
+godot --headless --path games/borrowed-turns --script res://ui/board_comparison_smoke.gd
 ```
 
-During test-first development a separate setup invocation created a callable pass-through CLI before RED execution. The completed-child control passed while missing acceptance checks failed as assertions; missing files or imports were not treated as RED. The gate then gained its completion checks without weakening tests. Independent execution owns the resulting RED/GREEN and real rendered integration evidence, recorded in the experiment record rather than inferred from this contract.
+The board-comparison name is historical; it protects Stage geometry, controls and ownership, not a choice of display modes. Reuse unchanged art/projection evidence unless those algorithms or inputs change. A default-content replay demonstrates one complete feasible fight but cannot establish enjoyable decisions or unavoidable damage.
+
+## Evidence boundaries
+
+Current verification does not authorize screenshots, recordings, editor-driven captures or compositor troubleshooting. Older rendered-gate procedures belong to their original checkpoints; a headless pass is not a rendered or physical-input pass. Logs, snapshots and generated manifests stay under ignored `.lore/local/verification/`, never committed or required at runtime. Record exact commands, exits and relevant findings in the experiment record; Ronald's live play supplies the human judgment.

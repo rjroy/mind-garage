@@ -10,7 +10,7 @@ related: [.lore/work/intents/player-brief.md, .lore/work/experiments/002-shadow-
 
 ## Inputs and provenance
 
-- Experiment ID: `003-active-opponents`. Current stage: shared-AP, wide-shove and Stage-only revision technically verified and reviewed; awaiting Ronald's play.
+- Experiment ID: `003-active-opponents`. Current stage: armed-Capture/reusable-Shine/source-link candidate technically verified and reviewed; awaiting Ronald's play.
 - Source baseline: `37026b6`, following packaged-resource checkpoint `8587639` and cleanup `144c1a9`. Accepted presentation and 2.7-second telegraph waves are the starting point.
 - Input procedures: repository experiment-record template and `implement`/`verification-planning` workflows. This is a revision of the selected capture mechanic, not fresh hook discovery.
 - Audience: Ronald only. Godot, existing packaged artwork, no new dependencies or asset generation.
@@ -56,7 +56,7 @@ Normal launch from the repository root:
 godot --path games/borrowed-turns
 ```
 
-Close an older running process first to load the changed scripts. Normal entry selects Stage and the active two-pursuer fight. M/C/L/E select Move/Capture/Release/End Turn; inspect the model's preview and Confirm. Capture requires an unthreatened position within reach. Restart/terminal Replay restore the same fixture. The retained escape encounter is available with `-- --encounter=escape`, also in Stage. The second candidate removes the old presentation selectors and `--presentation` option; historical commands below describe their original checkpoint, not current launch instructions.
+Close an older running process first to load changed scripts. Normal entry selects Stage and the active two-pursuer fight. M/C/S/E select Move/Capture/Shine/End Turn; inspect the preview and Confirm. Capture now arms for an incoming hit, not safe adjacent source selection. Restart/terminal Replay restore the fixture. The retained escape encounter is available with `-- --encounter=escape`, also in Stage. Presentation selectors and `--presentation` are removed. Historical commands below describe their original checkpoints, not current launch instructions.
 
 Godot 4.7.2 on Linux; existing packaged game/source assets, no new dependencies, RNG, save/progression or unlock system. No seed is needed: sequential fixture order and left/up/down/right ties are deterministic. New temporary verification output belongs outside the retired scratch tree, under `.lore/local/verification/active-opponents/`. No graphical gate or physical-input claim accompanies headless checks; Ronald must judge the live slides and fight.
 
@@ -257,6 +257,111 @@ One complete actual-candidate route wins on turn 16 after **71 commands, HP7, on
 Temporary scripts, snapshots, commands and exit statuses are under `shared-ap-wide/route-comparison/`. One diagnostic JSON-number decoding setup error is retained separately; coordinates were converted to the existing integer command contract, not accepted through a gameplay relaxation. No search, tuning, graphics or game/test changes were used. This establishes feasibility and disruption of one known routine, not strategy dominance, felt peril or enjoyment.
 
 ## Revision log
+
+### Authorized third candidate: armed capture and source-linked Shine
+
+Ronald supplied the next rule direction rather than selecting one of the investigation's proposed limits: remove backlash and hold expiry; capture costs 1 AP to arm; the next incoming attack is captured without preventing its normal damage; rename release to Shine; Shine uses the held ability without forgetting it. He then explicitly added that defeating the ability's source removes that ability, and authorized building this combined “buffet” for subsequent adjustment. This is a human-authored mechanic revision, not an autonomous diagnosis or a new six-alternative selection.
+
+Preserve the existing 3-AP pool, one-AP cardinal movement, one-AP ability activation, two opponents, current HP/damage/width/range, Stage artwork, projection and pacing. No basic attack, healing, progression, new artwork or legacy rule mode is included.
+
+Implementation interpretation:
+
+- `{type: "capture"}` spends 1 AP and sets `capture_armed`. It does not select or cancel an enemy announcement. Standing inside a threat is permitted; source adjacency and the old any-threat rejection no longer govern acquisition. Duplicate arming is rejected without spending more AP.
+- Arming can precede or follow movement and survives End Turn and missed attacks until an enemy attack actually hits the player. It does not capture the player's own Shine. The first qualifying attack applies all its ordinary damage, displacement and other victims before acquisition; a surviving player acquires that actual source's payload before the next enemy attack. Lethal damage still loses, not a free rescue.
+- One held slot remains. Arming while holding retains the old ability until a successful acquisition replaces it, without backlash. Holding has no deadline.
+- `{type: "shine", target: [...]}` spends 1 AP, uses the held geometry and selected endpoint, and retains the ability. Its source continues attacking and announcing normally.
+- Source death clears the held ability regardless of who defeats it. A Shine already resolving completes its full effects; losing its source does not truncate its remaining area hits. Defeat-all and player-loss precedence remain authoritative model outcomes. Restart clears armed and held state.
+- UI and finite presentation must show the actual enemy strike and consequences before capture, reusable held state, Shine and source-loss clearing. Remove old expiry, backlash and instant cancellation machinery/tests rather than retaining a parallel bargain.
+
+Hypothesis: acquisition becomes an exposure commitment, while repeatable Shine provides sustained offense. Linking power to a living source adds a possible choice between preserving useful ammunition and making kill progress. Competing explanations: the injury is merely an unavoidable entry fee; one ability dominates; preserving a source becomes tedious; losing a source causes compulsory reacquisition rather than an interesting choice. These are predictions to investigate, not established benefits.
+
+Verification budget: model-owned controlled inputs cover paid arming, missed/actual/lethal/multiple hits, full attack-before-acquire order, persistent and replaced storage, repeatable endpoint-correct Shine, source death from multiple causes, full area completion, atomic rejection, assessment purity and terminal/reset behavior. Presentation checks cover preview/confirm/armed status, exact ordered attack/acquisition cues, repeat activation, source-loss clearing, warnings/picking and Stage defeat/replay. Reuse unchanged art/projection checks unless affected. One bounded actual-content complete-fight replay must include acquisition, repeated Shine and surviving-source transition; no hidden health/stat adjustment to manufacture feasibility. Human play judges whether this combined revision improves decisions, danger or enjoyment; it cannot isolate which changed rule caused a reaction.
+
+Initial independent model RED is clean: `tests/run.gd -- --focus=armed-capture-shine` exits 1 with **16 checks, eight failures**, rejecting each scenario's initial source-free arm command. Assessment purity passes, but later contact/Shine/source-death branches are not reached. After the production pass, independent focused GREEN reaches all eight scenario bodies and passes **185/0**, exit 0, including normal damage/push before acquisition, replacement, repeated Shine, wide selected-endpoint geometry, source loss after complete area effects, lethal contact and zero-AP rejection. Model SHA-256: `0deebc3791dd1500ee51b742619798f2d1787b742e3ea22930128c033b7096db`. The ten-file core boundary is stable before/after. Evidence: `armed-capture-shine/model-red/` and `model-green/` under the local active-opponent verification directory.
+
+The focused branch does not call `reset()`; do not claim reset coverage from that execution. A separate test-author pass is migrating the old full model suite to the new contract and adding armed/held/terminal reset cases while preserving applicable geometry, AI, ordering, objective and atomicity checks. Production is frozen during that migration.
+
+Presentation RED setup exposed direct reads of removed deadline/range/backlash fields. Narrow absence guards are permitted solely to load the old UI against the new producer and expose behavioral failures; no old-schema fixture padding or compatibility mode. The production presentation pass must remove these temporary guards together with all retired-rule consumers. UI/controller/presenter test authoring and the actual-content feasibility replay proceed in separate scopes.
+
+The migrated full model suite independently passes **415 checks, zero failures**, exit 0, including reset from armed, held and terminal states. Fixtures are controlled test-owned inputs, not production encounter tuning; the model remains unchanged. The ten-file boundary is stable before/after, SHA-256 `7889001cebabdcdcb1bd5412a276092ea5c5fbba132f686b445f2c5e2906fb95`. An author-stage displaced-footprint expectation incorrectly ignored fresh end-turn re-aiming and was corrected before independent execution; production was not adjusted to satisfy it. Evidence: `armed-capture-shine/model-full-green/`.
+
+#### Actual third-candidate replay
+
+A guided public-API replay wins the unchanged actual fight in **25 commands, turn 8, HP2**, with six total damage, two paid armings and five Shines from each acquired ability. B is acquired after its real attack at the end of turn 2; its death at command 14 clears storage. A is subsequently acquired after its real attack at the end of turn 5, and its death clears storage before victory. Every assessment is pure and every commit equals the preview. Model/content hashes remain unchanged; no search, tuning or failed continuation was needed.
+
+Replay from the default fresh fight below. `C` arms Capture; `M` and `S` list Move and Shine destinations. End Turn after each row except turn 8.
+
+| Turn | Commands before End Turn |
+| --- | --- |
+| 1 | M `[1,2]`, M `[2,2]`, C |
+| 2 | None; B hits and is acquired |
+| 3 | S `[2,3]`, M `[2,2]`, S `[2,4]` |
+| 4 | S `[3,3]`, M `[2,3]`, S `[4,3]` |
+| 5 | S `[3,3]` defeats B, C; A hits and is acquired |
+| 6 | S `[1,2]`, M `[1,3]`, S `[1,1]` |
+| 7 | S `[1,1]`, M `[1,2]`, S `[1,0]` |
+| 8 | S `[1,1]`; victory |
+
+Exact commands, driver and generated snapshots/events are local at `armed-capture-shine/route-investigation/`. All diagnostic invocations exited 0; six damage is observed on this route, not proved unavoidable. This is feasibility evidence, not a fun, optimality or strategy-dominance result. Do not coach the route before Ronald's first play unless he asks.
+
+#### Third-candidate presentation verification
+
+The initial focused independent presentation batch exits 1 without script/setup errors: controller **291/16 failures**, pure two-source presenter **634/5**, warnings **497/2**, actual scene **12/5**, and rendering **752/11**. The first four expose old behavior: premature held ownership, missing Shine projection, wrong operation/cost/source selection and prediction ownership. The scene returns at initial arming, so later real-scene paths are not yet exercised.
+
+The initial wide rendering cases contain a separate fixture error, not valid arrow RED: diagonal source placement causes the existing horizontal shove tie-break, leaving the player away from the intended cardinal Shine origin. A test-only repair aligns the source and asserts actual normal damage, upward push and acquisition ordering. Independent rendering recheck is clean **817 checks, 20 failures**, all missing Shine cues/arrows/finite footprints; actual acquisition, legal previews, model cells and purity pass. Endpoint checks downstream of absent arrows remain masked, not passed. Evidence: `armed-capture-shine/ui-red/` and `ui-red-render-recheck/`.
+
+Production presentation now consumes the new events and removes retired-rule consumers; focused author checks expose one further scene-input fixture mismatch: an ordinary floor click intersects opaque standee artwork and selects its owning cell rather than the test's requested Shine endpoint. A test-only repair uses the existing explicit Alt-floor input path while preserving exact-target and separate body-priority assertions. Independent focused GREEN and broad old-suite migration are pending; no production targeting workaround is authorized to satisfy this fixture.
+
+Independent focused presentation GREEN passes controller **294/0**, rendering **889/0**, pure presenter **634/0**, warnings **497/0** and actual armed-Capture/Shine scene **137/0**, all exit 0 without script/setup errors. Formerly blocked scene paths now reach damage, acquisition, repeated Shine, AP0, source-loss victory, Replay and S/retired-L keyboard behavior. Rendering reaches near/full/clipped-wide/narrow endpoints at both extents. Controlled timeline checks distinguish pre-strike held ownership, empty storage during handoff, and acquired storage during the later attack; presentation does not simply display final storage early.
+
+The active UI scan finds no retired backlash, deadline, capture-range, cancellation or Release-command consumer. Both author manifests match; the 93-file game before/after manifest is stable, SHA-256 `bba36b07a911e474afe27882779406953c0b5af87e45a34fcdfbc0e95c929c27`. Evidence: `armed-capture-shine/ui-focused-green/`. Broad smoke/comparison migration remains a separate test-only pass, with production frozen.
+
+The broad test-only migration removes superseded source-click/free acquisition, consumable Release, replacement/expiry/backlash cases and screenshot-study paths. Useful Stage actor access, corner/resize, Details, chooser, mobile preview/finite input locking, shove displacement, AP/range/area, explicit escape victory/history/Replay and wide Shine side-lane coverage remain. Only the `armed-capture-shine`, `stage` and `two-pursuers-cli` smoke focuses remain; removed aliases are rejected rather than maintained.
+
+Independent final broad verification passes full UI smoke **674/0**, board integration **2468/0**, standee **297/0**, default and explicit two-pursuer CLI **31/0** each, and explicit escape Stage **251/0**, all exit 0 without unexpected script/setup errors. The full smoke invokes armed-Capture/Shine scenarios, avoiding a redundant focused run. It reaches actor body/foot/roster/bracket/Details, floor targeting and resize, mobile slides and restart, combat/escape terminal Replay, and a wide off-centre hit. Retired `--presentation=paper` and obsolete `--focus=active-opponents` both reject with exit 2.
+
+The 93-file before/after boundary is stable, SHA-256 `032d5baee5fd5c988b079f8abd7a115778104f27e0074db49d1af84b2ea569d6`. Model and seven production UI files match their earlier focused-GREEN hashes, so model/controller/render/presenter/warning results and the actual-content route remain valid, not newly rerun. Evidence: `armed-capture-shine/final-green/`. Fresh correctness review follows this source freeze; human visual acceptance and enjoyment remain unestablished.
+
+Fresh correctness review reports two bounded findings. **C1:** the old rendered-smoke gate requires the removed R2 summary and terminal PNG, so it cannot accept the current screenshot-free runner; its dedicated fake/tests only reproduce that obsolete contract. Retire this automation rather than restore capture functionality or loosen acceptance. **C2:** the retained escape board's held-source outline reads final storage instead of the shared event-boundary held state, revealing acquisition/replacement ownership before its strike and transfer. A controlled drawing-consumer regression and board-only correction must preserve independent inspection highlighting. Tool retirement and test authoring use disjoint scopes; no gameplay tuning or new media workflow is included.
+
+C1 retirement deletes only `tools/rendered_smoke_gate.py`, `tests/test_rendered_smoke_gate.py` and its dedicated `tests/fake_smoke_process.py`. The scoped reference scan finds no active consumers outside historical `.lore` records; no Python test files remain in the game test directory. `git diff --check` passes. Historical failed-run evidence and design notes are preserved rather than rewritten. Writer evidence: `armed-capture-shine/c1-retirement/checks.log`; independent reconciliation and correction review remain pending with C2.
+
+C2 independent rendering RED is **977 checks, eight failures**, exit 1, exclusively premature held-source outline inputs before the strike/transfer for first acquisition and replacement. The probe observes actual inherited Canvas drawing at all ten controlled boundaries, not a second outline planner or screenshot. Normal damage/displacement/acquisition order, independent inspection, source loss, purity and G1 geometry pass. Independent reconciliation also confirms the three C1 files are absent, with no active consumer or remaining game Python file.
+
+The C2 production correction changes one board line to consume `shadow_frame.held` rather than final snapshot storage; the existing inspection-or-held outline predicate is untouched. No new ledger, fallback rules mode, clock or geometry is introduced. Board SHA-256: `dbcd734ea5cbf937d725ae7312778ef2ebdb78f710360d644437fb4e754507b7`. Independent GREEN and fresh C1/C2 correction review follow. Evidence: `armed-capture-shine/c2-red/` and `c2-author-green/`.
+
+Independent C2 GREEN passes rendering **977/0**, full smoke **674/0** and board integration **2468/0**, all exit 0. All ten ownership boundaries and eight prior failures are reached and pass, including independent inspection, replacement and settled source loss; G1 endpoint/cell coverage remains intact. The full smoke also reaches escape victory/Replay. The 90-file game manifest is unchanged before/after, SHA-256 `21ffd571ef05a61070454a8f2bfcda32e869c43f86e0c68ebf24c38610a37ef1`. Evidence: `armed-capture-shine/c2-green/`.
+
+A fresh focused correction review closes C1 and C2, inspects regression code/logs and confirms all 90 current source hashes match. It reports no remaining correction-scope defect and does not claim new execution. Separate refactor and engineering-quality assessments follow; no human enjoyment or visual acceptance is inferred.
+
+The subsequent separate refactor assessment recommends no further changes before play. Independent engineering-quality assessment finds the authoritative full-ability/acquisition ordering and small shared ownership ledger proportionate, with no material findings. It verifies all 90 frozen source entries and reads existing GREEN evidence rather than claiming new execution. Performance remains unprofiled. Only final documentation/status wording changes after these assessments; no executable source changes.
+
+Third-candidate handoff: launch normally after closing an old process; use C to arm Capture and S for repeated Shine, with 1 AP for each and for each movement tile. Observe the real hit before acquisition and the ability disappearing when its source dies. Ask whether acquisition is a worthwhile risk, whether preserving a source creates a meaningful choice, and where combat becomes repetitive. Do not infer enjoyment, continuation or replay from the successful automated route. `mind-garage-jkv` remains open for this human decision; `mind-garage-7am` remains blocked. No progression, healing or further tuning is authorized by technical completion.
+
+### Capture limitation investigation after `d230a48`
+
+Ronald reports the candidate is “better” but remains unsure. He asks how capture could be limited, which previous decisions would change, and what options exist, noting that comparable powers can feel like endgame abilities. This authorizes investigation and proposals, not implementation.
+
+Current-code inspection confirms that capture bundles cancellation of one announcement with acquisition of a single-use borrowed attack, at zero AP. Positioning is already costly: adjacency and freedom from every current enemy footprint are required. Thus capture is not a rescue from standing in a telegraph, but it can remove that region before subsequent movement. Replacement and expiry carry ability-scaled backlash, whereas an ordinary empty-slot capture followed by timely release incurs neither. Offensive damage currently depends on borrowed abilities or their backlash; there is no independent basic attack.
+
+The research does not establish that borrowing belongs late in a game. Nintendo's [Kirby's Adventure manual](https://www.nintendo.co.jp/clv/manuals/en/pdf/CLV-P-NAAPE.pdf), printed pages 16–20 and 30, describes ordinary ability stealing with eligible enemies, one active ability, some use/time limits, and weakened miniboss acquisition. This is not our announced-action interruption. The official [FFXIV Blue Mage guide](https://eu.finalfantasyxiv.com/jobguide/bluemage/) requires witnessing a special attack and defeating the enemy for a chance to learn it; that is persistent learning, not temporary interruption. These illustrate different acquisition gates, not evidence that their limits will improve this fight.
+
+Distinct proposals, not a combined patch:
+
+| Direction | Player decision and earlier choice revisited | Principal risk |
+| --- | --- | --- |
+| Capture costs 1 AP | Acquisition competes with movement/release; revisits free capture, not the shared AP architecture | Turns the existing loop into a slower or mandatory two-turn routine |
+| Visible eligibility, such as a weakened guard or exposed attack | Earn/select a capture opportunity; revisits every current announcement being eligible within reach/safety | Weakening first requires another way to make progress; periodic windows can become waiting |
+| Strain from successful capture, not only mishandling storage | Borrow the powerful action now or preserve capacity; revisits backlash being confined to replacement/expiry | An unavoidable health fee punishes the game's core action; recovery must not reward idle waiting |
+| Per-source lockout or capture recharge | Alternate targets or plan between steals; revisits unlimited reacquisition on fresh turns | The final enemy can become a forced wait or impossible kill; hard charges require a complete damage budget |
+| Separate cancellation from copying | Choose immediate suppression or ammunition; revisits the bundled meaning of stealing an announcement | Becomes copying rather than stealing; our already-safe capture rule can make cancellation the inferior option |
+| Opponents retain a distinct threat after losing one action | Decide which part of an opponent's plan to steal; revisits one announcement being its entire attack contribution, not necessarily capture itself | More telegraph complexity; extra actions must be visible and not negate the stolen action |
+
+Recommendation for discussion: retain stealing as the game's identity rather than assuming it should become a rare ultimate. A 1-AP capture is the smallest controlled diagnostic of action economy, not a promised design solution. A stronger opponent retaining a separately announced secondary threat tests whether capture feels excessive because one stolen action currently neutralizes all of that opponent's attack contribution. Test these separately, not together.
+
+If the desired direction is instead *rare capture among ordinary combat*, explicitly revisit the absence of independent player offense first. Scarcity without another meaningful way to fight risks replacing powerful repetition with empty waiting. Do not silently add a fighter's basic attack to the noncombatant/artifact premise.
+
+Before any candidate build, select the direction and exact rule. Screen opening, crossfire, AP-exhausted and lone-enemy positions for complete feasible play, avoidable damage and meaningful alternatives. Compare choices and enjoyment as well as capture count and damage; a restriction can make the game harder without making it more interesting. No new executable tests or gameplay changes were made during this investigation.
 
 - Initial intervention authorized through the requested opponent/objective changes and explicit any-enemy capture clarification. Technical reconnaissance precedes controlled tests and implementation.
 - Candidate `9450bfe` is technically feasible but human feedback finds insufficient choices/peril. Proposed next budget is one 3-AP pool with movement costing 1 AP; opponent-pressure intervention remains to be selected.

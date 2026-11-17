@@ -62,7 +62,7 @@ func snapshot() -> Dictionary:
 			{"source": "B", "kind": "shove", "cells": [[3, 3], [3, 2]]},
 			{"source": "A", "kind": "shove", "cells": [[3, 2], [3, 3], [3, 4]]},
 		],
-		"stored": {}, "backlash_footprint": {},
+		"stored": {}, "capture_armed": false,
 	}
 
 func make_board():
@@ -241,27 +241,25 @@ func test_exact_facts_and_lanes() -> void:
 	assert_marks(board, empty_expected)
 	board.free()
 
-func test_suppression_and_fresh_while_held() -> void:
+func test_armed_and_fresh_while_held() -> void:
 	for captured in ["A", "B"]:
 		var other := "B" if captured == "A" else "A"
 		var board = make_board()
 		var after := snapshot()
-		after.intentions = after.intentions.filter(func(row): return row.source != captured)
+		after.capture_armed = true
 		after.stored = {"source": captured, "captured_turn": 7, "dir": [0, 1],
 			"ability": {"kind": "shove", "range": 4}}
-		after.backlash_footprint = {"type": "ray", "cells": [[3, 2], [4, 2], [5, 2]]}
 		board.set_view(after, {}, [], [], "")
 		var rows: Array = board.announcement_marks()
-		check(rows.size() == 1 and mark(rows, captured).is_empty() and not mark(rows, other).is_empty(),
-			captured + ": only the captured announcement disappears; standee/storage do not invent one")
+		check(rows.size() == 2 and not mark(rows, captured).is_empty() and not mark(rows, other).is_empty(),
+			captured + ": armed/held ability never cancels either source's real announcement")
 		check(mark(rows, other).get("lane", -1) == (0 if other == "A" else 1),
-			"remaining source keeps its overlap ordering when the other disappears")
+			"both sources keep stable independent overlap ordering")
 		assert_regions(board)
-		check(board.effect_footprints().is_empty(), "held backlash is not relabeled as a committed/preview effect")
+		check(board.effect_footprints().is_empty(), "holding/arming alone never invents a damaging effect")
 		var fresh := snapshot()
 		fresh.turn = 8
 		fresh.stored = after.stored.duplicate(true)
-		fresh.backlash_footprint = after.backlash_footprint.duplicate(true)
 		board.set_view(fresh, {}, [], [], captured)
 		rows = board.announcement_marks()
 		check(rows.size() == 2 and mark(rows, captured).get("turn", -1) == 8
@@ -269,14 +267,14 @@ func test_suppression_and_fresh_while_held() -> void:
 		assert_regions(board)
 		var marks_before: Array = rows.duplicate(true)
 		var preview := {"events": [
-			{"type": "release", "source": captured},
+			{"type": "shine", "source": captured, "target": [5, 2]},
 			{"type": "ray", "actor": "player", "cells": [[4, 2], [5, 2]]},
 		], "player": {"pos": [3, 2]}, "enemies": []}
 		board.set_view(fresh, preview, [[4, 2]], [4, 2], captured)
 		check(board.announcement_marks() == marks_before, "selected prediction never suppresses or replaces current enemy warnings")
 		assert_regions(board)
-		check(board.effect_footprints() == [{"type": "ray", "actor": "player", "stage": "release",
-			"cells": [[4, 2], [5, 2]]}], "release uses its existing exact prediction path, separate from announcement ownership")
+		check(board.effect_footprints() == [{"type": "ray", "actor": "player", "stage": "shine",
+			"cells": [[4, 2], [5, 2]]}], "Shine exact prediction remains separate from announcement ownership")
 		board.set_view({}, {}, [], [], "")
 		check(board.announcement_marks().is_empty() and board.announcement_regions().is_empty(), "clearing state removes stale warning facts/regions")
 		board.free()
@@ -448,13 +446,13 @@ func test_board_wave_phase_and_ownership() -> void:
 	for captured in ["A", "B"]:
 		var other := "B" if captured == "A" else "A"
 		var held := snapshot()
-		held.intentions = held.intentions.filter(func(row): return row.source != captured)
+		held.capture_armed = true
 		held.stored = {"source": captured, "captured_turn": 7, "dir": [0, 1],
 			"ability": {"kind": "shove", "range": 4}}
 		board.set_view(held, {}, [], [], "")
 		var rows := assert_waves(board, 0.42)
-		check(mark(rows, captured).is_empty() and mark(rows, other) == mark(later, other),
-			"capture removes only its current waves; surviving source keeps its geometry and phase")
+		check(mark(rows, captured) == mark(later, captured) and mark(rows, other) == mark(later, other),
+			"armed/held state never cancels either source's moving warning")
 		var fresh := snapshot()
 		fresh.turn = 8
 		fresh.stored = held.stored.duplicate(true)
@@ -587,7 +585,7 @@ func _run() -> void:
 	test_cell_unions()
 	test_region_projection_and_preservation()
 	test_exact_facts_and_lanes()
-	test_suppression_and_fresh_while_held()
+	test_armed_and_fresh_while_held()
 	test_wave_phase_direction_and_curvature()
 	test_wave_exact_clipping_and_isolation()
 	test_wave_source_origin_and_translation()

@@ -1,8 +1,6 @@
 extends "res://ui/smoke.gd"
-## Replaces the retired appearance-picker matrix with the angled wavefront slice.
-## Controlled assertions first; optional evidence uses actual encounter content.
+## Actual Stage joins: projection, roster, warnings and borrowed attack geometry.
 
-const SliceFixture = preload("res://content/two_pursuers.gd")
 const MotionOverlay = preload("res://ui/wavefront_overlay.gd")
 
 func _comparison_setup() -> bool:
@@ -150,7 +148,7 @@ func _check_warning_sources() -> void:
 		check(row.get("cells", []).is_empty() or not contours.is_empty(),
 			"nonempty actual announcement has a broad logical region by default")
 	check(observed == expected and regions.size() == expected.size(),
-		"one exact current region per source; overlap/capture cannot merge or leave stale announcements")
+		"one exact current region per source; arming/holding cannot merge or cancel announcements")
 	_check_wave_join()
 
 func _check_wave_join() -> void:
@@ -175,35 +173,6 @@ func _check_wave_join() -> void:
 				"real moving curves consume the slower phase derived from the shared rehearsal cycle count")
 		check(found, region.source + ": real moving-wave row exists")
 
-func _test_rehearsal_motion() -> void:
-	await load_fixture(_controlled_fixture())
-	var before := _gameplay_facts()
-	var phase_before: float = game.shadow.frame().loop_phase
-	var waves_before: Array = game.board.announcement_waves()
-	# Let the normal scene process actual elapsed delta. No fabricated controller
-	# ticks or fixed-frame recording timing; combat still awaits confirmation.
-	await create_timer(0.16).timeout
-	var phase_after: float = game.shadow.frame().loop_phase
-	check(not is_equal_approx(phase_before, phase_after), "normal scene processing advances the existing rehearsal loop")
-	check(_gameplay_facts() == before, "wave rehearsal never spends budgets, hurts actors, changes turns or alters selection")
-	check(game.board.announcement_waves() != waves_before, "normal idle scene visibly changes the actual moving-front geometry")
-	_check_warning_sources()
-	for captured in ["A", "B"]:
-		await load_fixture(_controlled_fixture())
-		await _prepare_capture(captured)
-		_check_warning_sources() # A preview must not stop its current waves.
-		await commit()
-		_check_warning_sources()
-		var sources: Array = []
-		for row in game.board.announcement_waves(): sources.append(row.source)
-		check(sources == ["B" if captured == "A" else "A"],
-			"confirmed capture stops only its current warning/waves, not the surviving source")
-		var held_state := _gameplay_facts()
-		var held_waves: Array = game.board.announcement_waves()
-		await create_timer(0.16).timeout
-		check(game.board.announcement_waves() != held_waves and _gameplay_facts() == held_state,
-			"surviving source keeps rehearsing after either capture without advancing combat")
-
 func _controlled_fixture() -> Dictionary:
 	return F.two_pursuers()
 
@@ -218,125 +187,6 @@ func _floor_click(cell: Array) -> void:
 		game.get_viewport().push_input(event)
 		await process_frame
 
-func _prepare_capture(id: String) -> void:
-	press(game.action_buttons.capture)
-	var body := _standee_body_point(id)
-	check(body.is_finite(), id + ": accepted actual body remains reachable on the angled board")
-	if body.is_finite(): await _stage_gui_click(body)
-	check(game.command == {"type": "capture", "source": id}, id + ": body click selects its true source")
-	var row := _standee_entry(id)
-	check(row.get("tab_rect") is Rect2, id + ": source foot tab remains available")
-	if row.get("tab_rect") is Rect2: await _stage_gui_click(row.tab_rect.get_center())
-	check(game.command == {"type": "capture", "source": id} and not game.confirm_button.disabled,
-		id + ": projected foot tab prepares the same legal capture")
-	if await _roster_click(id):
-		check(game.command == {"type": "capture", "source": id} and not game.confirm_button.disabled,
-			id + ": off-grid roster prepares the same capture as body and foot marker")
-
-func _test_controlled_slice() -> void:
-	for extent in [Vector2i(1024, 720), Vector2i(1600, 900)]:
-		await _stage_resize(extent)
-		# The original both-threats pose remains valuable for inspection and
-		# ownership, but is intentionally not a successful capture fixture.
-		await load_fixture(F.two_pursuers(true))
-		_check_default_slice()
-		await _inspect_roster()
-		press(game.action_buttons.capture)
-		await _roster_click("A")
-		check(game.confirm_button.disabled and game.prediction.is_empty(),
-			"overlap stress pose permits inspection, not capture while threatened")
-		for captured in ["A", "B"]:
-			await load_fixture(_controlled_fixture())
-			_check_default_slice()
-			_check_plane_join()
-			var initial: Dictionary = game.state.duplicate(true)
-			await _inspect_roster()
-			for cell in [[0, 0], [4, 0], [4, 4], [0, 4]]:
-				await _floor_click(cell)
-				check(game.selected == cell and game.model.snapshot() == initial,
-					"actual Alt-floor input reaches each rotated corner without advancing state")
-			await _prepare_capture(captured)
-			check(game.model.snapshot() == initial and preview_matches(), "capture selection is a nonmutating exact assessment")
-			_check_warning_sources() # Preview must not prematurely remove either current threat.
-			var before := _gameplay_facts()
-			var sample: Dictionary = game.board.piece_appearance([1, 1])
-			await _stage_resize(Vector2i(1600, 900) if extent.x == 1024 else Vector2i(1024, 720))
-			check(_gameplay_facts() == before and game.board.piece_appearance([1, 1]) == sample,
-				"resize with a prepared capture preserves command, prediction, storage, history and paper identity")
-			_check_plane_join()
-			_check_warning_sources()
-			await _stage_resize(extent)
-			await commit()
-			check(game.state.stored.get("source", "") == captured and game.state.enemies.size() == 2,
-				"actual capture owns the selected occurrence and leaves both standees alive")
-			_check_warning_sources()
-			_check_roster()
-			press(game.action_buttons.release)
-			await _floor_click([1, 1])
-			check(game.command == {"type": "release", "target": [1, 1]} and not game.confirm_button.disabled,
-				"Alt-floor release selects the exact yawed cell, not a body/head in front of it")
-			check(not game.state.backlash_footprint.is_empty() and not game.board.effect_footprints().is_empty(),
-				"held backlash and exact command effects stay available alongside the remaining enemy region")
-			_check_warning_sources()
-			_check_roster()
-			await commit()
-			check(game.state.stored.is_empty(), "ordinary real release continues play beyond capture")
-			_check_warning_sources()
-			_check_roster()
-			game._apply_restart()
-			await process_frame
-			check(game.state == initial and not game.resolving, "Restart restores the selected fixture, not an old visual generation")
-			_check_default_slice()
-
-func _test_roster_hp_sync() -> void:
-	# Controlled damage and removal, not live encounter HP/tuning constants.
-	await load_fixture(_controlled_fixture())
-	press(game.action_buttons.capture)
-	if not (await _roster_click("A")): return
-	check(game.command == {"type": "capture", "source": "A"}, "roster can acquire a real current source")
-	await commit()
-	await move([2, 2]) # Enter the attack line only after the safe acquisition.
-	var before_hp: int = _standee_entry("B").hp
-	press(game.action_buttons.release)
-	await _floor_click([2, 3])
-	check(not game.confirm_button.disabled, "controlled roster HP check prepares a real damaging release")
-	var predicted_hp := -1
-	for enemy in game.prediction.get("enemies", []):
-		if enemy.id == "B": predicted_hp = enemy.hp
-	check(predicted_hp >= 0 and predicted_hp < before_hp, "controlled release preview really damages the surviving pursuer")
-	check(_standee_entry("B").hp == before_hp, "roster HP does not jump to the selected prediction before confirmation")
-	_check_roster()
-	await commit()
-	check(_standee_entry("B").hp == predicted_hp, "confirmed damage refreshes the displayed pursuer HP")
-	_check_roster()
-	var player_before: int = game.state.player.hp
-	select("end_turn")
-	check(game.prediction.get("player", {}).get("hp", player_before) < player_before, "controlled surviving announcement really threatens player HP")
-	check(_standee_entry("player").hp == player_before, "player roster HP remains current during End turn preview")
-	await commit()
-	check(_standee_entry("player").hp == game.state.player.hp and game.state.player.hp < player_before,
-		"actual enemy damage refreshes player roster HP")
-	_check_roster()
-	var fragile := _controlled_fixture()
-	fragile.enemies[1].hp = 1
-	await load_fixture(fragile)
-	var old_b := _standee_entry("B")
-	press(game.action_buttons.capture)
-	if not (await _roster_click("A")): return
-	await commit()
-	await move([2, 2])
-	press(game.action_buttons.release)
-	await _floor_click([2, 3])
-	await commit()
-	check(_standee_entry("B").is_empty(), "confirmed source death removes its roster and marker descriptors")
-	if old_b.get("roster_rect") is Rect2 and old_b.roster_rect.has_area():
-		check(game.board.actor_at(old_b.roster_rect.get_center()) != "B", "removed roster row cannot retain a stale actor hit")
-	_check_roster()
-	game._apply_restart()
-	await process_frame
-	_check_roster()
-	check(not _standee_entry("B").is_empty(), "Restart restores the selected fixture's living roster")
-
 func same_cells(actual: Array, expected: Array) -> bool:
 	if actual.size() != expected.size(): return false
 	for cell in expected:
@@ -346,133 +196,6 @@ func same_cells(actual: Array, expected: Array) -> bool:
 func describes_wide(text: String) -> bool:
 	var words := text.to_lower()
 	return words.contains("width 3") or words.contains("3-wide") or words.contains("three-wide")
-
-func _test_wide_borrowed_geometry() -> void:
-	await load_fixture(F.wide_capture())
-	var incoming := [[2, 3], [3, 3], [4, 3], [2, 2], [3, 2], [4, 2]]
-	var released := [[1, 3], [2, 3], [3, 3], [1, 2], [2, 2], [3, 2]]
-	var backlash: Array = [[2, 4]]
-	backlash.append_array(released)
-	var b_plan: Dictionary = {}
-	for intent in game.state.intentions:
-		if intent.source == "B": b_plan = intent
-	check(same_cells(b_plan.get("cells", []), incoming) and [2, 3] in incoming
-		and game.state.player.pos == [2, 3], "real wide B warning covers the side-only player cell and all six forward cells")
-	var named := false
-	for row in game.intention_list.get_children():
-		if row is Button and row.text.begins_with("B ·"): named = describes_wide(row.text)
-	check(named, "actual B ability details disclose width three before acquisition")
-	_check_default_slice()
-	var b_region: Dictionary = {}
-	for row in game.board.announcement_regions():
-		if row.source == "B": b_region = row
-	check(same_cells(b_region.get("cells", []), incoming), "actual wide region draw input retains exact B ownership and full width")
-	for cell in incoming:
-		var center: Vector2 = game.board.cell_center(cell)
-		check(game.board._from_pixel(center) == cell, "real angled wide side-lane cells share the floor projection/picking inverse")
-	var before: Dictionary = game.model.snapshot()
-	var history_before: Array = game.history_lines.duplicate()
-	press(game.action_buttons.capture)
-	await _roster_click("A")
-	check(game.confirm_button.disabled and game.prediction.is_empty(), "another source's wide-only lane forbids capture of otherwise reachable A")
-	game._confirm()
-	check(game.model.snapshot() == before and game.history_lines == history_before,
-		"wide-only threatened capture rejection is atomic, not a partial backlash")
-	game._cancel()
-	await move([2, 4])
-	check(game.state.action_points == 2 and game.model.assess({"type": "capture", "source": "B"}).legal,
-		"one real AP step reaches the safe adjacent origin-side flank for wide B")
-	await _prepare_capture("B")
-	await commit()
-	check(game.state.stored.get("ability", {}).get("width", 1) == 3
-		and same_cells(game.state.backlash_footprint.get("cells", []), backlash),
-		"borrowed B retains width in storage and backlash: full front plus self, never origin-side cells")
-	check(describes_wide(game.stored.text + " " + game.stage_held_details.text),
-		"captured ability details explain its real three-wide footprint")
-	_check_warning_sources()
-	var hp_before: int = _standee_entry("A").hp
-	press(game.action_buttons.release)
-	await _floor_click([2, 2])
-	check(not game.confirm_button.disabled and preview_matches(), "real wide borrowed release has a legal model-authoritative preview")
-	var hit_cells: Array = []
-	var side_hit := false
-	for event in game.prediction.get("events", []):
-		if event.type == "ray" and event.actor == "player": hit_cells = event.cells
-		if event.type == "damage" and event.actor == "A": side_hit = true
-	check(same_cells(hit_cells, released) and side_hit,
-		"wide release preview includes six cells and the off-center foe that a narrow ray misses")
-	var actual_effect: Array = []
-	for row in game.board.effect_footprints():
-		if row.actor == "player" and row.stage == "release": actual_effect = row.cells
-	check(same_cells(actual_effect, released) and _standee_entry("A").hp == hp_before,
-		"real preview drawing shows all wide hit cells while roster HP remains confirmed")
-	await commit()
-	check(_standee_entry("A").hp == game.state.enemies[0].hp and _standee_entry("A").hp < hp_before
-		and game.state.action_points == 1, "confirmed off-center hit synchronizes HP after one move and one release")
-	# Recreate the held case, then let the model re-aim a fresh occurrence.
-	await load_fixture(F.wide_capture())
-	await move([2, 4])
-	await _prepare_capture("B")
-	await commit()
-	var captured_turn: int = game.state.stored.captured_turn
-	select("end_turn")
-	await commit()
-	var desc: Dictionary = game._two_source_presentation.compose(game.state, game.shadow.frame(), game.generation, ["A", "B"], "")
-	check(desc.get("held_occurrence", {}).get("turn", -1) == captured_turn
-		and desc.get("sources", {}).get("B", {}).get("occurrence", {}).get("turn", -1) == game.state.turn
-		and game.state.turn > captured_turn and game.state.stored.ability.get("width", 1) == 3,
-		"old borrowed wide hands remain distinct from B's fresh re-aimed wide announcement")
-	check(same_cells(game.state.backlash_footprint.cells, backlash),
-		"fresh source aim does not retarget the old held wide backlash")
-	before = _gameplay_facts()
-	select("end_turn")
-	var shown: Array = []
-	for row in game.board.effect_footprints():
-		if row.actor == "player" and row.stage == "backlash": shown = row.cells
-	check(same_cells(shown, backlash) and game.model.snapshot() == before.model,
-		"deadline preview displays the full actual wide backlash, not a narrow reconstruction")
-
-func _capture_state(label: String) -> void:
-	game._stage_sheet.hide()
-	game.board.cursor = game.state.player.pos.duplicate()
-	game.board.focus_actor("")
-	game.board._hover_actor = ""
-	game.board.hover_cell = []
-	var processing: int = game.process_mode
-	game.process_mode = Node.PROCESS_MODE_DISABLED
-	var before := _gameplay_facts()
-	var frame: Dictionary = game.shadow.frame()
-	await image("%d-wavefront-%s.png" % [capture_view.size.x, label])
-	check(_gameplay_facts() == before and game.shadow.frame() == frame,
-		"readback freezes only normal scene processing, never fabricates outcomes or Director imagery")
-	game.process_mode = processing
-
-func _capture_actual_encounter() -> void:
-	game.fixture = SliceFixture.DATA.duplicate(true)
-	for extent in [Vector2i(1024, 720), Vector2i(1600, 900)]:
-		await _stage_resize(extent)
-		for state_name in ["initial", "A-held", "B-held"]:
-			game._apply_restart()
-			await process_frame
-			if state_name != "initial":
-				var id: String = state_name.left(1)
-				await _prepare_capture(id)
-				await commit()
-				check(game.state.stored.get("source", "") == id, "actual matched held state owns " + id)
-			_check_default_slice()
-			await _capture_state(state_name)
-			if state_name == "A-held":
-				press(game.action_buttons.release)
-				var target: Array = []
-				for candidate in game.candidates:
-					if candidate != game.state.player.pos:
-						target = candidate
-						break
-				check(not target.is_empty(), "actual held action offers a legal preview")
-				if not target.is_empty():
-					await _floor_click(target)
-					check(game.command == {"type": "release", "target": target}, "captured preview is the actual chosen floor command")
-					await _capture_state("release-preview")
 
 func _comparison_pack_ready() -> bool:
 	var directory := "res://assets/puppets/two-pursuers"
@@ -485,26 +208,168 @@ func _comparison_pack_ready() -> bool:
 		return false
 	return true
 
+func _test_rehearsal_motion() -> void:
+	await load_fixture(_controlled_fixture())
+	if not await _prepare_arm(): return
+	var initial: Array = game.board.announcement_waves().duplicate(true)
+	await commit()
+	check(game.state.capture_armed and game.state.stored.is_empty(), "arming alone acquires no source")
+	_check_warning_sources()
+	var before := _gameplay_facts()
+	var phase: float = game.shadow.frame().loop_phase
+	var time_limit := Time.get_ticks_msec() + 2000
+	while is_equal_approx(game.shadow.frame().loop_phase, phase) and Time.get_ticks_msec() < time_limit:
+		await process_frame
+	var moving: Array = game.board.announcement_waves()
+	check(initial.size() == 2 and moving.size() == 2, "both sources remain dangerous and animated after arming")
+	for i in range(mini(initial.size(), moving.size())):
+		check(initial[i].source == moving[i].source and initial[i].cells == moving[i].cells
+			and initial[i].fronts != moving[i].fronts, "both independent warnings move without canceling either attack")
+	check(_gameplay_facts() == before, "rehearsal motion never spends AP, moves an actor or advances combat")
+
+func _test_controlled_slice() -> void:
+	for extent in [Vector2i(1024, 720), Vector2i(1600, 900)]:
+		await _stage_resize(extent)
+		await load_fixture(F.two_pursuers(true))
+		_check_default_slice()
+		_check_plane_join()
+		await _inspect_roster()
+		var initial: Dictionary = game.state.duplicate(true)
+		for cell in [[0, 0], [4, 0], [4, 4], [0, 4]]:
+			await _floor_click(cell)
+			check(game.selected == cell and game.model.snapshot() == initial, "actual Alt-floor input reaches every rotated corner without advancing state")
+		if not await _prepare_arm(): continue
+		var before := _gameplay_facts()
+		var piece: Dictionary = game.board.piece_appearance([1, 1])
+		await _stage_resize(Vector2i(1600, 900) if extent.x == 1024 else Vector2i(1024, 720))
+		check(_gameplay_facts() == before and game.board.piece_appearance([1, 1]) == piece,
+			"resize preserves targetless arm command, exact prediction, budgets, history and paper identity")
+		_check_plane_join()
+		_check_warning_sources()
+		await _stage_resize(extent)
+		await commit()
+		check(game.state.capture_armed and game.state.stored.is_empty() and game.state.intentions == initial.intentions,
+			"confirmed arm leaves both overlapping attacks intact without source-click selection")
+		_check_warning_sources()
+		select("end_turn")
+		await commit()
+		check(game.state.stored.get("source", "") == "A" and game.state.player.hp < initial.player.hp
+			and game.state.enemies.size() == 2, "full real attacks acquire the first source without canceling damage or removing either actor")
+		_check_warning_sources()
+		_check_roster()
+		var held: Dictionary = game.state.stored.duplicate(true)
+		if not await _prepare_shine([2, 0]): continue
+		check(not game.board.effect_footprints().is_empty(), "real Shine preview displays exact effects under the actors")
+		_check_warning_sources()
+		_check_roster()
+		await commit()
+		check(game.state.stored == held, "nonlethal Shine keeps the same borrowed occurrence")
+		_check_warning_sources()
+		_check_roster()
+		game._apply_restart()
+		await process_frame
+		check(game.state == initial and not game.resolving, "Restart restores this fixture, not an old visual generation")
+		_check_default_slice()
+
+func _roster_damage_fixture(fragile: bool = false) -> Dictionary:
+	var data := F.armed_fight(false)
+	data.enemies[1] = F.enemy("B", [5, 3], F.ability("shove", 1, 3), 1 if fragile else 9, [-1, 0])
+	return data
+
+func _test_roster_hp_sync() -> void:
+	for fragile in [false, true]:
+		await load_fixture(_roster_damage_fixture(fragile))
+		_check_roster()
+		await _inspect_roster()
+		if not await _prepare_arm(): continue
+		await commit()
+		var hp: int = _standee_entry("player").hp
+		select("end_turn")
+		check(game.prediction.player.hp == hp - 2 and _standee_entry("player").hp == hp,
+			"normal enemy hit preview never jumps the roster to predicted HP")
+		await commit()
+		check(_standee_entry("player").hp == game.state.player.hp and game.state.player.hp == hp - 2,
+			"full real enemy damage refreshes player roster HP before borrowing")
+		_check_roster()
+		var old_b := _standee_entry("B")
+		if not await _prepare_shine([5, 3]): continue
+		var predicted_hp := 0
+		for enemy in game.prediction.enemies:
+			if enemy.id == "B": predicted_hp = enemy.hp
+		check(predicted_hp < old_b.hp and _standee_entry("B").hp == old_b.hp,
+			"actual damaging Shine previews B's HP without changing the confirmed roster")
+		_check_roster()
+		await commit()
+		if fragile:
+			check(_standee_entry("B").is_empty()
+				and game.board.actor_at(old_b.roster_rect.get_center()) != "B", "actual death removes B's roster, foot marker and stale hit target")
+		else:
+			check(_standee_entry("B").hp == predicted_hp, "confirmed Shine synchronizes the displayed pursuer HP")
+		_check_roster()
+		game._apply_restart()
+		await process_frame
+		check(not _standee_entry("B").is_empty(), "Restart restores living roster identities")
+		_check_roster()
+
+func _test_wide_borrowed_geometry() -> void:
+	var data := F.wide_capture()
+	data.enemies[0].pos = [0, 2] # Inside Shine's left lane, outside its narrow center.
+	await load_fixture(data)
+	var incoming := [[2, 3], [3, 3], [4, 3], [2, 2], [3, 2], [4, 2]]
+	var expected := [[0, 2], [1, 2], [2, 2], [0, 1], [1, 1], [2, 1]]
+	var b_plan: Dictionary = {}
+	for intent in game.state.intentions:
+		if intent.source == "B": b_plan = intent
+	check(same_cells(b_plan.get("cells", []), incoming) and game.state.player.pos == [2, 3],
+		"actual wide B warning includes the side-only player cell and every forward lane")
+	var named := false
+	for row in game.intention_list.get_children():
+		if row is Button and row.text.begins_with("B ·"): named = describes_wide(row.text)
+	check(named, "actual B ability details disclose width three before acquisition")
+	_check_default_slice()
+	for cell in incoming:
+		check(game.board._from_pixel(game.board.cell_center(cell)) == cell, "all wide side-lane cells share projection and picking inverse")
+	if not await _prepare_arm(): return
+	await commit()
+	select("end_turn")
+	await commit()
+	check(game.state.player.pos == [1, 3] and game.state.player.hp == 27
+		and game.state.stored.get("source", "") == "B" and game.state.stored.ability.get("width", 1) == 3,
+		"real side-lane hit deals full damage and radial horizontal-tie push before acquiring wide B")
+	check(describes_wide(game.stored.text + " " + game.stage_held_details.text), "held HUD and Details name the real three-wide borrowed ability")
+	var held: Dictionary = game.state.stored.duplicate(true)
+	var hp: int = _standee_entry("A").hp
+	if not await _prepare_shine([1, 1]): return
+	var cells: Array = []
+	var side_hit := false
+	for event in game.prediction.events:
+		if event.type == "ray" and event.actor == "player": cells = event.cells
+		if event.type == "damage" and event.actor == "A": side_hit = true
+	check(same_cells(cells, expected) and side_hit, "borrowed wide Shine uses all six actual model cells and hits the off-center foe")
+	var shown: Array = []
+	for row in game.board.effect_footprints():
+		if row.actor == "player" and row.stage == "shine": shown = row.cells
+	check(same_cells(shown, expected) and _standee_entry("A").hp == hp,
+		"real preview drawing retains all wide cells while roster HP stays confirmed")
+	await commit()
+	check(game.state.action_points == 2 and game.state.stored == held and _standee_entry("A").hp < hp,
+		"one-AP wide Shine synchronizes HP without consuming the ability")
+	_check_warning_sources()
+	select("end_turn")
+	await commit()
+	var desc: Dictionary = game._two_source_presentation.compose(game.state, game.shadow.frame(), game.generation, ["A", "B"], "")
+	check(desc.get("held_occurrence", {}).get("turn", -1) == held.captured_turn
+		and desc.get("sources", {}).get("B", {}).get("occurrence", {}).get("turn", -1) == game.state.turn,
+		"retained wide power stays distinct from its source's fresh aimed announcement")
+	check(game.state.stored == held, "fresh source aim does not rewrite the held ability or expire it")
+	_check_warning_sources()
+
 func _run() -> void:
-	if not capture_dir.is_empty():
-		var local_root := ProjectSettings.globalize_path("res://../../.lore/local").simplify_path() + "/"
-		if not (capture_dir.simplify_path() + "/").begins_with(local_root):
-			printerr("SETUP REQUIRED: use an absolute --capture-dir under repository .lore/local; evidence must survive reboot.")
-			quit(2)
-			return
 	if not _comparison_pack_ready():
 		quit(2)
 		return
 	game = load("res://scenes/encounter.tscn").instantiate()
-	if capture_dir.is_empty(): root.add_child(game)
-	else:
-		DirAccess.make_dir_recursive_absolute(capture_dir)
-		capture_view = SubViewport.new()
-		capture_view.size = Vector2i(1024, 720)
-		capture_view.render_target_update_mode = SubViewport.UPDATE_ALWAYS
-		capture_view.gui_embed_subwindows = true
-		root.add_child(capture_view)
-		capture_view.add_child(game)
+	root.add_child(game)
 	await process_frame
 	await process_frame
 	if not _comparison_setup():
@@ -512,23 +377,12 @@ func _run() -> void:
 		await process_frame
 		quit(2)
 		return
-	if game.encounter_id != "two-pursuers":
-		var origin: Vector2 = game.board.cell_center([1, 1])
-		check(is_equal_approx(game.board.cell_center([2, 1]).y, origin.y),
-			"original escape Stage retains its unyawed baseline")
-		await _choose_encounter_ui("two-pursuers")
-		check(game.encounter_dialog.visible, "existing chooser requests the real two-pursuer encounter")
-		if game.encounter_dialog.visible:
-			game.encounter_dialog.confirmed.emit()
-			game.encounter_dialog.hide()
-		await process_frame
-	check(game.encounter_id == "two-pursuers", "normal entry starts the new slice without an appearance choice")
-	if game.encounter_id == "two-pursuers": await _test_controlled_slice()
-	if game.encounter_id == "two-pursuers": await _test_roster_hp_sync()
-	if game.encounter_id == "two-pursuers": await _test_rehearsal_motion()
-	if game.encounter_id == "two-pursuers": await _test_wide_borrowed_geometry()
-	if failures == 0 and not capture_dir.is_empty(): await _capture_actual_encounter()
-	print("Angled wavefront UI: %d checks, %d failures. Injected controls; no visual acceptance." % [checks, failures])
+	check(game.encounter_id == "two-pursuers", "normal entry opens the accepted Stage slice without an appearance matrix")
+	await _test_controlled_slice()
+	await _test_roster_hp_sync()
+	await _test_rehearsal_motion()
+	await _test_wide_borrowed_geometry()
+	print("Stage board integration: %d checks, %d failures. Injected GUI, not visual acceptance." % [checks, failures])
 	game.queue_free()
 	await process_frame
 	quit(1 if failures else 0)

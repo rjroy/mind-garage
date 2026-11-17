@@ -61,7 +61,7 @@ func snapshot(dimensions: Vector2i = Vector2i(5, 5), isolated: bool = false) -> 
 			{"id": "B", "pos": [4, 3] if isolated else [2, 3], "hp": 17, "kind": "shove", "ability": skill.duplicate(true)},
 		],
 		"exit": {"pos": [dimensions.x - 1, 0], "opens": 9},
-		"intentions": [], "stored": {}, "backlash_footprint": {},
+		"intentions": [], "stored": {}, "capture_armed": false,
 	}
 
 func textures() -> Dictionary:

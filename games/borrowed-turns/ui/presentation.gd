@@ -34,8 +34,6 @@ static func objective_text(state: Dictionary) -> String:
 		cell(state.exit.pos), "" if state.turn >= state.exit.opens else " when open"]
 
 static func rejection_text(reason: String) -> String:
-	if reason == "threatened":
-		return "Cannot capture while you are in any announced enemy attack. Move to a safe cell first."
 	return reason
 
 static func event_text(event: Dictionary) -> String:
@@ -43,13 +41,10 @@ static func event_text(event: Dictionary) -> String:
 	var source := str(event.get("source", "")).to_upper()
 	match event.get("type", ""):
 		"move": return "%s moved to %s." % [who, cell(event.to)]
-		"capture": return "Acquired %s from %s; this attack canceled." % [event.kind, source]
-		"capture_failed":
-			if event.reason == "threatened":
-				return "Capture failed: backlash left you in an announced attack. The discharge still happened; no ability acquired. Slot ends empty."
-			return "Capture failed: %s %s. Slot ends empty." % [source, "died" if event.reason == "source_dead" else "moved out of reach"]
-		"release": return "Released %s toward %s." % [str(event.kind), cell(event.target)]
-		"backlash": return "Backlash · %s from %s discharges where you stand." % [str(event.kind).capitalize(), source]
+		"capture_armed": return "Capture armed. The next enemy hit is acquired after its normal damage and push."
+		"capture": return "Acquired %s from %s after taking the hit." % [event.kind, source]
+		"shine": return "Shine · %s toward %s." % [str(event.kind).capitalize(), cell(event.target)]
+		"ability_lost": return "Ability lost: source %s was defeated." % source
 		"ray", "area": return "%s · %s footprint: %d cells." % [who, event.type, event.cells.size()]
 		"damage": return "%s took %d damage; %d HP left." % [who, event.amount, event.hp]
 		"displace": return "%s displaced to %s." % [who, cell(event.to)]
@@ -65,43 +60,28 @@ static func preview_text(predicted: Dictionary) -> String:
 	for event in predicted.events: lines.append(event_text(event))
 	return "\n".join(lines)
 
-static func deadline(state: Dictionary) -> String:
-	if state.stored.is_empty(): return "Move and act in any order. End turn when ready."
-	var due: int = state.stored.deadline_turn
-	return "Release before ending turn %d%s" % [due, " · Backlash when you End turn" if state.turn >= due else ""]
-
 static func stored_text(state: Dictionary) -> String:
-	if state.stored.is_empty(): return "Empty\nCapture a nearby announced ability from a safe cell. Release can happen this turn."
+	if state.stored.is_empty():
+		return "Held: empty\nArm Capture for 1 AP, then take an enemy hit. Damage and push still happen."
 	var stored: Dictionary = state.stored
 	var ability: Dictionary = stored.ability
-	var effect := "Area centered on you" if ability.kind == "burst" else "You + the stored source-direction line"
-	if ability.kind != "burst" and ability.get("width", 1) > 1:
-		effect = "You + the stored %d-wide source-direction line" % ability.width
-	return "%s · %d damage · Source %s\n%s\nBacklash here: %s; %d damage%s.\nRelease avoids you; backlash does not." % [
-		str(ability.kind).capitalize(), ability.damage, str(stored.source).to_upper(), ability_text(ability).get_slice("\n", 1), effect, ability.damage,
-		", pushes surviving enemies" if ability.push else "",
-	]
+	return "Source %s · %s\nShine: 1 AP per use. Keep using it while its source lives.\nA new captured hit replaces it." % [
+		str(stored.source).to_upper(), ability_text(ability)]
 
 static func command_summary(current: Dictionary, predicted: Dictionary, action: Dictionary) -> String:
 	var kind: String = action.type
-	var cost: String = {"move": "Move · 1 AP", "capture": "Capture · free", "release": "Release · 1 AP", "end_turn": "End turn · free"}[kind]
+	var cost: String = {"move": "Move · 1 AP", "capture": "Capture · 1 AP", "shine": "Shine · 1 AP", "end_turn": "End turn · free"}[kind]
 	var end := "%d AP · %d HP · %s" % [predicted.action_points, predicted.player.hp, cell(predicted.player.pos)]
 	if kind == "end_turn": cost += " · Leaving %d AP" % current.action_points
 	var outcomes: Array[String] = []
 	if predicted.status == "lost":
-		outcomes.append("This discharge kills you. No new ability is acquired." if kind == "capture" else "This command kills you.")
+		outcomes.append("This command kills you. No ability is acquired.")
 	elif predicted.status == "won":
 		outcomes.append("Victory. All foes defeated." if predicted.get("objective", "escape") == "defeat_all" else "You escape.")
 	else:
 		for event in predicted.events:
-			if event.type == "capture_failed": outcomes.append(event_text(event))
-		if kind == "capture" and not current.stored.is_empty() and not predicted.stored.is_empty():
-			var hits: Array[String] = []
-			for event in predicted.events:
-				if event.type == "damage": hits.append("%s -%d HP" % [actor(event.actor), event.amount])
-			outcomes.append("%s; acquired %s." % [", ".join(hits), predicted.stored.ability.kind])
-		if kind == "end_turn" and not current.stored.is_empty() and current.turn >= current.stored.deadline_turn:
-			outcomes.append("Held %s discharges before enemies." % current.stored.ability.kind)
+			if event.type in ["capture_armed", "capture", "ability_lost"]: outcomes.append(event_text(event))
+		if kind == "shine" and not predicted.stored.is_empty(): outcomes.append("Held ability retained.")
 	return "%s → %s\n%s" % [cost, end, " ".join(outcomes) if not outcomes.is_empty() else "Exact effects: Preview tab. The live board has not changed."]
 
 static func make_theme() -> Theme:

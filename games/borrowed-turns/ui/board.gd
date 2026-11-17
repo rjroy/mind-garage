@@ -455,49 +455,42 @@ func _uses_shadow_effects() -> bool:
 func effect_footprints() -> Array:
 	if _uses_shadow_effects():
 		var cue: Dictionary = shadow_frame.get("cue", {})
-		if cue.is_empty() or cue.type not in ["release", "backlash", "resolve"]: return []
+		if cue.is_empty() or cue.type not in ["shine", "resolve"]: return []
 		return [{"type": cue.footprint_type, "actor": cue.source if cue.type == "resolve" else "player",
 			"stage": "enemy" if cue.type == "resolve" else cue.type, "cells": cue.cells.duplicate(true)}]
 	var effects: Array = preview.get("events", []) if not preview.is_empty() else last_events
 	var footprints: Array = []
 	var stage := "enemy"
 	for event in effects:
-		if event.type in ["release", "backlash"]: stage = event.type
+		if event.type == "shine": stage = "shine"
 		if event.type in ["ray", "area"]:
 			footprints.append({"type": event.type, "actor": event.actor,
 				"stage": stage if event.actor == "player" else "enemy", "cells": event.cells.duplicate(true)})
 	return footprints
 
 func _draw_effect_footprint(footprint: Dictionary, active_shadow: bool = false) -> void:
-	var color := _borrowed() if footprint.actor == "player" and footprint.stage == "release" else _danger()
+	var color := _borrowed() if footprint.actor == "player" and footprint.stage == "shine" else _danger()
 	for cell in footprint.cells:
 		_tile(cell, 7, color, false, 2)
-		if active_shadow and footprint.stage == "backlash":
-			_tile(cell, 10, color, false, 1)
-	if footprint.type == "ray" and footprint.actor == "player" and footprint.stage == "release" and not footprint.cells.is_empty():
+	if footprint.type == "ray" and footprint.actor == "player" and footprint.stage == "shine" and not footprint.cells.is_empty():
 		# The last affected cell may be a side lane, not the chosen endpoint.
 		var origin: Array = state.player.pos
 		var target: Array = []
 		if active_shadow:
 			var cue: Dictionary = shadow_frame.get("cue", {})
-			if cue.get("type", "") == "release":
+			if cue.get("type", "") == "shine":
 				origin = cue.from
 				target = cue.to
 		else:
 			var effects: Array = preview.get("events", []) if not preview.is_empty() else last_events
 			for event in effects:
-				if event.type == "release":
+				if event.type == "shine":
 					target = event.target
 					break
 		if origin.size() == 2 and target.size() == 2:
 			_arrow(cell_center(origin), cell_center(target), _borrowed(), false)
 
-func _draw_backlash_and_choices() -> void:
-	var backlash: Dictionary = state.get("backlash_footprint", {})
-	if not backlash.is_empty():
-		for cell in backlash.cells:
-			_tile(cell, 2, _danger(), false, 1.4 if _uses_wavefronts() else 2.0)
-			_tile(cell, 5, _danger(), false, 1)
+func _draw_choices() -> void:
 	for cell in candidates:
 		_tile(cell, 5, _borrowed(), false, 1.5)
 		draw_circle(cell_center(cell) + Vector2(-5, 0), 2, _borrowed())
@@ -619,8 +612,8 @@ func _draw() -> void:
 			for enemy in state.enemies:
 				if enemy.id == intent.source:
 					_arrow(cell_center(enemy.pos), cell_center(intent.cells.back()), _danger(), true)
-	_draw_backlash_and_choices()
-	var stored: Dictionary = state.get("stored", {})
+	_draw_choices()
+	var stored: Dictionary = shadow_frame.get("held", {})
 	var effects: Array = preview.get("events", []) if not preview.is_empty() else last_events
 	var footprints := effect_footprints()
 	var shadow_effects := _uses_shadow_effects()

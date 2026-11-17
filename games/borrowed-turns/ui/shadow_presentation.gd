@@ -1,12 +1,13 @@
 extends RefCounted
 ## Deterministic presentation projection. Never calls a model or computes game effects.
 
-const DURATIONS := {"capture": 0.60, "release": 0.44, "backlash": 0.52, "resolve": 0.38, "move": 0.26}
+const DURATIONS := {"capture": 0.60, "shine": 0.44, "resolve": 0.38, "move": 0.26}
 const TACTICAL_DURATION := 0.18
 var _generation := -1
 var _announcements: Array = []
 var _held: Dictionary = {}
 var _cues: Array = []
+var _held_stages: Array = []
 var _index := 0
 var _elapsed := 0.0
 var _loop_cycles := 0.0
@@ -17,20 +18,23 @@ func reset(snapshot: Dictionary, generation: int) -> void:
 	_generation = generation
 	_set_facts(snapshot)
 	_cues = []
+	_held_stages = []
 	_index = 0
 	_elapsed = 0.0
 	_loop_cycles = 0.0
 	_new_turn = false
 
-func observe(before: Dictionary, command: Dictionary, after: Dictionary, generation: int) -> bool:
+func observe(before: Dictionary, _command: Dictionary, after: Dictionary, generation: int) -> bool:
 	if generation != _generation or before == after: return false
 	_set_facts(after)
 	_new_turn = after.turn != before.turn
 	_cues = []
+	_held_stages = []
 	_index = 0
 	_elapsed = 0.0
 	var positions := {"player": before.player.pos.duplicate()}
 	for enemy in before.enemies: positions[enemy.id] = enemy.pos.duplicate()
+	var held: Dictionary = before.get("stored", {}).duplicate(true)
 	var pending: Dictionary = {}
 	var events: Array = after.events
 	for i in range(events.size()):
@@ -40,33 +44,51 @@ func observe(before: Dictionary, command: Dictionary, after: Dictionary, generat
 				if event.actor != "player":
 					var slide := _plan("move", event.actor, i, event.from, event.to, [], "move", "")
 					slide["actor"] = event.actor
-					_cues.append(slide)
+					_queue(slide, held)
 				positions[event.actor] = event.to.duplicate()
 			"displace": positions[event.actor] = event.to.duplicate()
-			"release", "backlash":
-				var target: Array = command.get("target", []) if event.type == "release" else []
-				pending = _plan(event.type, event.source, i, positions.player, target, [], event.kind)
+			"shine":
+				pending = _plan("shine", event.source, i, positions.player, event.target, [], event.kind)
 			"capture":
-				if event.kind == "shove":
-					_cues.append(_plan("capture", event.source, i, positions.get(event.source, []), positions.player, []))
+				# Acquisition follows all damage/displacement of its owning attack.
+				# Join that actual event to its source facts even if the source dies
+				# later in this transition and final storage is already empty.
+				held = _acquired(before, after, event.source)
+				var transfer := _plan("capture", event.source, i, positions.get(event.source, []), positions.player, [], event.kind)
+				transfer["acquired"] = held.duplicate(true)
+				_queue(transfer, {})
+			"ability_lost":
+				held = {}
 			"ray", "area":
 				if event.actor == "player":
 					if not pending.is_empty():
 						pending.cells = event.cells.duplicate(true)
 						pending.footprint_type = event.type
-						_cues.append(pending)
+						_queue(pending, held)
 						pending = {}
 				else:
-					_cues.append(_plan("resolve", event.actor, i, positions.get(event.actor, []), [], event.cells, event.kind, event.type))
+					_queue(_plan("resolve", event.actor, i, positions.get(event.actor, []), [], event.cells, event.kind, event.type), held)
 	return true
+
+func _queue(cue: Dictionary, held: Dictionary) -> void:
+	_cues.append(cue)
+	_held_stages.append(held.duplicate(true))
+
+func _acquired(before: Dictionary, after: Dictionary, source: String) -> Dictionary:
+	var final_held: Dictionary = after.get("stored", {})
+	if final_held.get("source", "") == source: return final_held.duplicate(true)
+	for enemy in before.enemies:
+		if enemy.id == source:
+			return {"source": source, "ability": enemy.ability.duplicate(true),
+				"dir": enemy.dir.duplicate(), "captured_turn": before.turn}
+	return {}
 
 func _set_facts(snapshot: Dictionary) -> void:
 	_announcements = []
 	for intent in snapshot.get("intentions", []):
 		if intent.kind == "shove":
 			_announcements.append({"source": intent.source, "kind": "shove", "turn": snapshot.turn, "cells": intent.cells.duplicate(true)})
-	var stored: Dictionary = snapshot.get("stored", {})
-	_held = stored.duplicate(true) if not stored.is_empty() and stored.ability.kind == "shove" else {}
+	_held = snapshot.get("stored", {}).duplicate(true)
 
 func _plan(type: String, source: String, event_index: int, origin: Array, target: Array, cells: Array, kind: String = "shove", footprint_type: String = "ray") -> Dictionary:
 	return {"type": type, "source": source, "kind": kind, "footprint_type": footprint_type, "event_index": event_index,
@@ -100,7 +122,7 @@ func frame() -> Dictionary:
 		"generation": _generation,
 		"announcements": [] if deferred else _announcements.duplicate(true),
 		"announcements_deferred": deferred,
-		"held": _held.duplicate(true),
+		"held": (_held_stages[_index] if not cue.is_empty() else _held).duplicate(true),
 		"cues": _cues.duplicate(true),
 		"cue": cue,
 		"busy": not cue.is_empty(),

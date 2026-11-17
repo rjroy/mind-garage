@@ -16,8 +16,8 @@ func reset() -> void:
 	_state.merge({
 		"turn": 1, "status": "playing", "variant": "R2",
 		"action_points": _fixture.rules.actions,
-		"cancelled": [], "stored": {},
-		"intentions": [], "backlash_footprint": {}, "events": [],
+		"capture_armed": false, "stored": {},
+		"intentions": [], "events": [],
 	}, true)
 	_refresh_footprints()
 
@@ -128,34 +128,12 @@ func _enemy_footprint(enemy: Dictionary) -> Array:
 	return cells
 
 
-func _threatened() -> bool:
-	for enemy in _state.enemies:
-		if not _state.cancelled.has(enemy.id) and _enemy_footprint(enemy).has(_state.player.pos):
-			return true
-	return false
-
-
-func _held_footprint() -> Dictionary:
-	if _state.stored.is_empty():
-		return {}
-	var skill: Dictionary = _state.stored.ability
-	var origin: Array = _state.player.pos
-	if skill.kind == "burst":
-		return {"type": "area", "cells": _area(origin, skill.radius)}
-	var cells := [origin.duplicate()]
-	var width: int = skill.get("width", 1) if skill.kind == "shove" else 1
-	cells.append_array(_front(origin, _state.stored.dir, skill.range, width))
-	return {"type": "ray", "cells": cells}
-
-
 func _refresh_footprints() -> void:
 	_state.intentions = []
-	_state.backlash_footprint = _held_footprint()
 	if _state.status != "playing":
 		return
 	for enemy in _state.enemies:
-		if not _state.cancelled.has(enemy.id):
-			_state.intentions.append({"source": enemy.id, "kind": enemy.ability.kind, "cells": _enemy_footprint(enemy)})
+		_state.intentions.append({"source": enemy.id, "kind": enemy.ability.kind, "cells": _enemy_footprint(enemy)})
 
 
 func _keys_allowed(action: Dictionary, allowed: Array) -> bool:
@@ -179,17 +157,14 @@ func _rejection(action: Dictionary) -> String:
 			if _distance(_state.player.pos, action.to) != 1 or not _walkable(action.to) or not _occupant(action.to).is_empty():
 				return "Destination must be a free adjacent cell."
 		"capture":
-			if not _keys_allowed(action, ["type", "source"]) or not action.get("source") is String:
-				return "Capture requires a source."
-			var source := _enemy(action.source)
-			if source.is_empty() or _state.cancelled.has(action.source):
-				return "That enemy has no available announcement."
-			if _distance(_state.player.pos, source.pos) > _state.rules.capture_range:
-				return "Source is outside capture reach."
-			if _threatened():
-				return "threatened"
-		"release":
-			return _release_rejection(action)
+			if not _keys_allowed(action, ["type"]):
+				return "Unexpected capture field."
+			if _state.capture_armed:
+				return "Capture is already armed."
+			if _state.action_points <= 0:
+				return "No action points remain."
+		"shine":
+			return _shine_rejection(action)
 		"end_turn":
 			if not _keys_allowed(action, ["type"]):
 				return "Unexpected action field."
@@ -198,9 +173,9 @@ func _rejection(action: Dictionary) -> String:
 	return ""
 
 
-func _release_rejection(action: Dictionary) -> String:
+func _shine_rejection(action: Dictionary) -> String:
 	if not _keys_allowed(action, ["type", "target"]) or not _cell(action.get("target")):
-		return "Release requires a target cell and valid fields."
+		return "Shine requires a target cell and valid fields."
 	if _state.stored.is_empty():
 		return "There is no stored action."
 	if _state.action_points <= 0:
@@ -225,11 +200,11 @@ func _apply(action: Dictionary) -> void:
 			_state.player.pos = action.to.duplicate()
 			_state.action_points -= 1
 			_event("move", {"actor": "player", "from": previous.duplicate(), "to": action.to.duplicate()})
-		"capture": _capture(action.source)
-		"release": _release(action)
-		"end_turn":
-			if not _state.stored.is_empty() and _state.turn >= _state.stored.deadline_turn:
-				_backlash()
+		"capture":
+			_state.action_points -= 1
+			_state.capture_armed = true
+			_event("capture_armed")
+		"shine": _shine(action)
 	if _state.status == "playing":
 		_check_objective()
 	if action.type == "end_turn" and _state.status == "playing":
@@ -237,32 +212,8 @@ func _apply(action: Dictionary) -> void:
 	_refresh_footprints()
 
 
-func _capture(id: String) -> void:
-	if not _state.stored.is_empty():
-		_backlash()
-		if _state.status != "playing":
-			return
-	var source := _enemy(id)
-	if source.is_empty():
-		_event("capture_failed", {"source": id, "reason": "source_dead"})
-		return
-	if _distance(_state.player.pos, source.pos) > _state.rules.capture_range:
-		_event("capture_failed", {"source": id, "reason": "out_of_reach"})
-		return
-	if _threatened():
-		_event("capture_failed", {"source": id, "reason": "threatened"})
-		return
-	_state.stored = {
-		"source": id, "ability": source.ability.duplicate(true), "dir": source.dir.duplicate(),
-		"captured_turn": _state.turn, "deadline_turn": _state.turn + 1,
-	}
-	_state.cancelled.append(id)
-	_event("capture", {"source": id, "kind": source.ability.kind})
-
-
-func _release(action: Dictionary) -> void:
+func _shine(action: Dictionary) -> void:
 	var held: Dictionary = _state.stored
-	_state.stored = {}
 	_state.action_points -= 1
 	var ability: Dictionary = held.ability
 	var origin: Array = _state.player.pos.duplicate()
@@ -273,17 +224,8 @@ func _release(action: Dictionary) -> void:
 	else:
 		var width: int = ability.get("width", 1) if ability.kind == "shove" else 1
 		cells = _target_ray(origin, action.target, ability.range, width)
-	_event("release", {"source": held.source, "kind": ability.kind, "target": action.target.duplicate()})
-	_resolve_ability("player", ability, cells, center, false)
-
-
-func _backlash() -> void:
-	var held: Dictionary = _state.stored
-	var footprint := _held_footprint()
-	var origin: Array = _state.player.pos.duplicate()
-	_state.stored = {}
-	_event("backlash", {"source": held.source, "kind": held.ability.kind})
-	_resolve_ability("player", held.ability, footprint.cells, origin, true)
+	_event("shine", {"source": held.source, "kind": ability.kind, "target": action.target.duplicate()})
+	_resolve_ability("player", ability, cells, center)
 
 
 func _end_turn() -> void:
@@ -294,12 +236,12 @@ func _end_turn() -> void:
 		if _state.status != "playing":
 			return
 		var enemy := _enemy(id)
-		if enemy.is_empty() or _state.cancelled.has(id):
+		if enemy.is_empty():
 			continue
 		var ability: Dictionary = enemy.ability
 		var ray := _ray(enemy.pos, enemy.dir, ability.range)
 		var center: Array = ray.back() if ability.kind == "burst" and not ray.is_empty() else enemy.pos
-		_resolve_ability(id, ability, _enemy_footprint(enemy), center, false)
+		_resolve_ability(id, ability, _enemy_footprint(enemy), center)
 	if _state.status != "playing":
 		return
 	_check_objective()
@@ -311,7 +253,6 @@ func _end_turn() -> void:
 		enemy.dir = _aim(enemy.pos)
 	_state.turn += 1
 	_state.action_points = _state.rules.actions
-	_state.cancelled = []
 	_event("turn", {"number": _state.turn})
 	_check_objective()
 
@@ -379,10 +320,10 @@ func _move_enemy(enemy: Dictionary) -> void:
 		_event("move", {"actor": enemy.id, "from": previous, "to": enemy.pos.duplicate()})
 
 
-func _targets(actor_id: String, cells: Array, is_area: bool, backlash: bool) -> Array:
+func _targets(actor_id: String, cells: Array, is_area: bool) -> Array:
 	var targets := []
 	if is_area:
-		if cells.has(_state.player.pos) and (actor_id != "player" or backlash):
+		if cells.has(_state.player.pos) and actor_id != "player":
 			targets.append("player")
 		for enemy in _state.enemies:
 			if enemy.id != actor_id and cells.has(enemy.pos):
@@ -390,24 +331,42 @@ func _targets(actor_id: String, cells: Array, is_area: bool, backlash: bool) -> 
 	else:
 		for cell in cells:
 			var id := _occupant(cell)
-			if not id.is_empty() and (id != actor_id or (backlash and id == "player")):
+			if not id.is_empty() and id != actor_id:
 				targets.append(id)
 	return targets
 
 
-func _resolve_ability(actor_id: String, ability: Dictionary, cells: Array, center: Array, backlash: bool) -> void:
+func _resolve_ability(actor_id: String, ability: Dictionary, cells: Array, center: Array) -> void:
 	var is_area: bool = ability.kind == "burst"
 	_event("area" if is_area else "ray", {"actor": actor_id, "kind": ability.kind, "cells": cells.duplicate(true)})
-	var targets := _targets(actor_id, cells, is_area, backlash)
+	var targets := _targets(actor_id, cells, is_area)
+	var player_hit := false
 	for id in targets:
 		if _state.status != "playing":
-			return
+			break
+		if id == "player" and actor_id != "player":
+			player_hit = true
 		_damage(id, ability.damage)
 		if _state.status != "playing":
-			return
+			break
 		var actor: Dictionary = _state.player if id == "player" else _enemy(id)
-		if ability.push and not actor.is_empty() and not (backlash and id == "player"):
+		if ability.push and not actor.is_empty():
 			_displace(id, actor, center)
+	# A source can die partway through an area effect. Finish the entire effect
+	# before invalidating its held ability or acquiring a new one.
+	if not _state.stored.is_empty() and _enemy(_state.stored.source).is_empty():
+		var lost_source: String = _state.stored.source
+		_state.stored = {}
+		_event("ability_lost", {"source": lost_source, "reason": "source_dead"})
+	if player_hit and _state.capture_armed and _state.status == "playing":
+		var source := _enemy(actor_id)
+		if not source.is_empty():
+			_state.stored = {
+				"source": actor_id, "ability": ability.duplicate(true), "dir": source.dir.duplicate(),
+				"captured_turn": _state.turn,
+			}
+			_state.capture_armed = false
+			_event("capture", {"source": actor_id, "kind": ability.kind})
 
 
 func _damage(id: String, amount: int) -> void:

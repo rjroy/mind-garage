@@ -67,207 +67,6 @@ func test_budget_boundary() -> void:
 	check(s.get("action_points", -1) == 2 and not s.has("movement_points") and not s.get("rules", {}).has("movement"), "movement spends one shared AP without player MP")
 	check(not types(s).has("ray"), "enemy does not resolve on movement")
 
-func test_interleaving() -> void:
-	var b := F.board()
-	b.enemies = [F.foe("a", [3, 2], [0, -1], F.ability("bolt", 3, 1))]
-	var g = model(b)
-	for pos in [[2, 3], [3, 3]]:
-		if not apply(g, {"type": "move", "to": pos}, "example move"): return
-	if not apply(g, {"type": "capture", "source": "a"}, "free capture"): return
-	check(g.snapshot().get("turn", -1) == 1 and g.snapshot().get("action_points", -1) == 1, "capture costs no AP after movement")
-	if not apply(g, {"type": "release", "target": [6, 3]}, "same-turn release"): return
-	check(g.snapshot().get("turn", -1) == 1 and g.snapshot().get("action_points", -1) == 0, "two moves and a release share three AP without ending turn")
-	reject(g, {"type": "move", "to": [4, 3]}, "exhausted AP prevents movement")
-
-func test_unlimited_occurrences() -> void:
-	var b := F.board()
-	b.player.pos = [3, 3]
-	b.enemies = [
-		F.foe("a", [4, 3], [1, 0], F.ability("bolt", 1, 1)),
-		F.foe("b", [3, 4], [0, 1], F.ability("bolt", 1, 1)),
-		F.foe("c", [2, 3], [-1, 0], F.ability("bolt", 1, 1)),
-		F.foe("d", [3, 2], [0, -1], F.ability("bolt", 1, 1)),
-	]
-	var g = model(b)
-	for id in ["a", "b", "c", "d"]:
-		if not apply(g, {"type": "capture", "source": id}, "unlimited capture " + id): return
-	var s: Dictionary = g.snapshot()
-	check(s.get("cancelled", []) == ["a", "b", "c", "d"] and s.get("stored", {}).get("source") == "d", "four distinct occurrences captured")
-	check(s.get("player", {}).get("hp") == 17 and s.get("action_points") == 3, "three replacements cost only ability backlash")
-	reject(g, {"type": "capture", "source": "a"}, "same occurrence cannot be captured twice")
-	if not apply(g, {"type": "end_turn"}, "refresh occurrences"): return
-	check(g.snapshot().get("cancelled", []).is_empty(), "new turn clears captured occurrences")
-	var single := F.board()
-	g = model(single)
-	if not apply(g, {"type": "capture", "source": "a"}, "single occurrence capture"): return
-	if not apply(g, {"type": "end_turn"}, "single occurrence refresh"): return
-	if not apply(g, {"type": "move", "to": [1, 2]}, "leave refreshed ray"): return
-	if not apply(g, {"type": "move", "to": [2, 2]}, "flank refreshed source"): return
-	check(g.assess({"type": "capture", "source": "a"}).get("legal", false), "source may be captured again on a future turn from safety")
-
-func test_backlash_replacement() -> void:
-	var b := F.board()
-	b.enemies = [
-		F.foe("area", [2, 3], [1, 0], F.ability("burst", 2, 2, 1), 8),
-		F.foe("new", [1, 4], [0, 1], F.ability("bolt", 4, 1), 8),
-	]
-	var g = model(b)
-	if not apply(g, {"type": "capture", "source": "area"}, "hold burst"): return
-	var s: Dictionary = g.snapshot()
-	var footprint: Dictionary = s.get("backlash_footprint", {})
-	check(footprint.get("type") == "area" and footprint.get("cells", []).has([1, 3]) and footprint.get("cells", []).has([1, 4]), "area backlash footprint is model-owned and includes player and neighbor")
-	reject(g, {"type": "capture", "source": "absent"}, "invalid replacement does not discharge")
-	var command := {"type": "capture", "source": "new"}
-	if not apply(g, command, "area replacement"): return
-	s = g.snapshot()
-	check(s.get("player", {}).get("hp") == 18 and enemy(s, "new").get("hp") == 6, "actual burst damage hits player and adjacent source")
-	check(s.get("stored", {}).get("source") == "new" and s.get("cancelled", []).has("new"), "surviving reachable source is acquired")
-	check(types(s).find("backlash") < types(s).find("area") and types(s).find("area") < types(s).find("damage") and types(s).find("damage") < types(s).find("capture"), "replacement emits ordered discharge before capture")
-	var area_events := events(s, "area")
-	check(not area_events.is_empty() and area_events[0].get("cells") == footprint.get("cells"), "backlash event uses complete stored footprint")
-
-func test_replacement_source_changes() -> void:
-	var b := F.board()
-	b.enemies = [F.foe("area", [2, 3], [1, 0], F.ability("burst", 2, 2, 1)), F.foe("new", [1, 4], [0, 1], F.ability("bolt", 2, 1), 1)]
-	var g = model(b)
-	if not apply(g, {"type": "capture", "source": "area"}, "hold lethal burst"): return
-	if not apply(g, {"type": "capture", "source": "new"}, "source dies during replacement"): return
-	var s: Dictionary = g.snapshot()
-	check(enemy(s, "new").is_empty() and s.get("stored", {}).is_empty() and not s.get("cancelled", []).has("new"), "dead source is not acquired or canceled")
-	var failed := events(s, "capture_failed")
-	check(not failed.is_empty() and failed[0].get("reason") == "source_dead", "source death reported")
-	b.enemies[0].ability.push = true
-	b.enemies[1].hp = 8
-	g = model(b)
-	if not apply(g, {"type": "capture", "source": "area"}, "hold pushing burst"): return
-	if not apply(g, {"type": "capture", "source": "new"}, "source moves during replacement"): return
-	s = g.snapshot()
-	failed = events(s, "capture_failed")
-	check(enemy(s, "new").get("pos") == [1, 5] and s.get("stored", {}).is_empty(), "moved source is not acquired")
-	check(not failed.is_empty() and failed[0].get("reason") == "out_of_reach" and not s.get("cancelled", []).has("new"), "out-of-reach source retains its occurrence")
-
-func test_lethal_replacement() -> void:
-	var b := F.board()
-	b.player.hp = 2
-	b.enemies = [F.foe("area", [2, 3], [1, 0], F.ability("burst", 2, 3, 1)), F.foe("new", [1, 4], [0, 1], F.ability("bolt", 2, 1))]
-	var g = model(b)
-	if not apply(g, {"type": "capture", "source": "area"}, "hold lethal backlash"): return
-	var before: Dictionary = g.snapshot()
-	var command := {"type": "capture", "source": "new"}
-	var prediction: Dictionary = g.assess(command)
-	var preview: Dictionary = prediction.get("preview", {})
-	check(prediction.get("legal", false) and preview.get("status") == "lost" and g.snapshot() == before, "lethal replacement is legal and accurately previewed")
-	var footprints := events(preview, "area")
-	check(not footprints.is_empty() and footprints[0].get("cells") == before.get("backlash_footprint", {}).get("cells"), "lethal preview retains full area footprint")
-	if not prediction.get("legal", false): return
-	check(g.act(command) and g.snapshot() == preview, "lethal replacement commits predicted loss")
-	check(g.snapshot().get("stored", {}).is_empty() and not g.snapshot().get("cancelled", []).has("new"), "death prevents new storage and cancellation")
-	check(not g.act({"type": "end_turn"}), "loss rejects further commands")
-
-func test_deadline() -> void:
-	var b := F.board()
-	b.enemies = [F.foe("a", [2, 3], [1, 0], F.ability("burst", 2, 2, 1))]
-	var g = model(b)
-	if not apply(g, {"type": "capture", "source": "a"}, "deadline capture"): return
-	check(g.snapshot().get("stored", {}).get("deadline_turn") == 2, "deadline is end of next player turn")
-	if not apply(g, {"type": "end_turn"}, "end capture turn"): return
-	check(g.snapshot().get("turn") == 2 and not g.snapshot().get("stored", {}).is_empty(), "slot survives first turn boundary")
-	if not apply(g, {"type": "release", "target": [3, 3]}, "release on final turn"): return
-	check(g.snapshot().get("stored", {}).is_empty() and not types(g.snapshot()).has("backlash"), "last-turn release avoids backlash")
-	g = model(b)
-	if not apply(g, {"type": "capture", "source": "a"}, "expiry capture"): return
-	if not apply(g, {"type": "end_turn"}, "expiry first end"): return
-	var before: Dictionary = g.snapshot()
-	if not apply(g, {"type": "end_turn"}, "expiry second end"): return
-	var s: Dictionary = g.snapshot()
-	check(s.get("stored", {}).is_empty() and s.get("player", {}).get("hp") == before.get("player", {}).get("hp") - 4, "deadline backlash and refreshed enemy burst each deal two damage")
-	check(types(s).find("backlash") >= 0 and types(s).find("backlash") < types(s).find("area"), "expiry discharges before area")
-	var areas := events(s, "area")
-	check(areas.size() == 2 and areas[0].get("actor") == "player" and areas[1].get("actor") == "a", "expiry resolves before enemy intention")
-	var player_damage := []
-	for event in s.get("events", []):
-		if event.get("type") == "damage" and event.get("actor") == "player":
-			player_damage.append(event)
-	check(player_damage.size() == 2 and player_damage[0].get("amount") == 2 and player_damage[0].get("hp") == before.get("player", {}).get("hp") - 2 and player_damage[1].get("amount") == 2 and player_damage[1].get("hp") == before.get("player", {}).get("hp") - 4, "expiry and refreshed burst each emit ability-scaled player damage")
-	check(types(s) == ["backlash", "area", "damage", "damage", "area", "damage", "turn"], "deadline damage occurs before refreshed enemy attack")
-	b.enemies[0].hp = 1
-	g = model(b)
-	if not apply(g, {"type": "capture", "source": "a"}, "capture source before fatal expiry"): return
-	if not apply(g, {"type": "end_turn"}, "first end before fatal expiry"): return
-	if not apply(g, {"type": "end_turn"}, "fatal source expiry"): return
-	areas = events(g.snapshot(), "area")
-	check(enemy(g.snapshot(), "a").is_empty() and areas.size() == 1 and areas[0].get("actor") == "player", "enemy killed by expiry cannot resolve")
-
-func test_range_sight_and_discard() -> void:
-	var b := F.board()
-	b.enemies[0].pos = [3, 3]
-	var g = model(b)
-	reject(g, {"type": "capture", "source": "a"}, "outside capture reach")
-	if not apply(g, {"type": "move", "to": [2, 3]}, "approach"): return
-	if not apply(g, {"type": "capture", "source": "a"}, "adjacent capture"): return
-	reject(g, {"type": "discard"}, "discard absent")
-	reject(g, {"type": "release", "target": [6, 3]}, "release exceeds ability range")
-	reject(g, {"type": "release", "target": [3, 4]}, "diagonal target")
-	if not apply(g, {"type": "release", "target": [5, 3]}, "ability range boundary"): return
-	var rays := events(g.snapshot(), "ray")
-	check(not rays.is_empty() and rays[0].get("cells") == [[3, 3], [4, 3], [5, 3]], "release preserves line geometry")
-	b = F.board()
-	b.walls = [[3, 3]]
-	g = model(b)
-	if not apply(g, {"type": "capture", "source": "a"}, "capture beside wall"): return
-	reject(g, {"type": "release", "target": [4, 3]}, "wall blocks LOS")
-	reject(g, {"type": "move", "to": "wrong"}, "malformed cell")
-	reject(g, {"type": "capture", "source": 42}, "malformed source")
-
-func test_action_budget() -> void:
-	var b := F.board()
-	b.rules.actions = 2
-	b.player.pos = [3, 3]
-	b.enemies = [F.foe("a", [4, 3], [1, 0], F.ability("bolt", 2, 1)), F.foe("b", [3, 4], [0, 1], F.ability("bolt", 2, 1)), F.foe("c", [2, 3], [-1, 0], F.ability("bolt", 2, 1))]
-	var g = model(b)
-	for entry in [["a", [4, 3]], ["b", [3, 4]]]:
-		if not apply(g, {"type": "capture", "source": entry[0]}, "capture for AP"): return
-		if not apply(g, {"type": "release", "target": entry[1]}, "spend AP"): return
-	if not apply(g, {"type": "capture", "source": "c"}, "capture remains free at zero AP"): return
-	check(g.snapshot().get("action_points") == 0 and g.snapshot().get("turn") == 1, "two releases exhaust AP without advancing turn")
-	reject(g, {"type": "release", "target": [2, 3]}, "release with zero AP")
-	reject(g, {"type": "move", "to": [3, 2]}, "move with zero AP")
-
-func test_area_release_and_moving_footprint() -> void:
-	var b := F.board()
-	b.enemies = [F.foe("a", [2, 3], [1, 0], F.ability("burst", 3, 2, 1)), F.foe("b", [2, 4], [0, 1], F.ability("bolt", 2, 1))]
-	var g = model(b)
-	if not apply(g, {"type": "capture", "source": "a"}, "capture burst for release"): return
-	var before: Dictionary = g.snapshot().get("backlash_footprint", {})
-	if not apply(g, {"type": "move", "to": [1, 2]}, "move with held burst"): return
-	var after: Dictionary = g.snapshot().get("backlash_footprint", {})
-	check(before != after and after.get("cells", []).has([1, 2]), "held backlash footprint follows player position")
-	if not apply(g, {"type": "move", "to": [1, 3]}, "return for burst"): return
-	if not apply(g, {"type": "release", "target": [2, 3]}, "release burst"): return
-	var s: Dictionary = g.snapshot()
-	check(s.get("player", {}).get("hp") == 20 and enemy(s, "a").get("hp") == 8 and enemy(s, "b").get("hp") == 8, "released burst damages both enemies but not player")
-	check(not events(s, "area").is_empty(), "released burst reports area geometry")
-
-func test_burst_push_axis() -> void:
-	var b := F.board()
-	b.enemies = [
-		F.foe("source", [1, 4], [1, 0], F.ability("burst", 3, 1, 3, true)),
-		F.foe("tie", [2, 2], [1, 0], F.ability("bolt", 1, 1)),
-		F.foe("xdom", [5, 4], [1, 0], F.ability("bolt", 1, 1)),
-		F.foe("ydom", [4, 5], [1, 0], F.ability("bolt", 1, 1)),
-	]
-	var g = model(b)
-	if not apply(g, {"type": "capture", "source": "source"}, "capture axis-test burst"): return
-	# The controlled radius reaches each actor, and their destination cells are free.
-	if not apply(g, {"type": "release", "target": [3, 3]}, "axis-test burst release"): return
-	var state: Dictionary = g.snapshot()
-	var destinations := {}
-	for event in events(state, "displace"):
-		destinations[event.actor] = event.to
-	for item in [["tie", [1, 2]], ["xdom", [6, 4]], ["ydom", [4, 6]]]:
-		check(destinations.get(item[0], []) == item[1] and enemy(state, item[0]).get("pos") == item[1], "burst displacement destination: " + item[0])
-		check(enemy(state, item[0]).get("hp") == 9, "burst affected axis-test actor: " + item[0])
-
 func test_end_turn_intentions_and_reset() -> void:
 	var b := F.board()
 	b.player.hp = 1
@@ -307,21 +106,6 @@ func test_end_turn_intentions_and_reset() -> void:
 	check(g.snapshot().get("objective") == "escape" and not wins.is_empty() and wins[0].get("objective") == "escape", "escape snapshot and win event identify objective")
 	reject(g, {"type": "end_turn"}, "terminal state")
 
-func test_no_invert() -> void:
-	var b := F.board()
-	b.enemies = [F.foe("a", [2, 3], [1, 0], F.ability("shove", 3, 1, 0, true))]
-	var g = model(b)
-	check(not g.snapshot().has("invert_enabled"), "active snapshot has no invert configuration")
-	if not apply(g, {"type": "capture", "source": "a"}, "capture normal shove"): return
-	if not apply(g, {"type": "release", "target": [2, 3]}, "normal shove"): return
-	check(enemy(g.snapshot(), "a").get("pos") == [3, 3], "normal shove pushes away from origin")
-	var release_events := events(g.snapshot(), "release")
-	check(not release_events.is_empty() and not release_events[0].has("invert"), "release event has no invert configuration")
-	for flag in [true, false]:
-		g = model(b)
-		if not apply(g, {"type": "capture", "source": "a"}, "capture for unsupported invert"): continue
-		reject(g, {"type": "release", "target": [2, 3], "invert": flag}, "invert field %s is unsupported" % flag)
-
 func mobile(id: String, pos: Array, direction: Array, skill: Dictionary, pattern: String, budget: int = 1, hp: int = 10) -> Dictionary:
 	var result := F.foe(id, pos, direction, skill, hp)
 	result.movement_pattern = pattern
@@ -332,39 +116,6 @@ func intention(state: Dictionary, id: String) -> Dictionary:
 	for item in state.get("intentions", []):
 		if item.get("source") == id: return item
 	return {}
-
-func test_any_threat_capture() -> void:
-	var b := F.board()
-	b.player.pos = [3, 3]
-	b.enemies = [
-		F.foe("safe", [3, 2], [0, -1], F.ability("bolt", 2, 1)),
-		F.foe("threat", [5, 3], [-1, 0], F.ability("bolt", 3, 1)),
-	]
-	var g = model(b)
-	reject(g, {"type": "capture", "source": "safe"}, "other enemy threatens capture")
-	reject(g, {"type": "capture", "source": "threat"}, "threat and out-of-reach capture")
-	if not apply(g, {"type": "move", "to": [3, 4]}, "leave crossfire"): return
-	if not apply(g, {"type": "move", "to": [3, 3]}, "reenter crossfire"): return
-	reject(g, {"type": "capture", "source": "safe"}, "reentering current footprint blocks capture")
-
-func test_replacement_new_threat() -> void:
-	var b := F.board()
-	b.player.pos = [3, 3]
-	b.enemies = [
-		F.foe("old", [3, 4], [-1, 0], F.ability("shove", 2, 1, 0, true)),
-		F.foe("burst", [2, 3], [1, 0], F.ability("burst", 3, 1, 1)),
-		F.foe("new", [3, 2], [0, -1], F.ability("bolt", 1, 1)),
-	]
-	var g = model(b)
-	if not apply(g, {"type": "capture", "source": "old"}, "hold shove before new threat"): return
-	reject(g, {"type": "capture", "source": "absent"}, "invalid replacement preserves held shove")
-	if not apply(g, {"type": "capture", "source": "new"}, "replacement creates threat"): return
-	var s: Dictionary = g.snapshot()
-	var failed := events(s, "capture_failed")
-	check(enemy(s, "burst").get("pos") == [1, 3], "backlash displaces burst source")
-	check(s.get("stored", {}).is_empty() and not s.get("cancelled", []).has("new"), "new threat prevents replacement acquisition")
-	check(not failed.is_empty() and failed[0].get("reason") == "threatened", "replacement reports newly threatened")
-	check(types(s).has("backlash") and types(s).has("displace") and types(s).find("displace") < types(s).find("capture_failed"), "irreversible backlash precedes failed acquisition")
 
 func test_movement_and_aim() -> void:
 	var b := F.board()
@@ -432,56 +183,6 @@ func test_max_range_and_occupancy() -> void:
 	check(moves.size() == 2 and moves[0].get("actor") == "first" and moves[1].get("actor") == "second", "movement follows fixture order")
 	check(enemy(s, "first").get("pos") == [3, 3] and enemy(s, "second").get("pos") == [4, 3], "later mover uses vacated cell without overlap")
 
-func test_capture_moves_and_source_geometry() -> void:
-	var b := F.board()
-	b.enemies = [mobile("a", [2, 3], [1, 0], F.ability("shove", 2, 1, 0, true), "chase_player")]
-	var g = model(b)
-	if not apply(g, {"type": "capture", "source": "a"}, "capture mobile source"): return
-	if not apply(g, {"type": "move", "to": [1, 2]}, "leave captured source"): return
-	if not apply(g, {"type": "end_turn"}, "captured source moves"): return
-	check(enemy(g.snapshot(), "a").get("pos") != [2, 3] and not events(g.snapshot(), "move").is_empty(), "captured living source still moves")
-	check(events(g.snapshot(), "ray").is_empty(), "captured old announcement does not resolve")
-	b.enemies = [
-		F.foe("shove", [2, 3], [1, 0], F.ability("shove", 3, 1, 0, true)),
-		F.foe("target", [3, 3], [-1, 0], F.ability("bolt", 1, 1)),
-	]
-	g = model(b)
-	if not apply(g, {"type": "capture", "source": "shove"}, "capture displacement ability"): return
-	if not apply(g, {"type": "release", "target": [3, 3]}, "displace announcing source"): return
-	check(enemy(g.snapshot(), "target").get("pos") == [4, 3] and enemy(g.snapshot(), "target").get("dir") == [-1, 0], "displacement preserves announcement direction")
-	check(intention(g.snapshot(), "target").get("cells") == [[3, 3]], "announcement footprint follows displaced source")
-
-func test_combat_objective() -> void:
-	var b := F.board()
-	b.objective = "defeat_all"
-	b.erase("exit")
-	b.enemies = [F.foe("a", [2, 3], [1, 0], F.ability("bolt", 2, 2), 2)]
-	var default_board: Dictionary = b.duplicate(true)
-	default_board.erase("objective")
-	var default_game = Encounter.new()
-	default_game.configure(default_board, "R2")
-	if not apply(default_game, {"type": "capture", "source": "a"}, "default objective capture"): return
-	if not apply(default_game, {"type": "release", "target": [2, 3]}, "default objective release"): return
-	check(default_game.snapshot().get("status") == "won", "unspecified objective defaults to defeat all")
-	var g = model(b)
-	var initial: Dictionary = g.snapshot()
-	if not apply(g, {"type": "capture", "source": "a"}, "combat final capture"): return
-	if not apply(g, {"type": "release", "target": [2, 3]}, "combat final release"): return
-	var s: Dictionary = g.snapshot()
-	check(s.get("status") == "won" and types(s).has("win") and enemy(s, "a").is_empty(), "last enemy defeat wins without exit")
-	var wins := events(s, "win")
-	check(s.get("objective") == "defeat_all" and not wins.is_empty() and wins[0].get("objective") == "defeat_all", "combat snapshot and win event identify objective")
-	check(types(s).find("death") < types(s).find("win"), "win follows final death")
-	reject(g, {"type": "end_turn"}, "combat terminal state")
-	g.reset()
-	check(g.snapshot() == initial, "combat reset restores initial state")
-	b.player.hp = 1
-	b.enemies = [F.foe("area", [2, 3], [1, 0], F.ability("burst", 2, 2, 1), 1), F.foe("new", [1, 4], [0, 1], F.ability("bolt", 1, 1), 1)]
-	g = model(b)
-	if not apply(g, {"type": "capture", "source": "area"}, "hold simultaneous lethal burst"): return
-	if not apply(g, {"type": "capture", "source": "new"}, "lethal replacement priority"): return
-	check(g.snapshot().get("status") == "lost" and not types(g.snapshot()).has("win"), "player death takes priority over combat victory")
-
 func wide_shove() -> Dictionary:
 	var skill := F.ability("shove", 2, 1, 0, true)
 	skill.width = 3
@@ -517,56 +218,6 @@ func test_wide_intention_geometry() -> void:
 	b.player.pos = [7, 6]
 	check(same_cells(intention(model(b).snapshot(), "wide").get("cells", []), [[1, 0], [2, 0], [1, 1], [2, 1]]), "wide front clips cleanly at board edge")
 
-func test_wide_capture_and_release() -> void:
-	var b := F.board()
-	b.player.pos = [3, 3]
-	b.enemies = [
-		F.foe("safe", [3, 2], [0, -1], F.ability("bolt", 2, 1)),
-		F.foe("wide", [5, 2], [-1, 0], wide_shove()),
-	]
-	var g = model(b)
-	check(intention(g.snapshot(), "wide").get("cells", []).has([3, 3]), "wide-only lateral cell is announced")
-	reject(g, {"type": "capture", "source": "safe"}, "wide lateral threat blocks other capture")
-	b.enemies[1].ability.erase("width")
-	g = model(b)
-	if not apply(g, {"type": "capture", "source": "safe"}, "same position safe from narrow attack"): return
-
-	b.enemies = [
-		F.foe("wide", [3, 2], [1, 0], wide_shove()),
-		F.foe("upper", [4, 2], [0, -1], F.ability("bolt", 1, 1)),
-		F.foe("lower", [4, 4], [0, 1], F.ability("bolt", 1, 1)),
-	]
-	g = model(b)
-	if not apply(g, {"type": "capture", "source": "wide"}, "capture wide from source-row flank"): return
-	check(g.snapshot().get("stored", {}).get("ability", {}).get("width") == 3, "stored ability retains width")
-	var held: Array = g.snapshot().get("backlash_footprint", {}).get("cells", [])
-	check(same_cells(held, [[3, 3], [4, 2], [5, 2], [4, 3], [5, 3], [4, 4], [5, 4]]), "held backlash includes player once and complete forward front")
-	if not apply(g, {"type": "release", "target": [5, 3]}, "release borrowed wide shove"): return
-	var s: Dictionary = g.snapshot()
-	var rays := events(s, "ray")
-	check(not rays.is_empty() and same_cells(rays[0].get("cells", []), [[4, 2], [5, 2], [4, 3], [5, 3], [4, 4], [5, 4]]), "released borrowed shove retains full width and depth")
-	check(enemy(s, "upper").get("hp") == 9 and enemy(s, "lower").get("hp") == 9, "wide release damages both lateral enemies once")
-	var displacements := events(s, "displace")
-	check(displacements.size() == 2, "wide release pushes each hit actor once")
-
-	var blocked := F.board()
-	blocked.player.pos = [3, 3]
-	blocked.walls = [[4, 2]]
-	blocked.enemies = [F.foe("wide", [3, 2], [1, 0], wide_shove())]
-	g = model(blocked)
-	if not apply(g, {"type": "capture", "source": "wide"}, "capture wide for blocked release"): return
-	if not apply(g, {"type": "release", "target": [5, 3]}, "release wide with one blocked lane"): return
-	rays = events(g.snapshot(), "ray")
-	check(not rays.is_empty() and same_cells(rays[0].get("cells", []), [[4, 3], [5, 3], [4, 4], [5, 4]]), "wide release blocks only the obstructed lane")
-
-	b.enemies.append(F.foe("replacement", [3, 4], [0, 1], F.ability("bolt", 1, 1)))
-	g = model(b)
-	if not apply(g, {"type": "capture", "source": "wide"}, "hold wide before replacement"): return
-	if not apply(g, {"type": "capture", "source": "replacement"}, "replace held wide"): return
-	s = g.snapshot()
-	check(s.get("player", {}).get("hp") == 19 and enemy(s, "upper").get("hp") == 9 and enemy(s, "lower").get("hp") == 9, "wide backlash hits player once and both side lanes")
-	check(s.get("stored", {}).get("source") == "replacement" and events(s, "displace").size() == 2, "backlash pushes lateral actors once and acquires safe replacement")
-
 func test_wide_ranger_goal() -> void:
 	var b := F.board()
 	b.player.pos = [1, 3]
@@ -575,66 +226,289 @@ func test_wide_ranger_goal() -> void:
 	if not apply(g, {"type": "end_turn"}, "wide ranger usable lateral firing position"): return
 	check(enemy(g.snapshot(), "ranger").get("pos") == [3, 2] and intention(g.snapshot(), "ranger").get("cells", []).has([1, 3]), "range policy recognizes usable wide lateral cell")
 
-func test_wide_release_near_endpoint() -> void:
+func test_arm_and_contact() -> void:
+	var b := F.board()
+	b.enemies = [F.foe("far", [4, 3], [-1, 0], F.ability("bolt", 3, 2))]
+	var g = model(b)
+	var initial: Dictionary = g.snapshot()
+	if not apply(g, {"type": "capture"}, "arm while threatened and outside old reach"): return
+	var armed: Dictionary = g.snapshot()
+	check(armed.get("capture_armed", false) and armed.get("action_points") == 2 and armed.get("stored", {}).is_empty(), "arming costs one AP and waits for contact")
+	check(armed.get("intentions") == initial.get("intentions"), "arming does not cancel the announced attack")
+	reject(g, {"type": "capture"}, "duplicate arm is atomic")
+	if not apply(g, {"type": "end_turn"}, "enemy hits armed player"): return
+	var s: Dictionary = g.snapshot()
+	check(s.get("player", {}).get("hp") == 18 and s.get("stored", {}).get("source") == "far", "contact deals full damage and captures source")
+	check(not s.get("capture_armed", true) and s.get("stored", {}).get("ability") == b.enemies[0].ability, "contact consumes arm and copies payload")
+	check(s.get("stored", {}).get("captured_turn") == 1 and not s.get("stored", {}).has("deadline_turn"), "captured turn identifies occurrence without expiry")
+	check(not events(s, "ray").is_empty() and not intention(s, "far").is_empty(), "captured living source still attacks and announces")
+	check(not s.has("backlash_footprint") and not s.has("cancelled") and not types(s).has("backlash"), "capture has no backlash or cancellation bookkeeping")
+
+func test_arm_persists_on_miss_and_budget() -> void:
+	var b := F.board()
+	b.enemies = [F.foe("miss", [6, 5], [1, 0], F.ability("bolt", 1, 1))]
+	var g = model(b)
+	if not apply(g, {"type": "capture"}, "arm before misses"): return
+	for turn in range(3):
+		if not apply(g, {"type": "end_turn"}, "missed enemy turn %d" % turn): return
+		var s: Dictionary = g.snapshot()
+		check(s.get("capture_armed", false) and s.get("stored", {}).is_empty() and s.get("player", {}).get("hp") == 20, "miss leaves arm ready across turn %d" % turn)
+		check(not types(s).has("backlash"), "miss has no expiry backlash")
+	if not apply(g, {"type": "move", "to": [1, 2]}, "move while armed"): return
+	check(g.snapshot().get("capture_armed", false), "movement does not consume arm")
+	b.rules.actions = 1
+	g = model(b)
+	if not apply(g, {"type": "move", "to": [1, 2]}, "spend last AP"): return
+	reject(g, {"type": "capture"}, "arming at zero AP")
+	reject(g, {"type": "shine", "target": [2, 2]}, "shine at zero AP without held skill")
+	check(g.snapshot().get("turn") == 1, "zero AP does not end turn")
+
+func test_first_hit_and_full_enemy_effects() -> void:
 	var b := F.board()
 	b.player.pos = [3, 3]
 	b.enemies = [
-		F.foe("wide", [3, 2], [1, 0], wide_shove()),
-		F.foe("behind", [5, 3], [1, 0], F.ability("bolt", 1, 1)),
+		mobile("first", [5, 3], [-1, 0], wide_shove(), "chase_player"),
+		F.foe("second", [0, 3], [1, 0], F.ability("bolt", 3, 1)),
 	]
 	var g = model(b)
-	if not apply(g, {"type": "capture", "source": "wide"}, "capture wide for near endpoint"): return
-	if not apply(g, {"type": "release", "target": [4, 3]}, "release wide at near endpoint"): return
+	if not apply(g, {"type": "capture"}, "arm for two attacks"): return
+	if not apply(g, {"type": "end_turn"}, "resolve two enemy attacks"): return
+	var s: Dictionary = g.snapshot()
+	check(s.get("player", {}).get("hp") == 18 and s.get("player", {}).get("pos") == [2, 3], "first shove damages and displaces before second attack")
+	check(s.get("stored", {}).get("source") == "first" and s.get("stored", {}).get("ability", {}).get("width") == 3, "first hit captures its actual wide payload, not later hit")
+	var rays := events(s, "ray")
+	check(rays.size() == 2 and rays[0].get("actor") == "first" and rays[1].get("actor") == "second", "both enemy attacks resolve in order")
+	check(types(s).find("displace") >= 0 and types(s).find("capture") > types(s).find("displace") and types(s).find("capture") < types(s).rfind("ray"), "acquisition follows complete shove before next attack")
+	check(enemy(s, "first").get("pos") != [5, 3] and not intention(s, "first").is_empty(), "captured source still moves and announces")
+	b.player.hp = 1
+	g = model(b)
+	if not apply(g, {"type": "capture"}, "arm before lethal contact"): return
+	if not apply(g, {"type": "end_turn"}, "lethal contact"): return
+	check(g.snapshot().get("status") == "lost" and g.snapshot().get("stored", {}).is_empty(), "lethal hit loses without acquiring skill")
+
+func test_shine_persistence_and_source_death() -> void:
+	var b := F.board()
+	b.enemies = [F.foe("source", [4, 3], [-1, 0], F.ability("bolt", 3, 1), 1)]
+	var g = model(b)
+	if not apply(g, {"type": "capture"}, "arm persistent skill"): return
+	if not apply(g, {"type": "end_turn"}, "acquire persistent skill"): return
+	for n in range(2):
+		if not apply(g, {"type": "shine", "target": [2, 3]}, "repeated shine %d" % n): return
+		check(g.snapshot().get("stored", {}).get("source") == "source" and g.snapshot().get("action_points") == 2 - n, "shine costs one AP and retains skill %d" % n)
+	if not apply(g, {"type": "shine", "target": [2, 3]}, "spend last AP shining"): return
+	reject(g, {"type": "shine", "target": [2, 3]}, "held shine at zero AP")
+	reject(g, {"type": "capture"}, "arm at zero AP with held skill")
+	check(g.snapshot().get("turn") == 2, "zero AP does not advance held-skill turn")
+	if not apply(g, {"type": "end_turn"}, "hold through another turn"): return
+	check(g.snapshot().get("stored", {}).get("source") == "source" and not types(g.snapshot()).has("backlash"), "skill persists across turns without backlash")
+	if not apply(g, {"type": "shine", "target": [4, 3]}, "shine defeats own source"): return
+	check(enemy(g.snapshot(), "source").is_empty() and g.snapshot().get("stored", {}).is_empty(), "source death clears held skill after shine")
+	reject(g, {"type": "shine", "target": [2, 3]}, "cannot shine after source death")
+
+func test_source_death_and_full_burst() -> void:
+	var b := F.board()
+	b.enemies = [
+		F.foe("source", [4, 3], [-1, 0], F.ability("bolt", 3, 1), 1),
+		F.foe("killer", [4, 5], [0, -1], F.ability("bolt", 2, 1)),
+	]
+	var g = model(b)
+	if not apply(g, {"type": "capture"}, "arm before source dies to another enemy"): return
+	if not apply(g, {"type": "end_turn"}, "captured source killed by later enemy"): return
+	check(enemy(g.snapshot(), "source").is_empty() and g.snapshot().get("stored", {}).is_empty(), "another enemy killing held source clears skill")
+	b.player.pos = [3, 3]
+	b.enemies = [
+		F.foe("burst", [5, 3], [-1, 0], F.ability("burst", 2, 1, 1), 1),
+		F.foe("other", [4, 2], [0, -1], F.ability("bolt", 1, 1), 5),
+	]
+	g = model(b)
+	if not apply(g, {"type": "capture"}, "arm burst"): return
+	if not apply(g, {"type": "end_turn"}, "capture burst on contact"): return
+	if not apply(g, {"type": "shine", "target": [4, 3]}, "burst kills own source first"): return
+	var s: Dictionary = g.snapshot()
+	check(enemy(s, "burst").is_empty() and s.get("stored", {}).is_empty(), "burst source death clears held ability")
+	check(enemy(s, "other").get("hp") == 4, "burst completes remaining targets after source death")
+	var death_index := -1
+	var other_damage_index := -1
+	var lost_index := -1
+	for i in range(s.get("events", []).size()):
+		var event: Dictionary = s.events[i]
+		if event.get("type") == "death" and event.get("actor") == "burst": death_index = i
+		if event.get("type") == "damage" and event.get("actor") == "other": other_damage_index = i
+		if event.get("type") == "ability_lost": lost_index = i
+	check(death_index >= 0 and other_damage_index > death_index and lost_index > other_damage_index, "source loss event follows death and complete burst effects")
+
+func test_rearm_replaces_only_on_contact() -> void:
+	var b := F.board()
+	b.enemies = [
+		F.foe("first", [4, 3], [-1, 0], F.ability("bolt", 3, 2)),
+		F.foe("second", [1, 5], [0, 1], F.ability("bolt", 2, 1)),
+	]
+	var g = model(b)
+	if not apply(g, {"type": "capture"}, "arm first ability"): return
+	if not apply(g, {"type": "end_turn"}, "acquire first ability"): return
+	if not apply(g, {"type": "capture"}, "arm replacement"): return
+	check(g.snapshot().get("stored", {}).get("source") == "first" and g.snapshot().get("capture_armed", false), "arming replacement preserves held ability until contact")
+	if not apply(g, {"type": "move", "to": [1, 4]}, "enter second announcement"): return
+	if not apply(g, {"type": "end_turn"}, "second source hits"): return
+	var s: Dictionary = g.snapshot()
+	check(s.get("stored", {}).get("source") == "second" and not s.get("capture_armed", true), "new contact replaces old held ability")
+	check(s.get("player", {}).get("hp") == 17 and not types(s).has("backlash"), "replacement causes no backlash, only enemy damage")
+
+func test_dead_source_cannot_be_acquired() -> void:
+	var b := F.board()
+	b.enemies = [
+		F.foe("killer", [4, 5], [0, -1], F.ability("bolt", 2, 1)),
+		F.foe("doomed", [4, 3], [-1, 0], F.ability("bolt", 3, 1), 1),
+		F.foe("survivor", [3, 3], [-1, 0], F.ability("bolt", 2, 1)),
+	]
+	var g = model(b)
+	if not apply(g, {"type": "capture"}, "arm while enemy dies before attack"): return
+	if not apply(g, {"type": "end_turn"}, "dead source skipped"): return
+	check(enemy(g.snapshot(), "doomed").is_empty() and g.snapshot().get("stored", {}).get("source") == "survivor", "dead source cannot consume arm; next actual hit is captured")
+
+func test_shine_borrowed_wide_endpoint() -> void:
+	var b := F.board()
+	b.player.pos = [3, 3]
+	b.enemies = [F.foe("wide", [5, 3], [-1, 0], wide_shove())]
+	var g = model(b)
+	if not apply(g, {"type": "capture"}, "arm for wide shove"): return
+	if not apply(g, {"type": "end_turn"}, "capture wide shove on hit"): return
+	check(g.snapshot().get("player", {}).get("pos") == [2, 3] and g.snapshot().get("stored", {}).get("ability", {}).get("width") == 3, "wide hit pushes player and preserves width")
+	if not apply(g, {"type": "shine", "target": [3, 3]}, "shine wide to near endpoint"): return
+	var rays := events(g.snapshot(), "ray")
+	check(not rays.is_empty() and same_cells(rays[0].get("cells", []), [[3, 2], [3, 3], [3, 4]]), "wide shine retains width and selected endpoint")
+	check(g.snapshot().get("stored", {}).get("source") == "wide", "wide shine retains captured ability")
+
+func test_reset_new_states() -> void:
+	var b := F.board()
+	b.enemies = [F.foe("source", [4, 3], [-1, 0], F.ability("bolt", 3, 1))]
+	var g = model(b)
+	var initial: Dictionary = g.snapshot()
+	if not apply(g, {"type": "capture"}, "arm before reset"): return
+	g.reset()
+	check(g.snapshot() == initial and not g.snapshot().get("capture_armed", true) and g.snapshot().get("stored", {}).is_empty(), "reset clears armed state and restores fixture")
+	if not apply(g, {"type": "capture"}, "arm before held reset"): return
+	if not apply(g, {"type": "end_turn"}, "hold before reset"): return
+	check(not g.snapshot().get("stored", {}).is_empty(), "held reset setup acquired ability")
+	g.reset()
+	check(g.snapshot() == initial and g.snapshot().get("action_points") == 3 and g.snapshot().get("player", {}).get("hp") == 20, "held reset restores AP, HP and all initial positions")
+	b.player.hp = 1
+	g = model(b)
+	initial = g.snapshot()
+	if not apply(g, {"type": "capture"}, "arm before terminal reset"): return
+	if not apply(g, {"type": "end_turn"}, "lose before reset"): return
+	check(g.snapshot().get("status") == "lost", "terminal reset setup lost")
+	g.reset()
+	check(g.snapshot() == initial and g.snapshot().get("status") == "playing" and not g.snapshot().get("capture_armed", true) and g.snapshot().get("stored", {}).is_empty(), "terminal reset restores clean initial state")
+
+func test_shine_validation_and_combat_win() -> void:
+	var b := F.board()
+	b.objective = "defeat_all"
+	b.erase("exit")
+	b.enemies = [F.foe("source", [4, 3], [-1, 0], F.ability("bolt", 3, 1), 1)]
+	var default_board: Dictionary = b.duplicate(true)
+	default_board.erase("objective")
+	var default_game = Encounter.new()
+	default_game.configure(default_board, "R2")
+	if not apply(default_game, {"type": "capture"}, "arm default combat objective"): return
+	if not apply(default_game, {"type": "end_turn"}, "acquire for default objective"): return
+	if not apply(default_game, {"type": "shine", "target": [4, 3]}, "defeat default objective source"): return
+	check(default_game.snapshot().get("status") == "won", "unspecified objective defaults to defeat all")
+	var g = model(b)
+	reject(g, {"type": "shine", "target": [2, 3]}, "shine without ability")
+	reject(g, {"type": "capture", "source": "source"}, "retired source selection")
+	reject(g, {"type": "release", "target": [2, 3]}, "retired release command")
+	if not apply(g, {"type": "capture"}, "arm combat skill"): return
+	if not apply(g, {"type": "end_turn"}, "acquire combat skill"): return
+	reject(g, {"type": "shine", "target": [5, 3]}, "shine outside range")
+	reject(g, {"type": "shine", "target": [2, 4]}, "diagonal shine")
+	reject(g, {"type": "shine", "target": [2, 3], "invert": true}, "unsupported invert")
+	reject(g, {"type": "move", "to": "wrong"}, "malformed move")
+	if not apply(g, {"type": "shine", "target": [4, 3]}, "shine final enemy"): return
+	var s: Dictionary = g.snapshot()
+	var wins := events(s, "win")
+	check(s.get("status") == "won" and not wins.is_empty() and wins[0].get("objective") == "defeat_all", "last enemy defeated wins combat")
+	check(types(s).find("death") < types(s).find("win") and s.get("stored", {}).is_empty(), "final death clears skill before terminal win")
+	reject(g, {"type": "end_turn"}, "combat terminal rejects commands")
+	b = F.board()
+	b.walls = [[3, 3]]
+	b.enemies = [F.foe("source", [1, 1], [0, 1], F.ability("bolt", 3, 1))]
+	g = model(b)
+	if not apply(g, {"type": "capture"}, "arm beside wall"): return
+	if not apply(g, {"type": "end_turn"}, "capture beside wall"): return
+	reject(g, {"type": "shine", "target": [4, 3]}, "wall blocks shine target")
+
+func test_wide_shine_wall_and_push_once() -> void:
+	var b := F.board()
+	b.player.pos = [3, 3]
+	b.walls = [[3, 2]]
+	b.enemies = [
+		F.foe("source", [5, 3], [-1, 0], wide_shove()),
+		F.foe("side", [4, 4], [0, 1], F.ability("bolt", 1, 0)),
+	]
+	var g = model(b)
+	if not apply(g, {"type": "capture"}, "arm for wide wall test"): return
+	if not apply(g, {"type": "end_turn"}, "capture wide wall test"): return
+	check(enemy(g.snapshot(), "side").get("pos") == [3, 4], "enemy wide shove moves side target into shine lane")
+	if not apply(g, {"type": "shine", "target": [4, 3]}, "shine with blocked lateral lane"): return
 	var s: Dictionary = g.snapshot()
 	var rays := events(s, "ray")
-	check(not rays.is_empty() and same_cells(rays[0].get("cells", []), [[4, 2], [4, 3], [4, 4]]), "wide release stops all lanes at selected near endpoint")
-	check(enemy(s, "behind").get("hp") == 10 and enemy(s, "behind").get("pos") == [5, 3], "wide release cannot damage or push beyond endpoint")
+	check(not rays.is_empty() and same_cells(rays[0].get("cells", []), [[3, 3], [4, 3], [3, 4], [4, 4]]), "wide shine stops at wall only in blocked lane")
+	check(enemy(s, "side").get("hp") == 8 and enemy(s, "side").get("pos") == [4, 4] and events(s, "displace").size() == 1, "wide shine hits and pushes side actor exactly once")
+
+func test_displaced_source_footprint() -> void:
+	var b := F.board()
+	b.enemies = [
+		F.foe("source", [4, 3], [-1, 0], F.ability("shove", 3, 1, 0, true)),
+		F.foe("target", [2, 3], [1, 0], F.ability("bolt", 1, 0)),
+	]
+	var g = model(b)
+	if not apply(g, {"type": "capture"}, "arm displacement source"): return
+	if not apply(g, {"type": "end_turn"}, "acquire displacement source"): return
+	if not apply(g, {"type": "shine", "target": [2, 3]}, "displace announced source"): return
+	var s: Dictionary = g.snapshot()
+	check(enemy(s, "target").get("pos") == [3, 3] and enemy(s, "target").get("dir") == [-1, 0], "displacement leaves freshly aimed direction locked")
+	check(intention(s, "target").get("cells") == [[2, 3]], "announced footprint follows source displacement")
+
+func test_burst_push_axes() -> void:
+	var b := F.board()
+	b.enemies = [
+		F.foe("source", [1, 4], [0, -1], F.ability("burst", 2, 1, 3, true)),
+		F.foe("tie", [3, 2], [1, 0], F.ability("bolt", 1, 0)),
+		F.foe("xdom", [5, 4], [1, 0], F.ability("bolt", 1, 0)),
+		F.foe("ydom", [4, 5], [1, 0], F.ability("bolt", 1, 0)),
+	]
+	var g = model(b)
+	if not apply(g, {"type": "capture"}, "arm burst axis test"): return
+	if not apply(g, {"type": "end_turn"}, "capture burst axis test"): return
+	if not apply(g, {"type": "shine", "target": [3, 3]}, "shine burst axis test"): return
+	var s: Dictionary = g.snapshot()
+	var destinations := {}
+	for event in events(s, "displace"): destinations[event.actor] = event.to
+	for item in [["tie", [5, 2]], ["xdom", [6, 4]], ["ydom", [4, 6]]]:
+		check(destinations.get(item[0], []) == item[1] and enemy(s, item[0]).get("pos") == item[1], "burst push axis destination: " + item[0])
 
 func _initialize() -> void:
-	if OS.get_cmdline_user_args().has("--focus=budget"):
+	var focused := OS.get_cmdline_user_args().has("--focus=armed-capture-shine")
+	if not focused:
 		test_budget_boundary()
-	elif OS.get_cmdline_user_args().has("--focus=no-invert"):
-		test_no_invert()
-	elif OS.get_cmdline_user_args().has("--focus=burst-axis"):
-		test_burst_push_axis()
-	elif OS.get_cmdline_user_args().has("--focus=active-opponents"):
-		test_any_threat_capture()
-		test_replacement_new_threat()
-		test_movement_and_aim()
-		test_max_range_and_occupancy()
-		test_capture_moves_and_source_geometry()
-		test_combat_objective()
-	elif OS.get_cmdline_user_args().has("--focus=shared-ap-wide-shove"):
-		test_budget_boundary()
-		test_interleaving()
-		test_action_budget()
-		test_wide_intention_geometry()
-		test_wide_capture_and_release()
-		test_wide_ranger_goal()
-		test_wide_release_near_endpoint()
-	else:
-		test_budget_boundary()
-		test_interleaving()
-		test_unlimited_occurrences()
-		test_backlash_replacement()
-		test_replacement_source_changes()
-		test_lethal_replacement()
-		test_deadline()
-		test_range_sight_and_discard()
-		test_action_budget()
-		test_area_release_and_moving_footprint()
-		test_burst_push_axis()
 		test_end_turn_intentions_and_reset()
-		test_no_invert()
-		test_any_threat_capture()
-		test_replacement_new_threat()
 		test_movement_and_aim()
 		test_max_range_and_occupancy()
-		test_capture_moves_and_source_geometry()
-		test_combat_objective()
 		test_wide_intention_geometry()
-		test_wide_capture_and_release()
 		test_wide_ranger_goal()
-		test_wide_release_near_endpoint()
+		test_reset_new_states()
+		test_shine_validation_and_combat_win()
+		test_wide_shine_wall_and_push_once()
+		test_displaced_source_footprint()
+		test_burst_push_axes()
+	test_arm_and_contact()
+	test_arm_persists_on_miss_and_budget()
+	test_first_hit_and_full_enemy_effects()
+	test_shine_persistence_and_source_death()
+	test_source_death_and_full_burst()
+	test_rearm_replaces_only_on_contact()
+	test_dead_source_cannot_be_acquired()
+	test_shine_borrowed_wide_endpoint()
 	print("Checks: ", checks, "; failures: ", failures.size())
 	quit(0 if failures.is_empty() else 1)

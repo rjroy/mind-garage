@@ -24,6 +24,7 @@ var _asset_dialog: AcceptDialog
 var _puppet_rig: Node2D
 var _two_source_presentation = TwoSourcePresentation.new()
 var baseline_feedback_left := 0.0
+var _displayed_held: Dictionary = {}
 var fixture: Dictionary
 var state: Dictionary = {}
 var mode := "inspect"
@@ -103,7 +104,9 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	if state.is_empty(): return
 	shadow.advance(delta)
-	board.set_presentation(shadow.frame())
+	var frame: Dictionary = shadow.frame()
+	board.set_presentation(frame)
+	if frame.held != _displayed_held: _refresh_storage(frame.held)
 	_present_theatre()
 	if resolving:
 		baseline_feedback_left = maxf(0, baseline_feedback_left - delta)
@@ -257,7 +260,7 @@ func _build_interface() -> void:
 	inspection = _label(_stage_root, "", 13, true)
 	result = _label(_stage_root, "", 13, true)
 	result.visible = false
-	for entry in [["move", "Move · M"], ["capture", "Capture · C"], ["release", "Release · L"], ["end_turn", "End turn · E"]]:
+	for entry in [["move", "Move · M"], ["capture", "Capture · C"], ["shine", "Shine · S"], ["end_turn", "End turn · E"]]:
 		var button := _button(_stage_root, entry[1], _choose_action.bind(entry[0]))
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		button.toggle_mode = true
@@ -310,10 +313,10 @@ func _build_interface() -> void:
 	restart_dialog.confirmed.connect(_apply_restart)
 	add_child(restart_dialog)
 	help_dialog = AcceptDialog.new()
-	help_dialog.title = "Controls and the capture bargain"
-	help_dialog.dialog_text = "Move and act in any order with one AP (action point) pool. The normal fight starts each turn with 3 AP.\nEach one-cell cardinal move costs 1 AP. Release costs 1 AP and can happen on the capture turn.\nCapture and End turn are free. At zero AP, safe capture can still be legal; End turn is always explicit. There is no automatic turn ending.\nReplace a held ability or end its deadline turn: it discharges where you stand.\nEnemy plans resolve only when you End turn.\n\nChoose an operation, choose its target, inspect, then Confirm.\nM: Move, C: Capture, L: Release, E: prepare End turn.\nTab / Shift+Tab: controls. Arrows on board: inspect.\nEnter selects a cell; a separate Enter confirms. Esc / right click: cancel.\nCtrl+R: restart. Nothing advances during inspection or preview.\n\nY: you; squares: pursuers; EXIT: escape.\nRust hatches/dashed routes: enemy intentions. Double rust border: held backlash here.\nTeal outlines: legal choices. Solid arrows/hollow pawns: exact command preview.\nPreview lists ordered effects; Recent events contains only confirmed commands."
+	help_dialog.title = "Controls and borrowed abilities"
+	help_dialog.dialog_text = "Each turn starts with 3 AP. Each one-cell cardinal move, Capture and Shine costs 1 AP. End turn is free and always explicit; running out of AP never ends your turn automatically.\n\nCapture arms you without choosing a source or target. The next enemy attack that hits you deals its normal damage and push, then you acquire its ability if you and its source survive. Misses leave Capture armed. You cannot arm it twice.\nYour current ability stays until a new hit replaces it. Shine uses it for 1 AP without forgetting it. Keep it as long as its source lives; defeating that source removes the ability after the full attack resolves.\n\nChoose an operation, inspect its exact preview, then Confirm. Move and Shine require a target. Cancel only backs out of an unconfirmed command; it does not undo arming.\nM: Move, C: Capture, S: Shine, E: prepare End turn.\nTab / Shift+Tab: controls. Arrows on board: inspect.\nEnter selects a cell; a separate Enter confirms. Esc / right click: cancel preview.\nCtrl+R: restart. Nothing advances during inspection or preview.\n\nEnemy plans resolve only when you End turn. Capture does not cancel their attacks. Teal outlines show legal choices. Preview lists ordered effects; Recent events contains only confirmed commands."
 	help_dialog.dialog_text += "\n\nStage: click figure or foot marker; [ / ] cycles figures.\nAlt-click targets floor through figures. Details opens exact effects.\nTheatre positions identify actors, not compass directions; rehearsal does not advance time."
-	help_dialog.dialog_text += "\n\nThe active fight ends when all foes are defeated. A pursues you with a narrow shove; B seeks usable maximum attack range with a three-wide shove. Width is across the attack, not extra forward range. A borrowed action keeps its width for release and backlash.\nEnd turn resolves old attacks, then opponents' one-step movement, then new aim.\nCapture is unavailable while you stand in any announced enemy attack. Move to safety first. The explicit escape comparison keeps its exit objective."
+	help_dialog.dialog_text += "\n\nThe active fight ends when all foes are defeated. A pursues you with a narrow shove; B seeks usable maximum attack range with a three-wide shove. Width is across the attack, not extra forward range. Shine keeps the borrowed attack's width.\nEnd turn resolves old attacks, then opponents' one-step movement, then new aim. The explicit escape comparison keeps its exit objective."
 	help_dialog.dialog_text += "\nTwo pursuers: cool A/diamond and warm B/circle wavefronts show current threats."
 	add_child(help_dialog)
 	# Keep tab order: events, preview, plans.
@@ -432,7 +435,7 @@ func _start_encounter() -> void:
 	_configure_theatre()
 	board.cursor = state.player.pos.duplicate()
 	var goal := "Defeat all foes." if state.get("objective", "escape") == "defeat_all" else "Reach the exit."
-	history_lines = ["Turn 1 · %s\n%s Capture is free from a safe cell; End turn when ready." % [
+	history_lines = ["Turn 1 · %s\n%s Capture arms for 1 AP; taking the next hit acquires its ability. End turn when ready." % [
 		"Two pursuers" if encounter_id == "two-pursuers" else "Revised baseline", goal]]
 	history.text = "\n".join(history_lines)
 	new_events.visible = false
@@ -456,7 +459,7 @@ func _clear_selection() -> void:
 	command = {}
 	prediction = {}
 	candidates = []
-	instruction.text = "Choose an operation. Capture is free; release uses 1 AP."
+	instruction.text = "Move, Capture or Shine: 1 AP. End turn: free."
 	consequence.text = "Move and act in any order. Enemies act only when you End turn."
 	consequence.add_theme_color_override("font_color", P.SECONDARY)
 	confirm_button.disabled = true
@@ -469,28 +472,20 @@ func _refresh() -> void:
 	var terminal: bool = state.status != "playing"
 	var victory := "Victory" if state.get("objective", "escape") == "defeat_all" else "Escaped"
 	phase.text = "Turn %d\n%s" % [state.turn, victory if state.status == "won" else ("Caught" if terminal else ("Resolving" if resolving else "Your turn"))]
-	budgets.text = "AP %d / %d · Capture: free · Reach %d\n%s" % [state.action_points, state.rules.actions, state.rules.capture_range, P.deadline(state)]
-	stage_held_details.text = P.stored_text(state)
-	stored.text = P.stored_text(state)
-	stored.add_theme_color_override("font_color", Color("ade4d1"))
-	if state.stored.is_empty(): stored.text = "Held: empty\nCapture an announced action; release uses 1 AP."
-	else:
-		var held: Dictionary = state.stored
-		var width: int = held.ability.get("width", 1)
-		stored.text = "Held %s · %s · %d damage / range %d%s\nDeadline T%d · backlash here: %d%s" % [
-			str(held.source).to_upper(), str(held.ability.kind).capitalize(), held.ability.damage,
-			held.ability.range, " / width %d" % width if width > 1 else "",
-			held.deadline_turn, held.ability.damage, " + push" if held.ability.push else ""]
-	var info: Array[String] = ["AP: move 1 per tile · release 1 · capture and End turn free"]
-	if state.action_points == 0: info.append("No AP: move/release unavailable. Safe capture or End turn can still be chosen.")
+	budgets.text = "AP %d / %d · End turn: free\n%s" % [state.action_points, state.rules.actions,
+		"Capture armed · next hit still hurts" if state.capture_armed else "Capture: 1 AP · arms your next hit"]
+	_refresh_storage(shadow.frame().held)
+	var info: Array[String] = ["Move: 1 AP per tile · Capture: 1 AP to arm · Shine: 1 AP per use"]
+	if state.action_points == 0: info.append("No AP: End turn when ready. An already armed Capture stays armed.")
 	availability.text = "\n".join(info)
 	if not terminal and mode == "inspect" and state.action_points == 0:
-		consequence.text = "No AP left. Capture is free from a safe cell; End turn when ready."
+		consequence.text = "No AP left. End turn when ready; armed Capture still works."
 	for action in action_buttons:
 		action_buttons[action].set_pressed_no_signal(mode == action)
 		action_buttons[action].disabled = terminal or resolving
 	action_buttons.move.disabled = terminal or resolving or state.action_points == 0
-	action_buttons.release.disabled = terminal or resolving or state.action_points == 0 or state.stored.is_empty()
+	action_buttons.capture.disabled = terminal or resolving or state.action_points == 0 or state.capture_armed
+	action_buttons.shine.disabled = terminal or resolving or state.action_points == 0 or state.stored.is_empty()
 	cancel_button.disabled = mode == "inspect" or resolving
 	result.visible = terminal
 	result.text = ("Victory · All foes defeated." if state.get("objective", "escape") == "defeat_all"
@@ -513,6 +508,21 @@ func _refresh() -> void:
 	_inspect_cell(selected if not selected.is_empty() else board.cursor)
 	_update_board()
 	_layout_stage()
+
+func _refresh_storage(held: Dictionary) -> void:
+	# Presentation owns this boundary's storage, not the already-final snapshot.
+	_displayed_held = held
+	var displayed := state.duplicate()
+	displayed.stored = held
+	stage_held_details.text = P.stored_text(displayed)
+	stored.add_theme_color_override("font_color", Color("ade4d1"))
+	if held.is_empty():
+		stored.text = "Held: empty\nTake a hit with Capture armed."
+	else:
+		var width: int = held.ability.get("width", 1)
+		stored.text = "Held %s · %s · %d damage / range %d%s\nShine: 1 AP · kept while source lives%s" % [
+			str(held.source).to_upper(), str(held.ability.kind).capitalize(), held.ability.damage,
+			held.ability.range, " / width %d" % width if width > 1 else "", " · push" if held.ability.push else ""]
 
 func _visible_intentions() -> Array:
 	return [] if shadow.frame().get("announcements_deferred", false) else state.intentions
@@ -540,7 +550,6 @@ func _inspect_cell(cell: Array) -> void:
 	var threats: Array[String] = []
 	for intent in _visible_intentions():
 		if cell in intent.cells: threats.append(str(intent.source).to_upper())
-	if not state.backlash_footprint.is_empty() and cell in state.backlash_footprint.cells: threats.append("held backlash")
 	var threat_text := "Threats: " + ", ".join(threats) if not threats.is_empty() else "No announced threat"
 	if shadow.frame().get("announcements_deferred", false): threat_text = "Resolving attacks and movement."
 	inspection.text = "%s · %s · %s" % [P.cell(cell), ", ".join(occupants) if not occupants.is_empty() else "Empty", threat_text]
@@ -557,31 +566,24 @@ func _choose_action(action: String) -> void:
 	mode = action
 	match mode:
 		"move": instruction.text = "Move: choose one adjacent legal cell. Uses 1 AP per tile."
-		"capture": instruction.text = "Capture: choose a nearby source from a safe cell. Free, including replacement."
-		"release": instruction.text = "Release: choose a target within the held ability's range. Uses 1 AP."
+		"capture":
+			instruction.text = "Capture: arm for 1 AP. The next hit still deals damage, then you acquire it."
+			command = {"type": "capture"}
+			_assess_command()
+		"shine": instruction.text = "Shine: choose a target in the held ability's range. Uses 1 AP; keeps the ability."
 		"end_turn":
-			instruction.text = "End turn: free. Inspect backlash and enemy effects before confirming."
+			instruction.text = "End turn: free. Inspect attacks and movement before confirming."
 			command = {"type": "end_turn"}
 			_assess_command()
-	if mode == "capture" and not state.stored.is_empty(): instruction.text = "Capture replaces %s. Inspect its discharge before confirming." % state.stored.ability.kind
-	if encounter_id == "two-pursuers":
-		if mode == "capture":
-			instruction.text = "Capture from a safe cell: choose a figure, marker or roster. [ / ] cycles sources."
-			if not state.stored.is_empty(): instruction.text += " Replaces held action."
-		elif mode in ["move", "release"]:
-			instruction.text += " Alt-click targets floor through figures."
+	if encounter_id == "two-pursuers" and mode in ["move", "shine"]:
+		instruction.text += " Alt-click targets floor through figures."
 	_rebuild_candidates()
 	_refresh()
 	if command.is_empty(): board.grab_focus()
 
 func _rebuild_candidates() -> void:
 	candidates = []
-	if mode == "capture":
-		for intent in state.intentions:
-			if model.assess({"type": "capture", "source": intent.source}).legal:
-				for enemy in state.enemies:
-					if enemy.id == intent.source: candidates.append(enemy.pos)
-	elif mode in ["move", "release"]:
+	if mode in ["move", "shine"]:
 		for y in range(state.height):
 			for x in range(state.width):
 				var option := {"type": mode}
@@ -599,19 +601,7 @@ func _select_cell(cell: Array) -> void:
 		_update_board()
 		return
 	if mode == "move": command = {"type": "move", "to": cell}
-	elif mode == "release": command = {"type": "release", "target": cell}
-	elif mode == "capture":
-		source = ""
-		for enemy in state.enemies:
-			if enemy.pos == cell: source = enemy.id
-		if source.is_empty():
-			command = {}
-			prediction = {}
-			confirm_button.disabled = true
-			consequence.text = "Choose an enemy square or its intention row, not a threatened floor cell."
-			_refresh()
-			return
-		command = {"type": "capture", "source": source}
+	elif mode == "shine": command = {"type": "shine", "target": cell}
 	else: return
 	_assess_command()
 	_refresh()
@@ -637,7 +627,6 @@ func _confirm() -> void:
 		return
 	var submitted := command.duplicate(true)
 	var before: Dictionary = state.duplicate(true)
-	if _puppet_rig and encounter_id == "two-pursuers": _puppet_rig.remember_held(before.stored)
 	print("Borrowed Turns UI: submit turn=%d command=%s" % [state.turn, JSON.stringify(submitted)])
 	if not model.act(submitted):
 		push_error("Borrowed Turns UI: model rejected reassessed command.")
@@ -683,7 +672,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	match event.keycode:
 		KEY_M: action = "move"
 		KEY_C: action = "capture"
-		KEY_L: action = "release"
+		KEY_S: action = "shine"
 		KEY_E: action = "end_turn"
 		KEY_ESCAPE:
 			_cancel()

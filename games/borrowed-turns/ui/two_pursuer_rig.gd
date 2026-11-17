@@ -28,7 +28,6 @@ var _caption: Label
 var _glow: Shader
 var _generation := -1
 var _prior_sources: Dictionary = {}
-var _last_held: Dictionary = {}
 var _lines: Array = []
 var _labels: Array = []
 
@@ -65,11 +64,6 @@ func configure_assets(textures: Dictionary) -> bool:
 	_generation = -1
 	return true
 
-func remember_held(stored: Dictionary) -> void:
-	if not stored.is_empty() and stored.get("source", "") in ["A", "B"] \
-		and stored.get("ability", {}).get("kind", "") == "shove":
-		_last_held = {"source": stored.source, "turn": stored.captured_turn, "kind": "shove"}
-
 func _clear_hands() -> void:
 	for node in _hands.values(): node.free()
 	_hands.clear()
@@ -105,8 +99,8 @@ func _pose(occurrence: Dictionary, role: String, position: Vector2, scale_factor
 	node.transform = Transform2D(angle, Vector2(mirror, 1) * scale_factor, 0.0, position)
 	node.visible = true
 	var halo: Sprite2D = node.get_node("Glow")
-	halo.visible = role in ["transfer", "held", "release", "backlash"]
-	halo.material.set_shader_parameter("tint", Color("ffb38d") if role == "backlash" else Color("b6e6ce"))
+	halo.visible = role in ["transfer", "held", "shine"]
+	halo.material.set_shader_parameter("tint", Color("b6e6ce"))
 	halo.material.set_shader_parameter("strength", 0.72 + sin(phase * TAU) * 0.10)
 
 func _travel(from: Vector2, to: Vector2, progress: float, scale_factor: float) -> Vector2:
@@ -132,7 +126,6 @@ func present(description: Dictionary, rect: Rect2) -> void:
 	if generation != _generation:
 		_clear_hands()
 		_prior_sources.clear()
-		_last_held.clear()
 		_generation = generation
 	_lines.clear()
 	_labels.clear()
@@ -170,7 +163,6 @@ func present(description: Dictionary, rect: Rect2) -> void:
 		var moving: bool = cue.get("type", "") == "move" and cue.get("actor", "") == id
 		body.visible = not occurrence.is_empty() or capturing or acting or moving
 		body.modulate = Color("f7d9a3") if row.get("inspected", false) else Color.WHITE
-		if capturing: body.modulate.a = 1.0 - smoothstep(0.02, 0.50, transfer.progress)
 		var anchor: Vector2 = body.position + HINGES[id] * scale_factor
 		var threatens: bool = row.get("threatens_player", false)
 		any_threat = any_threat or threatens
@@ -203,17 +195,16 @@ func present(description: Dictionary, rect: Rect2) -> void:
 			trail.append(_travel(origin, destination, maxf(0, transfer.progress - i * 0.018), scale_factor))
 		_lines.append({"points": trail, "color": Color("b6e6ce")})
 	if not held.is_empty():
-		_last_held = held.duplicate(true)
 		_pose(held, "held", destination + Vector2(sin(phase * TAU) * 2, 0) * scale_factor,
 			scale_factor * 0.45, phase, 1.0, (-PI if held.source == "B" else 0.0) + sin(phase * TAU) * 0.025)
 		wanted.append(_key(held))
 		_lines.append({"points": PackedVector2Array([handle, destination]), "color": Color("b6e6ce")})
 		_labels.append({"at": destination + Vector2(-8, -39) * scale_factor,
 			"text": "Held %s · T%d" % [held.source, held.turn]})
-	if not cue.is_empty() and cue.type in ["release", "backlash", "resolve"]:
+	if not cue.is_empty() and cue.type in ["shine", "resolve"]:
 		var id: String = cue.source
 		var relevant: bool = cue.type != "resolve" or "player" in victims
-		var occurrence: Dictionary = _last_held if cue.type != "resolve" else _prior_sources.get(id, {})
+		var occurrence: Dictionary = held if cue.type == "shine" else _prior_sources.get(id, {})
 		if relevant and not occurrence.is_empty() and occurrence.source == id:
 			var position := destination
 			var angle := -PI if id == "B" else 0.0
@@ -224,12 +215,11 @@ func present(description: Dictionary, rect: Rect2) -> void:
 				factor = scale_factor
 			var direction := -1.0 if cue.type == "resolve" and id == "B" else 1.0
 			position.x += sin(progress * PI) * direction * 28 * scale_factor
-			if cue.type == "backlash": position = handle + Vector2(sin(progress * TAU) * 9, 0) * scale_factor
 			_pose(occurrence, cue.type, position, factor, phase, 1.0, angle)
 			wanted.append(_key(occurrence))
 		var target_names: Array[String] = []
 		for victim in victims: target_names.append("you" if victim == "player" else str(victim))
-		var caption: String = ("%s acts" % id) if cue.type == "resolve" else ("You release " + id if cue.type == "release" else id + " · backlash")
+		var caption: String = ("%s acts" % id) if cue.type == "resolve" else ("You Shine · " + id)
 		if not target_names.is_empty(): caption += " → " + ", ".join(target_names)
 		else: caption += " · no actor hit"
 		_labels.append({"at": rect.position + rect.size * Vector2(0.22, 0.505), "text": caption, "floor": true})

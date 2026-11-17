@@ -56,27 +56,11 @@ func _pending(frame: Dictionary, type: String, source: String = "") -> bool:
 		if plan.event_index >= cue.event_index and plan.type == type and (source.is_empty() or plan.source == source): return true
 	return false
 
-func _backlash_kills_player(state: Dictionary, cue: Dictionary) -> bool:
-	var events: Array = state.get("events", [])
-	var start: int = cue.get("event_index", -1)
-	if start < 0 or start >= events.size() or events[start].type != "backlash": return false
-	var footprint_seen := false
-	for i in range(start + 1, events.size()):
-		var event: Dictionary = events[i]
-		if event.type in ["release", "backlash", "capture", "capture_failed", "turn"]: break
-		if event.type in ["ray", "area"]:
-			if footprint_seen or event.actor != "player": break
-			footprint_seen = true
-		if footprint_seen and (event.type == "loss" or (event.type == "death" and event.actor == "player")): return true
-	return false
-
-func gesture_endpoint(state: Dictionary, cue: Dictionary) -> Array:
+func gesture_endpoint(_state: Dictionary, cue: Dictionary) -> Array:
 	if cue.is_empty(): return []
 	var endpoint: Array = cue.from
 	if not cue.to.is_empty(): endpoint = cue.to
 	elif not cue.cells.is_empty(): endpoint = cue.cells.back()
-	# Only this ability's ordered resolution can make its gesture a lethal self-hit.
-	if cue.type == "backlash" and _backlash_kills_player(state, cue): endpoint = cue.from
 	return endpoint.duplicate()
 
 func draw_shadows(canvas: Control, state: Dictionary, frame: Dictionary, center: Callable, size: float, selected_source: String) -> void:
@@ -89,7 +73,7 @@ func draw_shadows(canvas: Control, state: Dictionary, frame: Dictionary, center:
 			var direction := _direction(state, intent.source)
 			var amount := 0.90 + sin(loop * TAU) * 0.07
 			_palm(canvas, center.call(enemy.pos) + direction * size * 0.12, size * amount, direction.angle(), 0.90 if intent.source == selected_source else 0.68)
-	if not frame.held.is_empty() and not _pending(frame, "capture"):
+	if not frame.held.is_empty() and frame.held.ability.kind == "shove":
 		var player: Vector2 = center.call(state.player.pos)
 		var plate := Rect2(player + Vector2(0.18, -0.65) * size, Vector2(0.55, 0.38) * size)
 		canvas.draw_rect(plate, PAPER)
@@ -112,8 +96,5 @@ func draw_shadows(canvas: Control, state: Dictionary, frame: Dictionary, center:
 		var push := clampf((progress - 0.20) / 0.55, 0.0, 1.0)
 		push = 1.0 - pow(1.0 - push, 3.0)
 		var tip := origin.lerp(endpoint, push)
-		var ink := P.DANGER if cue.type == "backlash" else (P.BORROWED if cue.type == "release" else P.INK)
+		var ink := P.BORROWED if cue.type == "shine" else P.INK
 		_palm(canvas, tip - direction * size * 0.72, size * 0.76, direction.angle(), 0.96 - maxf(0, progress - 0.80) * 3.0, ink)
-		if cue.type == "backlash":
-			var hit := Rect2(origin - Vector2.ONE * size * 0.29, Vector2.ONE * size * 0.58).grow(sin(progress * PI) * size * 0.10)
-			canvas.draw_rect(hit, P.DANGER, false, 2.0)

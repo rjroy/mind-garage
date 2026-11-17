@@ -7,12 +7,8 @@ const Production = preload("res://content/escape.gd")
 var game: Control
 var checks := 0
 var failures := 0
-var capture_dir := ""
-var capture_view: SubViewport
 
 func _initialize() -> void:
-	for arg in OS.get_cmdline_user_args():
-		if arg.begins_with("--capture-dir="): capture_dir = arg.trim_prefix("--capture-dir=")
 	call_deferred("_run")
 
 func check(value: bool, description: String) -> void:
@@ -63,18 +59,6 @@ func move(to: Array) -> void:
 	check(game.model.snapshot() == before, "selection and assessment do not mutate")
 	await commit()
 
-func capture(pos: Array) -> void:
-	select("capture", pos)
-	await commit()
-
-func image(name: String) -> void:
-	if capture_dir.is_empty(): return
-	await process_frame
-	await RenderingServer.frame_post_draw
-	var picture := capture_view.get_texture().get_image()
-	check(picture.get_size() == capture_view.size, "actual capture dimensions")
-	check(picture.save_png(capture_dir.path_join(name)) == OK, "saved " + name)
-
 func preview_matches() -> bool:
 	return game.preview_details.text == P.preview_text(game.prediction)
 
@@ -83,271 +67,185 @@ func ap_only(text: String) -> bool:
 	legacy.compile("(?i)\\bMP\\b|movement points")
 	return legacy.search(text) == null
 
-func _test_interleave() -> void:
-	await load_fixture(F.encounter([F.enemy("a", [4, 3], F.ability("bolt", 1, 4))], 3))
-	await move([2, 3])
-	await move([3, 3])
-	await capture([4, 3])
-	check(game.state.turn == 1 and game.state.action_points == 1,
-		"two moves spend two of three shared AP; capture remains free")
-	select("release", [4, 3])
-	check(not game.prediction.is_empty(), "same-turn release is legal")
-	check(ap_only(game.instruction.text) and ap_only(game.consequence.text)
-		and game.consequence.text.contains("1 AP"), "release explains its AP cost and remaining AP without MP")
-	await image("r2-interleave-release.png")
-	await commit()
-	check(game.state.action_points == 0 and game.state.turn == 1 and not game.state.has("movement_points")
-		and not game.state.rules.has("movement"), "two moves plus one release exhaust only shared AP without auto-ending")
-	check(game.action_buttons.move.disabled and game.action_buttons.release.disabled
-		and not game.action_buttons.capture.disabled and not game.action_buttons.end_turn.disabled,
-		"zero AP blocks paid actions, not free capture or explicit End turn")
-	var exhausted: Dictionary = game.model.snapshot()
-	var exhausted_history: Array = game.history_lines.duplicate()
-	game._choose_action("move")
-	check(ap_only(game.instruction.text) and game.instruction.text.contains("1 AP"),
-		"move help names one shared AP per tile, not a separate movement resource")
-	click([3, 2])
-	check(game.confirm_button.disabled and game.prediction.is_empty(), "over-budget movement cannot prepare a stale legal preview")
-	game._confirm()
-	check(game.model.snapshot() == exhausted and game.history_lines == exhausted_history,
-		"over-budget confirmation is atomic and does not advance the turn")
+func _prepare_arm() -> bool:
+	var before: Dictionary = game.model.snapshot()
+	var history: Array = game.history_lines.duplicate()
+	select("capture")
+	var ready: bool = game.command == {"type": "capture"} and not game.confirm_button.disabled
+	check(ready, "Capture prepares a targetless one-AP arm operation without choosing an attacker")
+	check(game.model.snapshot() == before and game.history_lines == history,
+		"preparing Capture is a nonmutating assessment, never immediate acquisition")
+	if ready:
+		check(game.prediction.get("capture_armed", false)
+			and game.prediction.get("action_points", -1) == before.action_points - 1
+			and game.prediction.get("stored", {}) == before.stored
+			and game.prediction.get("intentions", []) == before.intentions,
+			"arm preview spends one AP, preserves held power and every dangerous attack")
+		check(preview_matches() and game.consequence.text.contains("1 AP"),
+			"arming has the exact ordered model preview and visible AP cost")
+	return ready
+
+func _prepare_shine(target: Array) -> bool:
+	var available: bool = game.action_buttons.has("shine")
+	check(available, "Shine replaces the Release operation")
+	if not available: return false
+	select("shine")
+	await _stage_gui_click(game.board.cell_center(target), true)
+	check(game.command == {"type": "shine", "target": target}, "Shine uses the chosen endpoint without a chosen attacker")
+	check(not game.confirm_button.disabled and preview_matches(), "legal Shine has a synchronized model preview")
+	return not game.confirm_button.disabled
+
+func _test_arm_damage_and_reuse() -> void:
+	await load_fixture(F.armed_fight())
+	var initial: Dictionary = game.model.snapshot()
+	check(not initial.get("capture_armed", true) and initial.stored.is_empty(),
+		"new fight starts unarmed with no borrowed ability")
+	check(game.action_buttons.keys() == ["move", "capture", "shine", "end_turn"],
+		"only Move/Capture/Shine/End turn exist; Release is retired")
+	var help: String = game.help_dialog.dialog_text.to_lower()
+	check(help.contains("shine") and not help.contains("backlash") and not help.contains("deadline")
+		and not help.contains("capture and end turn are free"),
+		"controls explain paid arming and reusable Shine, not the removed bargain")
+	if not await _prepare_arm(): return
 	game._cancel()
-	check(game.state.player.hp == 20, "no premature enemy resolution between commands")
-	select("end_turn")
-	check(preview_matches(), "End turn ordered preview is current")
-	check(ap_only(game.consequence.text) and ap_only(game.preview_details.text),
-		"explicit End turn preview/refresh wording contains AP only")
-	var before: Dictionary = game.state.duplicate(true)
-	press(game.cancel_button)
-	check(game.model.snapshot() == before, "End turn cancellation changes nothing")
-	select("end_turn")
+	check(game.model.snapshot() == initial and game.command.is_empty(), "Cancel before confirmation does not arm or spend AP")
+	if not await _prepare_arm(): return
 	await commit()
-	check(game.state.turn == 2 and game.state.action_points == 3, "explicit End turn refreshes the test-owned shared AP budget")
-
-func _test_replacements() -> void:
-	var enemies := [
-		F.enemy("a", [1, 2], F.ability("bolt")),
-		F.enemy("b", [2, 3], F.ability("shove", 1, 2, 0, true)),
-		F.enemy("c", [1, 4], F.ability("burst", 2, 4, 1)),
-		F.enemy("d", [0, 3], F.ability("bolt")),
-	]
-	var fixture := F.encounter(enemies, 0)
-	fixture.rules.actions = 0
-	await load_fixture(fixture)
-	await capture([1, 2])
-	await capture([2, 3])
-	await capture([1, 4])
-	check(game.state.turn == 1 and game.state.action_points == 0, "more than two safe free captures work at zero AP")
-	check(not game.action_buttons.capture.disabled and not game.action_buttons.end_turn.disabled, "capture and End turn remain available at zero AP")
-	select("capture", [0, 3])
-	check(game.prediction.stored.source == "d" and game.prediction.player.hp < game.state.player.hp, "area replacement previews self damage and acquisition")
-	var enemy_damage := false
-	for event in game.prediction.events:
-		if event.type == "damage" and event.actor != "player": enemy_damage = true
-	check(enemy_damage and preview_matches(), "area replacement previews real enemy damage and synchronized text")
-	await image("r2-area-replacement.png")
-	await commit()
-	check(game.history_lines.size() > 6, "free commands append committed history within one turn")
-	# Killing the chosen source is a legal successful discharge, not a rejected command.
-	await load_fixture(F.encounter([
-		F.enemy("burst", [1, 4], F.ability("burst", 3, 3, 1)),
-		F.enemy("fragile", [2, 3], F.ability("bolt"), 2),
-	]))
-	await capture([1, 4])
-	select("capture", [2, 3])
-	check(not game.confirm_button.disabled and game.prediction.stored.is_empty(), "source-death replacement is legal and predicts empty storage")
-	check(game.preview_details.text.contains("Capture failed") and game.consequence.text.contains("empty"), "capture_failed is visible before confirmation")
-	await image("r2-capture-failed.png")
-	await commit()
-	# A push can invalidate the selected new source without undoing the discharge.
-	await load_fixture(F.encounter([
-		F.enemy("burst", [1, 4], F.ability("burst", 1, 3, 1, true)),
-		F.enemy("moved", [2, 3], F.ability("bolt")),
-	]))
-	await capture([1, 4])
-	select("capture", [2, 3])
-	check(game.preview_details.text.contains("out of reach") and game.prediction.stored.is_empty(), "post-backlash source displacement previews capture failure")
-	await commit()
-	# Legal lethal replacement remains confirmable and never claims acquisition.
-	await load_fixture(F.encounter([
-		F.enemy("burst", [1, 4], F.ability("burst", 4, 3, 1)),
-		F.enemy("new", [2, 3], F.ability("bolt")),
-	], 1, 3))
-	await capture([1, 4])
-	select("capture", [2, 3])
-	check(game.prediction.status == "lost" and not game.confirm_button.disabled and game.prediction.stored.is_empty(), "legal lethal preview stays enabled with no acquisition")
-	check(game.consequence.text.contains("kills you"), "lethal replacement warning is visible")
-	if capture_view: capture_view.size = Vector2i(1024, 720)
-	await image("r2-1024-lethal-preview.png")
-	await commit()
-	check(game.result.visible and game.action_buttons.capture.disabled, "failure keeps final board/history but freezes gameplay")
-	await image("r2-1024-failure.png")
-	press(game.restart_button)
-	check(game.state.turn == 1 and game.state.stored.is_empty() and not game.restart_dialog.visible, "terminal replay resets without a replacement dialog")
-	if capture_view: capture_view.size = Vector2i(1280, 800)
-
-func _test_deadline() -> void:
-	await load_fixture(F.encounter([F.enemy("a", [1, 4], F.ability("burst", 2, 4, 1))]))
-	await capture([1, 4])
-	check(game.state.stored.deadline_turn == 2 and game.budgets.text.contains("ending turn 2"), "exact deadline visible outside scrolling rail")
-	select("end_turn")
-	await commit()
-	check(not game.state.stored.is_empty() and game.state.turn == 2, "capture-turn End turn preserves storage")
-	check(game.budgets.text.contains("Backlash"), "deadline-turn warning is visible")
-	var footprint: Dictionary = game.state.backlash_footprint.duplicate(true)
-	await move([2, 3])
-	check(game.state.stored.deadline_turn == 2 and game.state.backlash_footprint != footprint, "movement updates backlash center without changing deadline")
-	select("end_turn")
-	check(game.preview_details.text.contains("Backlash") and game.prediction.stored.is_empty(), "deadline End turn previews discharge and empty slot")
-	await image("r2-deadline-end-turn.png")
-	if capture_view:
-		capture_view.size = Vector2i(1024, 720)
-		await image("r2-1024-deadline.png")
-		capture_view.size = Vector2i(1280, 800)
-	await commit()
-	check(game.state.turn == 3, "deadline End turn advances only after confirmation")
-
-func _test_ability_ranges() -> void:
-	for skill in [F.ability("bolt", 1, 4), F.ability("shove", 1, 2, 0, true), F.ability("burst", 2, 2, 1)]:
-		await load_fixture(F.encounter([
-			F.enemy("source", [1, 4], skill, 12, [1, 0]),
-			F.enemy("victim", [3, 2], F.ability("bolt")),
-		]))
-		await capture([1, 4])
-		select("release", [1 + skill.range, 3])
-		check(not game.prediction.is_empty() and preview_matches(), "inherited %s range is selectable on capture turn" % skill.kind)
-		var before: Dictionary = game.model.snapshot()
-		click([2 + skill.range, 3])
-		check(game.prediction.is_empty() and game.confirm_button.disabled and game.model.snapshot() == before, "outside inherited range rejects without stale preview or mutation")
-		click([1 + skill.range, 3])
-		if skill.kind == "burst":
-			var areas := 0
-			for event in game.prediction.events:
-				if event.type == "area": areas += 1
-			check(areas == 1, "burst release exposes area geometry rather than a ray")
-			await image("r2-area-release.png")
-		await commit()
-
-func _test_normal_shove() -> void:
-	await load_fixture(F.encounter([F.enemy("shover", [2, 3], F.ability("shove", 1, 4, 0, true))]))
-	var forbidden_toggles: Array[String] = []
-	for node in game.find_children("*", "CheckButton", true, false):
-		if "invert" in node.text.to_lower() or "pull" in node.text.to_lower():
-			forbidden_toggles.append(node.text)
-	check(forbidden_toggles.is_empty(), "no Invert or pull controls exist")
-	check(not game.model.snapshot().has("invert_enabled"), "active encounter snapshot has no invert configuration")
-	await capture([2, 3])
-	var before: Dictionary = game.model.snapshot()
-	select("release", [2, 3])
-	check(not game.command.has("invert"), "normal release command has no invert field")
-	check(game.model.snapshot() == before, "release selection and assessment do not mutate")
-	check(not game.prediction.is_empty() and game.prediction == game.model.assess(game.command).get("preview", {}) and preview_matches(), "normal release ordered text matches model prediction")
-	check(game.board.preview == game.prediction and game.board.selected == [2, 3], "normal release board and target match prediction")
-	var displacement := []
-	for event in game.prediction.get("events", []):
-		if event.get("type") == "displace" and event.get("actor") == "shover": displacement = event.get("to", [])
-	check(displacement == [3, 3], "normal shove preview pushes source away")
-	await image("r2-normal-shove.png")
-	await commit()
-	var pushed := false
-	for enemy in game.state.enemies:
-		if enemy.id == "shover" and enemy.pos == [3, 3]: pushed = true
-	check(pushed, "confirmed normal shove pushes source away")
-	press(game.restart_button)
-	check(game.restart_dialog.visible, "unfinished changed run protects restart")
-	game.restart_dialog.get_cancel_button().pressed.emit()
-	game.restart_dialog.hide()
-	check(game.changed, "canceling restart preserves the encounter")
-	press(game.restart_button)
-	game.restart_dialog.confirmed.emit()
-	game.restart_dialog.hide()
-	check(game.state.turn == 1 and game.state.stored.is_empty() and game.history_lines.size() == 1, "restart isolates storage, budgets and history")
-
-func _test_shadow_integration() -> void:
-	await load_fixture(F.shadow_single())
-	for step in [["capture", [2, 3]], ["end_turn", []], ["release", [2, 3]]]:
-		select(step[0], step[1])
-		await commit()
-		if step[0] == "end_turn":
-			var frame: Dictionary = game.shadow.frame()
-			check(not frame.held.is_empty() and frame.announcements.size() == 1, "fresh source announcement coexists with old held shadow")
-			var before_plans: Dictionary = game.model.snapshot()
-			press(game._stage_plans)
-			game.event_tabs.current_tab = game.event_tabs.get_tab_idx_from_control(game.details_scroll)
-			await process_frame
-			check(game.details_scroll.is_visible_in_tree() and game.stage_held_details.text == P.stored_text(before_plans),
-				"Stage Plans exposes held details and current intentions")
-			var plan: Button
-			for child in game.intention_list.get_children():
-				if child is Button: plan = child; break
-			check(plan != null, "Stage Plans exposes the current source control")
-			if plan:
-				press(plan)
-				check(game.source == "a" and game.model.snapshot() == before_plans,
-					"Stage intention control inspects the real source without advancing gameplay")
-			press(game._stage_plans)
-	await load_fixture(F.shadow_single())
-	var before: Dictionary = game.model.snapshot()
-	select("capture", [4, 4])
-	check(game.shadow.frame().cues.is_empty() and game.model.snapshot() == before, "invalid source selection creates no committed transfer")
-	select("capture", [2, 3])
-	press(game.cancel_button)
-	check(game.shadow.frame().cues.is_empty() and game.model.snapshot() == before, "canceling capture preview creates no transfer")
-	select("capture", [2, 3])
-	press(game.confirm_button)
-	check(game.resolving and game.shadow.frame().busy, "capture starts finite feedback")
-	var once: Dictionary = game.model.snapshot()
-	var lines: int = game.history_lines.size()
+	check(game.state.get("capture_armed", false) and game.state.stored.is_empty()
+		and game.state.action_points == 2 and game.state.turn == 1,
+		"confirming Capture spends exactly one AP without acquiring or ending turn")
+	check(game.state.intentions == initial.intentions and game.board.announcement_marks().size() == 1,
+		"arming does not remove the actual shove warning or normal danger")
+	check(game.budgets.text.to_lower().contains("armed") or game.stored.text.to_lower().contains("armed"),
+		"armed state is visible outside the scrollable Details sheet")
+	game._cancel()
+	check(game.state.get("capture_armed", false) and game.state.action_points == 2,
+		"preview Cancel is not disarm and never refunds a committed arm")
+	var armed: Dictionary = game.model.snapshot()
+	var history: Array = game.history_lines.duplicate()
+	game._choose_action("capture")
 	game._confirm()
-	check(game.model.snapshot() == once and game.history_lines.size() == lines, "repeated confirmation during feedback cannot commit twice")
-	await settle()
-	check(game.shadow.frame().held == once.stored, "settled feedback preserves ownership")
-	select("release", [2, 3])
-	check(preview_matches(), "release targeting retains synchronized prediction")
-	press(game.cancel_button)
-	await load_fixture(F.shadow_single())
-	select("capture", [2, 3])
+	check(game.model.snapshot() == armed and game.history_lines == history,
+		"duplicate arm is rejected atomically without acquisition or extra AP")
+	game._cancel()
+	select("end_turn")
+	check(game.prediction.get("player", {}).get("hp", 20) == 18
+		and game.prediction.get("player", {}).get("pos", []) == [2, 4]
+		and game.prediction.get("stored", {}).get("source", "") == "A",
+		"actual two-source preview includes full hit/push, then acquisition, then second hit")
+	var expected: Dictionary = game.prediction.duplicate(true)
+	press(game.confirm_button)
+	var seen: Array = []
+	var handoff_after_strike := false
+	var time_limit := Time.get_ticks_msec() + 10000
+	while game.resolving and Time.get_ticks_msec() < time_limit:
+		var frame: Dictionary = game.shadow.frame()
+		var cue: Dictionary = frame.get("cue", {})
+		var index: int = cue.get("event_index", -1)
+		if frame.get("busy", false) and index not in seen:
+			seen.append(index)
+			var desc: Dictionary = game._two_source_presentation.compose(game.state, frame, game.generation, ["A", "B"], "")
+			if cue.get("type", "") == "resolve" and cue.get("source", "") == "A":
+				check(desc.get("transfer", {}).is_empty() and desc.get("held_occurrence", {}).is_empty(),
+					"no motif leaves attacker before its ordinary damaging strike")
+			if cue.get("type", "") == "capture":
+				handoff_after_strike = seen.size() > 1
+				check(cue.get("to", []) == [2, 4], "real handoff follows the player's actual pushed position")
+			var once: Dictionary = game.model.snapshot()
+			var committed_history: Array = game.history_lines.duplicate()
+			game._confirm()
+			check(game.model.snapshot() == once and game.history_lines == committed_history, "finite feedback locks repeat commitment")
+		await process_frame
+	check(not game.resolving and handoff_after_strike and seen.size() == 3,
+		"normal first strike, handoff and second attack have distinct finite stages")
+	check(game.state == expected and game.model.snapshot() == expected
+		and game.state.player.hp == 18 and not game.state.get("capture_armed", true),
+		"damage is not prevented; acquisition settles exactly to model prediction")
+	var held: Dictionary = game.state.stored.duplicate(true)
+	for _repeat in range(2):
+		if not await _prepare_shine([2, 2]): return
+		check(game.prediction.get("stored", {}) == held and game.consequence.text.contains("1 AP"),
+			"each one-AP Shine retains the held ability, not a consumed shot")
+		await commit()
+		check(game.state.stored == held and game.shadow.frame().held == held, "same held motif survives repeated Shine")
+	await move([3, 4])
+	check(game.state.action_points == 0 and game.state.turn == 2
+		and game.action_buttons.capture.disabled and game.action_buttons.shine.disabled
+		and not game.action_buttons.end_turn.disabled, "zero AP blocks both paid actions, keeps explicit free End turn")
+	var zero: Dictionary = game.model.snapshot()
+	select("end_turn")
+	check(game.model.snapshot() == zero, "exhausting AP never auto-advances combat")
+	game._cancel()
+	for _turn in range(3):
+		select("end_turn")
+		await commit()
+		check(game.state.stored == held, "holding past the old deadline neither expires nor discharges the ability")
+	check(not game.budgets.text.to_lower().contains("deadline")
+		and not game.stored.text.to_lower().contains("backlash")
+		and not game.stage_held_details.text.to_lower().contains("backlash"),
+		"HUD and Details contain reusable held source/ability, not deadline or backlash")
+
+func _test_shine_source_loss_and_replay() -> void:
+	await load_fixture(F.shine_victory())
+	if not await _prepare_arm(): return
+	await commit()
+	select("end_turn")
+	await commit()
+	check(game.state.player.hp == 19 and game.state.stored.get("source", "") == "A", "winning fixture first pays the full real acquisition hit")
+	var generation: int = game.generation
+	for remaining in [1, 0]:
+		if not await _prepare_shine([2, 1]): return
+		var after: Dictionary = game.prediction
+		var lost := false
+		for event in after.get("events", []):
+			if event.type == "ability_lost":
+				lost = event.get("source", "") == "A" and event.get("reason", "") == "source_dead"
+		check(lost == (remaining == 0), "only the actual source-defeating Shine loses the borrowed power")
+		if remaining == 0:
+			check(game.preview_details.text.to_lower().contains("source")
+				and game.preview_details.text.to_lower().contains("lost"),
+				"source-death loss reason is visible in exact preview")
+		await commit()
+		check(game.state.stored.is_empty() == (remaining == 0), "held power lasts until its source actually falls")
+	check(game.state.status == "won" and game.result.visible
+		and not game.result.text.to_lower().contains("escape") and game.shadow.frame().held.is_empty(),
+		"source-death victory clears held presentation without restoring danger-cancel mechanics")
+	check(not game.history.text.to_lower().contains("canceled")
+		and not game.history.text.to_lower().contains("backlash"), "committed history never claims capture prevented a strike")
+	press(game.restart_button)
+	check(game.generation > generation and game.state.status == "playing"
+		and not game.state.get("capture_armed", true) and game.state.stored.is_empty(),
+		"terminal Replay clears arming, held power and old finite work")
+
+func _test_shine_keys_and_cancellation() -> void:
+	await load_fixture(F.shine_victory())
+	if not await _prepare_arm(): return
+	await commit()
+	select("end_turn")
 	press(game.confirm_button)
 	var old_generation: int = game.generation
-	press(game.restart_button)
-	game.restart_dialog.confirmed.emit()
-	game.restart_dialog.hide()
+	game._apply_restart()
 	await settle()
-	check(game.generation > old_generation and game.state.stored.is_empty() and game.shadow.frame().held.is_empty() and not game.shadow.frame().busy, "restart during transfer isolates generation and cancels acquisition visuals")
-	for outcome in ["acquired", "source_dead", "out_of_reach", "lethal"]:
-		await load_fixture(F.shadow_replacement(outcome))
-		await capture([1, 4])
-		select("capture", [0, 3] if outcome == "acquired" else [2, 3])
-		await commit()
-		var types: Array = []
-		for cue in game.shadow.frame().cues: types.append(cue.type)
-		check(types == (["backlash", "capture"] if outcome == "acquired" else ["backlash"]), outcome + ": actual UI transfer plan follows the real replacement result")
-		check(game.shadow.frame().held == game.state.stored, outcome + ": held rendering matches actual acquisition or loss")
-	await load_fixture(F.encounter([
-		F.enemy("a", [2, 3], F.ability("shove", 1, 3, 0, true), 1, [1, 0]),
-		F.enemy("b", [2, 5], F.ability("bolt", 1, 3), 8, [0, -1]),
-	]))
-	await capture([2, 3])
+	check(game.generation > old_generation and not game.state.get("capture_armed", true)
+		and game.state.stored.is_empty() and not game.shadow.frame().busy, "restart during hit/handoff cancels stale acquisition")
+	if not await _prepare_arm(): return
+	await commit()
 	select("end_turn")
 	await commit()
-	check(not game.shadow.frame().held.is_empty() and game.shadow.frame().announcements.is_empty(), "source death removes fresh source shadow but not its still-held capture")
-	if capture_view:
-		capture_view.size = Vector2i(1024, 720)
-		await process_frame
-		check(game.board._cell_size() >= 36 and game.confirm_button.get_global_rect().end.y <= 720, "minimum viewport preserves tactical cell size and confirmation bounds")
-		await image("fy3-1024-held-source-dead.png")
-		capture_view.size = Vector2i(1280, 800)
-
-func _stage_setup() -> bool:
-	for method in ["cell_polygon", "piece_appearance", "figure_layout"]:
-		if not game.board.has_method(method):
-			printerr("SETUP REQUIRED: loadable shared stage board seams before RED; missing " + method + ". See tests/stage_projection_run.gd and stage integration brief.")
-			return false
-	return true
+	var before: Dictionary = game.model.snapshot()
+	var key := InputEventKey.new()
+	key.pressed = true
+	key.keycode = KEY_S
+	game._unhandled_key_input(key)
+	check(game.mode == "shine" and game.model.snapshot() == before, "S selects Shine without committing it")
+	game._cancel()
+	key.keycode = KEY_L
+	game._unhandled_key_input(key)
+	check(game.mode == "inspect" and game.command.is_empty(), "retired L does not alias Release/Shine")
+	check(game.model.snapshot() == before, "keyboard selection/cancel preserves authoritative state")
 
 func _stage_resize(viewport_size: Vector2i) -> void:
-	if capture_view: capture_view.size = viewport_size
-	else: root.size = viewport_size
+	root.size = viewport_size
 	await process_frame
 	await process_frame
 
@@ -410,9 +308,10 @@ func _test_stage_integration() -> void:
 			var selected_before: Array = game.selected.duplicate()
 			await _stage_gui_click(Vector2(1, 1))
 			check(game.selected == selected_before and game.model.snapshot() == before, "decorative stage background does not select a board cell")
-			press(game.action_buttons.capture)
+			game._cancel()
 			await _stage_gui_click(game.board.cell_center([2, 1]))
-			check(game.command == {"type": "capture", "source": "a"} and not game.confirm_button.disabled, "stage click selects the real capture source")
+			check(game.source == "a" and game.command.is_empty(), "stage actor selection inspects its true identity, not a capture target")
+			if not await _prepare_arm(): continue
 			check(preview_matches(), "ordered preview stays synchronized before commitment")
 			# Details are explicit in the playable theatre, rather than automatically
 			# covering the performers after every board selection.
@@ -442,19 +341,18 @@ func _test_stage_integration() -> void:
 			check(game.generation > old_generation and game.state == before and game.shadow.frame().held.is_empty() and not game.shadow.frame().busy, "stage restart during feedback removes old held state and stale work")
 			check(game.board.piece_appearance([1, 1]) == paper_piece, "restart does not reshuffle the same visual field")
 			await _stage_resize(viewport_size)
-	# Actual unchanged encounter and separately labeled controlled shove captures.
-	# Production data is used only at this integration boundary, never as unit
-	# expectations. Do not invent readability from pixel positions.
+	# Real authored escape content plus controlled hit acquisition at each size.
 	for viewport_size in [Vector2i(1024, 720), Vector2i(1600, 900)]:
 		await _stage_resize(viewport_size)
 		await load_fixture(Production.DATA)
 		_stage_controls_fit("actual encounter " + str(viewport_size))
-		await image("stage-%d-encounter.png" % viewport_size.x)
-		await load_fixture(F.shadow_single())
-		select("capture", [2, 3])
-		await image("stage-%d-shove-preview.png" % viewport_size.x)
+		await load_fixture(F.armed_fight())
+		if not await _prepare_arm(): continue
 		await commit()
-		await image("stage-%d-shove-held.png" % viewport_size.x)
+		select("end_turn")
+		await commit()
+		check(game.state.stored.get("source", "") == "A" and game.state.player.hp == 18,
+			"minimum and wide Stage support full damaging acquisition, not a capture-only pose")
 	await _stage_resize(Vector2i(1280, 800))
 
 func _two_pursuers_setup() -> bool:
@@ -562,480 +460,284 @@ func _test_two_pursuers_startup() -> void:
 	check(not game.objective.text.to_lower().contains("exit"), "default visible objective is combat, not bypassing enemies")
 	check(game.board.standee_layout().size() == 3, "command-line entry loads all three approved standee actors")
 
-func _test_two_pursuers_integration() -> void:
-	check(game.encounter_id == "two-pursuers",
-		"normal entry opens the active fight and accepted Stage without buried choices")
-	if game.encounter_id == "two-pursuers":
-		_test_two_pursuers_startup()
-		await _choose_encounter_ui("escape")
-		if game.encounter_dialog.visible:
-			game.encounter_dialog.confirmed.emit()
-			game.encounter_dialog.hide()
-		await process_frame
-	check(game.encounter_id == "escape" and game.fixture == Production.DATA,
-		"explicit escape comparison retains its authored source fixture")
-	await _stage_resize(Vector2i(1024, 720))
-	var original: Dictionary = game.model.snapshot()
-	await _choose_encounter_ui("two-pursuers")
-	check(game.encounter_dialog.visible and game.model.snapshot() == original,
-		"choosing another encounter requests a new run without changing the current model")
-	if game.encounter_dialog.visible:
-		game.encounter_dialog.get_cancel_button().pressed.emit()
-		game.encounter_dialog.hide()
-	check(game.encounter_id == "escape" and game.model.snapshot() == original,
-		"canceling encounter replacement preserves the current run")
-	await _choose_encounter_ui("two-pursuers")
-	if game.encounter_dialog.visible:
-		game.encounter_dialog.confirmed.emit()
-		game.encounter_dialog.hide()
-	await process_frame
-	check(game.encounter_id == "two-pursuers", "confirmed chooser starts the real playable two-pursuer encounter")
-	_check_default_puppet_pack()
-	if game.encounter_id != "two-pursuers": return
-	_test_two_pursuers_startup()
-	# Capture/body/roster geometry below uses a test-owned safe flank, not
-	# mutable production start positions or an illegal crossfire acquisition.
-	await load_fixture(F.two_pursuers())
-	var initial: Dictionary = game.state.duplicate(true)
-	check(initial.width == 5 and initial.height == 5 and initial.player.pos == [1, 2],
-		"controlled depth fixture starts capture from a safe flank")
-	var cells := {}
-	for enemy in initial.enemies: cells[enemy.id] = enemy.pos
-	check(cells == {"A": [2, 1], "B": [2, 3]}, "both pursuers remain in the deliberately overlapping depth column")
-	var threats: Array = []
-	for intent in initial.intentions:
-		if [2, 2] in intent.cells: threats.append(intent.source)
-	check(threats.size() == 2 and "A" in threats and "B" in threats,
-		"controlled footprints overlap independently away from the safe player cell")
-	var source_paths := {"player": "player.png", "A": "enemy-a.png", "B": "enemy-b.png"}
-	for viewport_size in [Vector2i(1024, 720), Vector2i(1600, 900)]:
-		await _stage_resize(viewport_size)
-		game._apply_restart()
-		await process_frame
-		_stage_controls_fit("two-pursuers " + str(viewport_size))
-		check(game.encounter_picker.is_visible_in_tree()
-			and game.get_viewport_rect().encloses(game.encounter_picker.get_global_rect()),
-			"encounter choice stays accessible in the real Stage layout")
-		var rows: Array = game.board.standee_layout()
-		check(rows.size() == 3, "real board uses three authored standee draw instances")
-		for id in ["player", "A", "B"]:
-			var row := _standee_entry(id)
-			var texture = row.get("texture")
-			check(texture is Texture2D, id + ": approved candidate artwork is loaded by the actual board")
-			if not texture is Texture2D: continue
-			check(texture.resource_path == "res://assets/standees/two-pursuers/" + source_paths[id],
-				id + ": source texture is the approved unchanged standee, not a primitive fallback")
-			check(row.get("foot") is Vector2 and row.get("cell") is Array
-				and row.foot.distance_to(game.board.cell_center(row.cell)) < 0.01,
-				id + ": actual figure is attached to the projected owning cell")
-		await image("dual-layer-%d-initial.png" % viewport_size.x)
-		# Both choices matter: the B handoff is not assumed from the older A-only
-		# motion pilot. Orientation/taste are judged in actual render evidence.
-		for id in ["A", "B"]:
-			press(game.action_buttons.capture)
-			var point := _standee_body_point(id)
-			check(point.is_finite(), id + ": some actual visible body can be picked above its owning floor cell")
-			if not point.is_finite(): continue
-			await _stage_gui_click(point)
-			check(game.command == {"type": "capture", "source": id} and not game.confirm_button.disabled,
-				id + ": actual viewport body click prepares the correct source capture")
-			check(game.state == initial, "body selection and preview do not advance the encounter")
-			check(not game._stage_sheet.visible, "selection leaves the puppet performance unobscured")
-			check(not game.consequence.text.is_empty() and game.consequence.is_visible_in_tree()
-				and game.confirm_button.is_visible_in_tree() and game.cancel_button.is_visible_in_tree(),
-				"cost/consequence and confirmation stay present without the opaque Details sheet")
-			press(game._stage_plans)
-			await process_frame
-			check(game._stage_sheet.visible and game.preview_details.is_visible_in_tree() and preview_matches(),
-				"explicit Details reveals the exact selected ordered preview")
-			var floor_bounds: Rect2 = game.board._board_rect()
-			floor_bounds.position += game.board.global_position
-			check(not game._stage_sheet.get_global_rect().intersects(floor_bounds),
-				"explicit Details never covers the playable floor")
-			press(game._stage_plans)
-			await image("dual-layer-%d-%s-preview.png" % [viewport_size.x, id.to_lower()])
-			await commit()
-			check(game.state.stored.get("source", "") == id and game.state.enemies.size() == 2,
-				id + ": capture stores that occurrence and leaves both standees alive")
-			var other: String = "B" if id == "A" else "A"
-			check(game.state.intentions.size() == 1 and game.state.intentions[0].source == other,
-				id + ": capture removes only that source announcement; the other remains authoritative")
-			await image("dual-layer-%d-%s-held.png" % [viewport_size.x, id.to_lower()])
-			var committed: Dictionary = game.state.duplicate(true)
-			select("end_turn")
-			await commit()
-			check(game.state.turn > committed.turn and not game.state.stored.is_empty(),
-				"real End turn continues the encounter while retaining the old held occurrence")
-			select("release")
-			var target: Array = []
-			for candidate in game.candidates:
-				if candidate != game.state.player.pos:
-					target = candidate
-					break
-			check(not target.is_empty(), "continuing encounter offers a real legal release target")
-			if not target.is_empty():
-				click(target)
-				await commit()
-				check(game.state.stored.is_empty(), "actual release clears storage and returns to continued play")
-			game._apply_restart()
-			await process_frame
-			check(game.encounter_id == "two-pursuers" and game.state == initial
-				and game.shadow.frame().held.is_empty() and not game.resolving,
-				"Restart restores this selected encounter and clears stale held/performance work")
-	# A selected rear source can be reached without clicking an obscured body.
-	var ordered: Array = game.board.standee_layout()
-	var target_index := -1
-	for i in range(ordered.size()):
-		if ordered[i].actor == "A": target_index = i
-	check(target_index >= 0, "controlled keyboard fixture contains A")
-	if target_index >= 0: game.board.cursor = ordered[posmod(target_index - 1, ordered.size())].cell.duplicate()
-	var cycle := InputEventKey.new()
-	cycle.keycode = KEY_BRACKETRIGHT
-	cycle.pressed = true
-	game.board.gui_input.emit(cycle)
-	check(game.board.cursor == _standee_entry("A").get("cell", []), "real bracket-key source cycling reaches A without a body click")
-	var enter := InputEventKey.new()
-	enter.keycode = KEY_ENTER
-	enter.pressed = true
-	press(game.action_buttons.capture)
-	game.board.gui_input.emit(enter)
-	check(game.command == {"type": "capture", "source": "A"} and game.state == initial,
-		"keyboard rear-source focus prepares capture without committing it")
-	press(game.cancel_button)
-	var winning := F.encounter([
-		F.enemy("A", [2, 1], F.ability("shove", 2, 2, 0, true), 9, [0, 1]),
-		F.enemy("B", [2, 3], F.ability("shove", 2, 2, 0, true), 9, [0, -1]),
-	], 2, 13)
-	winning.width = 5
-	winning.height = 5
-	winning.player.pos = [2, 2]
-	winning.exit = {"pos": [3, 2], "opens": 1}
-	await load_fixture(winning)
-	await move([3, 2])
-	check(game.state.status == "won" and game.result.is_visible_in_tree()
-		and game.action_buttons.capture.disabled, "selected Stage encounter supports a real terminal result, not a capture-only script")
-	press(game.restart_button)
-	check(game.encounter_id == "two-pursuers" and game.state.status == "playing"
-		and game.state.stored.is_empty(), "terminal replay retains the selected encounter identity")
-	var before_switch: Dictionary = game.state.duplicate(true)
-	await _choose_encounter_ui("escape")
-	check(game.encounter_dialog.visible and game.state == before_switch, "returning to the original encounter is also an explicit new run")
-	if game.encounter_dialog.visible:
-		game.encounter_dialog.confirmed.emit()
-		game.encounter_dialog.hide()
-	await process_frame
-	check(game.encounter_id == "escape" and game.fixture == Production.DATA,
-		"original content remains available unchanged through the real chooser")
-
-func _test_active_opponents() -> void:
-	check(game.encounter_id == "two-pursuers",
-		"normal entry is the active Stage fight, not the retained escape comparison")
-	if game.encounter_id != "two-pursuers":
-		await _choose_encounter_ui("two-pursuers")
-		if game.encounter_dialog.visible:
-			game.encounter_dialog.confirmed.emit()
-			game.encounter_dialog.hide()
-		await process_frame
-	_test_two_pursuers_startup()
-	# Formatter inputs are explicit authored facts. Missing exit is not the
-	# rule selector, and an irreversible failed replacement is not rejection.
-	var victory := P.event_text({"type": "win", "objective": "defeat_all"}).to_lower()
-	check(not victory.contains("escape") and (victory.contains("victory") or victory.contains("defeat")),
-		"defeat-all win event history reports combat victory, never escape")
-	check(P.event_text({"type": "win", "objective": "escape"}).to_lower().contains("escape"),
-		"retained explicit escape history keeps its meaning")
-	var failed := P.event_text({"type": "capture_failed", "source": "A", "reason": "threatened"}).to_lower()
-	check((failed.contains("threat") or failed.contains("attack")) and not failed.contains("out of reach"),
-		"post-backlash threatened acquisition failure is not mislabeled as range failure")
-	var blocked := F.encounter([
-		F.enemy("A", [2, 3], F.ability("shove", 1, 2, 0, true), 12, [1, 0]),
-		F.enemy("B", [1, 5], F.ability("bolt", 1, 4), 13, [0, -1]),
-	], 3, 39, 2)
-	blocked.objective = "defeat_all"
-	await load_fixture(blocked)
+func _test_shared_ap_and_ranges() -> void:
+	await load_fixture(F.encounter([], 3))
+	await move([2, 3])
+	await move([3, 3])
+	if not await _prepare_arm(): return
+	await commit()
+	check(game.state.action_points == 0 and game.state.turn == 1 and game.state.capture_armed,
+		"two single-tile moves plus paid arming exhaust three AP without automatic End turn")
 	var before: Dictionary = game.model.snapshot()
-	var history_before: Array = game.history_lines.duplicate()
-	select("capture", [2, 3])
-	check(game.confirm_button.disabled and game.prediction.is_empty() and game.candidates.is_empty(),
-		"any other source's current threat blocks capture, not only the selected source's footprint")
-	var reason: String = game.consequence.text.to_lower()
-	check((reason.contains("threat") or reason.contains("attack") or reason.contains("announced"))
-		and game.consequence.is_visible_in_tree(), "capture restriction is explained in persistent visible consequence text")
+	var history: Array = game.history_lines.duplicate()
+	game._choose_action("move")
+	click([3, 2])
 	game._confirm()
-	check(game.model.snapshot() == before and game.history_lines == history_before,
-		"blocked capture confirmation is atomic: no backlash, acquisition, history or budget mutation")
-	await settle()
-
-	var fight := F.active_fight()
-	await load_fixture(fight)
-	var objective_text: String = game.objective.text.to_lower()
-	var objective_ready: bool = not objective_text.contains("exit") \
-		and (objective_text.contains("defeat") or objective_text.contains("foe") or objective_text.contains("opponent"))
-	check(objective_ready, "active fight persistently explains its defeat-all objective, not exit timing")
-	check(not game.state.has("exit") and game.board.state.get("objective", "") == "defeat_all",
-		"real fight can load/refresh/draw without a fake exit field")
-	var initial: Dictionary = game.model.snapshot()
-	var initial_history: Array = game.history_lines.duplicate()
+	check(game.confirm_button.disabled and game.prediction.is_empty()
+		and game.model.snapshot() == before and game.history_lines == history,
+		"over-budget move is atomic and never prepares a stale legal preview")
+	game._cancel()
 	select("end_turn")
-	var assessed: Dictionary = game.model.assess({"type": "end_turn"})
-	check(game.prediction == assessed.get("preview", {}) and preview_matches(),
-		"UI preview is exactly the model's old-resolution-plus-movement prediction, not another planner")
-	check(game.model.snapshot() == initial and game.history_lines == initial_history,
-		"previewing aimed attacks and movement never advances the fight")
+	game._cancel()
+	check(game.model.snapshot() == before, "canceling free End turn does not advance combat")
+	select("end_turn")
+	await commit()
+	check(game.state.turn == 2 and game.state.action_points == 3 and game.state.capture_armed,
+		"explicit End turn refreshes AP; a missed armed attack does not consume the arm")
+	check(ap_only(game.budgets.text + game.availability.text + game.history.text + game.help_dialog.dialog_text),
+		"budget/help/history have one AP resource and no MP")
+	await load_fixture(F.encounter([], 0))
+	before = game.model.snapshot()
+	history = game.history_lines.duplicate()
+	game._choose_action("capture")
+	game._confirm()
+	check(game.confirm_button.disabled and game.prediction.is_empty()
+		and game.model.snapshot() == before and game.history_lines == history,
+		"unarmed Capture at zero AP rejects atomically, not a free acquisition")
+	game._cancel()
+	for skill in [F.ability("bolt", 1, 4), F.ability("shove", 1, 3, 0, true), F.ability("burst", 1, 2, 1)]:
+		var data := F.encounter([F.enemy("A", [2, 1], skill, 12, [0, 1])], 3)
+		data.width = 9 # Both max-range and one-beyond are in bounds.
+		data.player.pos = [2, 3]
+		await load_fixture(data)
+		if not await _prepare_arm(): continue
+		await commit()
+		select("end_turn")
+		await commit()
+		check(game.state.stored.get("ability", {}) == skill, "real hit acquires the authored ray/area ability unchanged")
+		if skill.kind == "shove":
+			before = game.model.snapshot()
+			if not await _prepare_shine([2, 1]): continue
+			check(game.prediction.events.any(func(event):
+				return event.type == "displace" and event.actor == "A" and event.from == [2, 1] and event.to == [2, 0])
+				and game.model.snapshot() == before, "normal borrowed shove previews actual source displacement away, without mutating it")
+			await commit()
+			check(_standee_entry("A").cell == [2, 0] and game.state.stored.get("source", "") == "A",
+				"confirmed borrowed shove moves the accepted source actor away and keeps its reusable power")
+		var origin: Array = game.state.player.pos
+		var target := [origin[0] + skill.range, origin[1]]
+		if not await _prepare_shine(target): continue
+		check(game.board.preview == game.prediction and game.board.selected == target,
+			"Shine uses the model's exact inherited-range prediction and board target")
+		var kind := "area" if skill.kind == "burst" else "ray"
+		check(game.prediction.events.any(func(event): return event.type == kind and event.actor == "player"),
+			"borrowed burst stays an area; line abilities stay rays")
+		before = game.model.snapshot()
+		history = game.history_lines.duplicate()
+		await _stage_gui_click(game.board.cell_center([target[0] + 1, target[1]]), true)
+		game._confirm()
+		check(game.prediction.is_empty() and game.confirm_button.disabled and game.model.snapshot() == before
+			and game.history_lines == history, "in-bounds target beyond inherited range rejects without stale preview or mutation")
+		if not await _prepare_shine(target): continue
+		check(not game.command.has("invert") and not game.model.snapshot().has("invert_enabled"),
+			"normal Shine has no retired Invert/adjust command")
+		await commit()
+		check(game.state.stored.get("ability", {}) == skill, "nonlethal Shine retains the complete borrowed ability")
+
+func _test_actor_access() -> void:
+	for extent in [Vector2i(1024, 720), Vector2i(1600, 900)]:
+		await _stage_resize(extent)
+		await load_fixture(F.two_pursuers(true))
+		var before: Dictionary = game.model.snapshot()
+		for id in ["A", "B"]:
+			var row := _standee_entry(id)
+			var body := _standee_body_point(id)
+			check(body.is_finite(), id + ": actual opaque body is reachable above its owning cell")
+			if body.is_finite():
+				check(game.board.actor_at(body) == id and game.board._from_pixel(body) != row.cell,
+					"ordinary body selection has priority over the different floor cell behind it")
+				await _stage_gui_click(body)
+				check(game.source == id and game.selected == row.cell, "body GUI input inspects the true actor identity")
+			for hit_rect in [row.tab_rect, row.roster_rect]:
+				await _stage_gui_click(hit_rect.get_center())
+				check(game.source == id and game.selected == row.cell
+					and game.command.is_empty() and game.prediction.is_empty(),
+					"foot marker and off-grid roster inspect the same actor without inventing a capture target")
+			check(game.model.snapshot() == before, "all actor access paths leave budgets, threats and storage unchanged")
+		press(game._stage_plans)
+		game.event_tabs.current_tab = game.event_tabs.get_tab_idx_from_control(game.details_scroll)
+		await process_frame
+		var plan: Button
+		for child in game.intention_list.get_children():
+			if child is Button: plan = child; break
+		check(plan != null, "Details exposes a real current-source intention control")
+		if plan:
+			press(plan)
+			check(game.source == before.intentions[0].source and game.command.is_empty()
+				and game.model.snapshot() == before, "intention-row selection inspects the actual source without advancing or acquiring")
+		press(game._stage_plans)
+		var ordered: Array = game.board.standee_layout()
+		var target_index := -1
+		for i in range(ordered.size()):
+			if ordered[i].actor == "A": target_index = i
+		check(target_index >= 0, "keyboard fixture contains the rear source")
+		if target_index >= 0:
+			game.board.cursor = ordered[posmod(target_index - 1, ordered.size())].cell.duplicate()
+			var key := InputEventKey.new()
+			key.pressed = true
+			key.keycode = KEY_BRACKETRIGHT
+			game.board.gui_input.emit(key)
+			key.keycode = KEY_ENTER
+			game.board.gui_input.emit(key)
+			check(game.source == "A" and game.command.is_empty() and game.model.snapshot() == before,
+				"bracket/Enter reaches an obscured actor for inspection, never an implicit acquisition")
+		if not await _prepare_arm(): continue
+		await _stage_gui_click(game.board.cell_center([0, 0]), true)
+		check(game.command == {"type": "capture"} and game.model.snapshot() == before,
+			"arming has no chosen source even after body/marker/floor inspection")
+		game._cancel()
+	await _stage_resize(Vector2i(1280, 800))
+
+func _test_chooser() -> void:
+	var original: Dictionary = game.model.snapshot()
+	await _choose_encounter_ui("escape")
+	check(game.encounter_dialog.visible and game.model.snapshot() == original,
+		"chooser requests replacing the encounter without mutating the live fight")
+	game.encounter_dialog.get_cancel_button().pressed.emit()
+	game.encounter_dialog.hide()
+	check(game.encounter_id == "two-pursuers" and game.model.snapshot() == original, "canceling chooser preserves the current run")
+	await _choose_encounter_ui("escape")
+	game.encounter_dialog.confirmed.emit()
+	game.encounter_dialog.hide()
+	await process_frame
+	check(game.encounter_id == "escape" and game.fixture == Production.DATA
+		and game.state.objective == "escape", "explicit escape chooser uses the real retained authored content")
+	await _choose_encounter_ui("two-pursuers")
+	game.encounter_dialog.confirmed.emit()
+	game.encounter_dialog.hide()
+	await process_frame
+	_test_two_pursuers_startup()
+
+func _test_active_motion() -> void:
+	await load_fixture(F.active_fight())
+	var initial: Dictionary = game.model.snapshot()
+	var history: Array = game.history_lines.duplicate()
+	check(not initial.has("exit") and not game.objective.text.to_lower().contains("exit"), "no-exit combat uses explicit defeat-all facts")
+	select("end_turn")
+	var assessment: Dictionary = game.model.assess({"type": "end_turn"})
+	check(game.prediction == assessment.preview and preview_matches()
+		and game.model.snapshot() == initial and game.history_lines == history,
+		"UI previews old attacks and voluntary movement through the model, not another planner")
 	var movement: Array = []
-	for event in game.prediction.get("events", []):
+	for event in game.prediction.events:
 		if event.type == "move" and event.actor != "player":
 			movement.append(event)
-			check(game.preview_details.text.contains(P.event_text(event)), "exact ordered preview includes the actual moving actor and destination")
-	check(not movement.is_empty(), "controlled mobile fight has real previewed enemy movement")
+			check(game.preview_details.text.contains(P.event_text(event)), "ordered preview names actual moving actors and destinations")
+	check(movement.size() == 2, "controlled mobile encounter exercises both opponent roles")
 	var expected: Dictionary = game.prediction.duplicate(true)
 	press(game.confirm_button)
-	check(game.resolving and game.model.snapshot() == expected, "confirmation commits once, then finite feedback owns input lock")
-	var committed_history: Array = game.history_lines.duplicate()
-	var saw_slide := false
-	var announced_early := false
-	var deadline := Time.get_ticks_msec() + 10000
-	while game.resolving and Time.get_ticks_msec() < deadline:
+	var seen: Array = []
+	var fresh_early := false
+	var time_limit := Time.get_ticks_msec() + 10000
+	history = game.history_lines.duplicate()
+	while game.resolving and Time.get_ticks_msec() < time_limit:
 		var frame: Dictionary = game.shadow.frame()
 		if frame.busy:
-			announced_early = announced_early or not frame.announcements.is_empty() \
-				or not game.board.announcement_waves().is_empty()
-		if frame.cue.get("type", "") == "move":
-			saw_slide = true
-			var index: int = frame.cue.get("event_index", -1)
-			check(index >= 0 and index < expected.events.size() and expected.events[index].type == "move",
-				"finite slide references the actual committed move event")
+			fresh_early = fresh_early or not frame.announcements.is_empty() or not game.board.announcement_waves().is_empty()
+		if frame.cue.get("type", "") == "move" and frame.cue.get("actor", "") not in seen:
+			seen.append(frame.cue.actor)
+			var event: Dictionary = expected.events[frame.cue.event_index]
+			check(event.type == "move" and event.actor == frame.cue.actor
+				and event.from == frame.cue.from and event.to == frame.cue.to, "slide references its actual model event and endpoints")
 			game._confirm()
 			game._select_cell([0, 0])
-			check(game.model.snapshot() == expected and game.history_lines == committed_history,
-				"input stays locked during slides and cannot replay or partially commit a command")
+			check(game.model.snapshot() == expected and game.history_lines == history, "input stays locked throughout each finite slide")
 		await process_frame
-	check(not game.resolving and saw_slide and not announced_early,
-		"old effects and separate slides finish before fresh next-turn warnings/rehearsal begin")
-	check(game.state == expected and game.model.snapshot() == expected, "movement completion settles to the exact model snapshot")
+	check(not game.resolving and seen == ["A", "B"] and not fresh_early
+		and game.state == expected, "both event-owned slides settle exactly before fresh rehearsal")
 	for enemy in expected.enemies:
 		var row := _standee_entry(enemy.id)
-		check(row.get("cell", []) == enemy.pos and row.get("foot", Vector2(INF, INF)).distance_to(game.board.cell_center(enemy.pos)) < 0.01,
-			"settled accepted standee is anchored at its authoritative moved cell")
-	# Cancellation uses the same generation/reset path, not a movement clock.
+		check(row.cell == enemy.pos and row.foot.distance_to(game.board.cell_center(enemy.pos)) < 0.01,
+			"settled accepted standee ends on its exact authoritative cell")
 	select("end_turn")
 	press(game.confirm_button)
 	var generation: int = game.generation
 	game._apply_restart()
-	await process_frame
-	check(game.generation > generation and game.model.snapshot() == initial and not game.shadow.frame().busy
-		and game.history_lines.size() == 1, "restart cancels old-generation slides and restores the selected fight")
+	await settle()
+	check(game.generation > generation and game.state == initial and not game.shadow.frame().busy
+		and game.history_lines.size() == 1, "restart cancels old slides and restores this fixture, not stale events")
 
-	var winning := F.encounter([
-		F.enemy("A", [1, 4], F.ability("shove", 3, 3), 2, [1, 0]),
-		F.enemy("B", [2, 3], F.ability("shove", 1, 2), 2, [1, 0]),
-	], 3, 39)
-	winning.objective = "defeat_all"
-	winning.erase("exit")
-	await load_fixture(winning)
-	await capture([1, 4])
-	select("release", [2, 3])
-	await commit()
-	check(game.state.status == "playing" and game.state.enemies.size() == 1,
-		"defeating only one opponent does not complete the fight")
-	select("end_turn")
-	await commit()
-	var threatened_state: Dictionary = game.model.snapshot()
-	var threatened_history: Array = game.history_lines.duplicate()
-	select("capture", [1, 4])
-	check(game.confirm_button.disabled and game.prediction.is_empty()
-		and game.model.snapshot() == threatened_state and game.history_lines == threatened_history,
-		"fresh upward attack blocks reacquisition before repositioning, without changing state/history")
-	press(game.cancel_button)
-	var flank_path := [[2, 3], [2, 4]]
-	var usable_path: bool = game.state.action_points >= flank_path.size() + 1
-	for cell in flank_path:
-		usable_path = usable_path and cell[0] >= 0 and cell[0] < game.state.width \
-			and cell[1] >= 0 and cell[1] < game.state.height and cell not in game.state.walls
-		for enemy in game.state.enemies:
-			if enemy.pos == cell: usable_path = false
-	check(usable_path, "controlled victory fixture reserves shared AP for two free flank cells and a release")
-	if not usable_path: return
-	for cell in flank_path: await move(cell)
-	var safe_flank := true
-	for intent in game.state.intentions:
-		if game.state.player.pos in intent.cells: safe_flank = false
-	check(safe_flank and game.state.player.pos == [2, 4] and game.state.intentions == threatened_state.intentions
-		and game.model.assess({"type": "capture", "source": "A"}).get("legal", false),
-		"real movement reaches a safe adjacent flank while the old attack aim remains locked")
-	await capture([1, 4])
-	select("release", [1, 4])
-	check(game.prediction.get("status", "") == "won" and not game.consequence.text.to_lower().contains("escape"),
-		"last-foe defeat previews victory using the explicit combat objective")
-	await commit()
-	check(game.state.status == "won" and game.result.is_visible_in_tree()
-		and not game.result.text.to_lower().contains("escape") and game.action_buttons.capture.disabled,
-		"terminal fight retains board/history with combat victory, not an exit result")
-	check(not game.history.text.to_lower().contains("escaped"), "committed fight history never invents an escape")
-	press(game.restart_button)
-	check(game.state.status == "playing" and game.state.enemies.size() == 2 and not game.restart_dialog.visible,
-		"terminal replay restarts the fight without progression, unlocks or an unnecessary confirmation")
-
-func _test_shared_ap_ui() -> void:
-	_test_two_pursuers_startup()
-	check(ap_only(game.help_dialog.dialog_text), "actual controls help removes the retired player MP resource")
-	await _test_interleave()
-	check(ap_only(game.budgets.text) and ap_only(game.availability.text)
-		and ap_only(game.history.text), "HUD, availability and turn history use only shared AP")
-	select("move", [3, 2])
-	check(game.prediction.get("action_points", -1) == 2 and ap_only(game.consequence.text)
-		and game.consequence.text.contains("1 AP"), "model-authoritative move preview spends one AP")
-	game._cancel()
-	# A small zero-budget fixture protects genuinely free capture and End turn,
-	# separately from an exhausted/consumed announcement in the interleave test.
-	await load_fixture(F.encounter([F.enemy("a", [2, 3], F.ability("shove", 1, 2, 0, true))], 0))
-	await capture([2, 3])
-	check(game.state.action_points == 0 and game.state.turn == 1 and not game.state.stored.is_empty(),
-		"safe acquisition at zero AP is free and does not auto-end the turn")
+func _test_escape_keyboard_and_replay() -> void:
+	await load_fixture(F.encounter([], 2))
 	var before: Dictionary = game.model.snapshot()
-	var history_before: Array = game.history_lines.duplicate()
-	game._choose_action("release")
-	click([2, 3])
-	check(game.confirm_button.disabled and game.prediction.is_empty(),
-		"holding an ability at zero AP cannot prepare a paid release")
-	game._confirm()
-	check(game.model.snapshot() == before and game.history_lines == history_before,
-		"over-budget release rejection preserves storage, history and state atomically")
-	game._cancel()
-	select("end_turn")
-	check(not game.confirm_button.disabled and game.model.snapshot() == before,
-		"End turn remains explicitly selectable at zero AP without auto-commit")
+	var key := InputEventKey.new()
+	key.pressed = true
+	key.keycode = KEY_E
+	game._unhandled_key_input(key)
+	check(game.command == {"type": "end_turn"} and game.model.snapshot() == before, "E prepares free End turn without commitment")
+	key.keycode = KEY_ESCAPE
+	game._unhandled_key_input(key)
+	check(game.command.is_empty() and game.model.snapshot() == before, "Escape cancels preview without advancing the game")
+	select("move")
+	game.board.cursor = [2, 3]
+	key.keycode = KEY_ENTER
+	game.board.gui_input.emit(key)
+	check(game.model.snapshot() == before and game.confirm_button.has_focus(), "board Enter selects; separate confirmation commits")
 	await commit()
-	check(game.state.turn == 2 and game.state.action_points == 0 and not game.state.has("movement_points"),
-		"explicit End turn respects the controlled AP budget without resurrecting MP")
-	# The actual retained escape content must also use the new one-resource schema.
-	if game.encounter_id != "escape":
-		await _choose_encounter_ui("escape")
-		if game.encounter_dialog.visible:
-			game.encounter_dialog.confirmed.emit()
-			game.encounter_dialog.hide()
-		await process_frame
-	check(game.state.get("objective", "") == "escape" and not game.state.has("movement_points")
-		and not game.state.rules.has("movement") and ap_only(game.budgets.text),
-		"explicit escape comparison also has AP-only state and HUD")
+	check(game.state.action_points == 1, "single move spends exactly one shared AP")
+	var winning := F.encounter([], 2)
+	winning.exit = {"pos": [2, 3], "opens": 1}
+	await load_fixture(winning)
+	await move([2, 3])
+	check(game.state.status == "won" and game.result.visible and game.result.text.to_lower().contains("escape")
+		and game.history.text.to_lower().contains("escaped") and game.action_buttons.capture.disabled,
+		"explicit escape victory keeps terminal board/history and escape wording")
+	var generation: int = game.generation
+	press(game.restart_button)
+	check(game.generation > generation and game.state.status == "playing" and game.state.stored.is_empty()
+		and not game.state.capture_armed and game.history_lines.size() == 1, "terminal escape Replay restores the same fixture and clears old work")
+	await move([2, 3]) # Win again, then use a non-winning fixture for restart protection.
+	await load_fixture(F.encounter([], 2))
+	await move([2, 3])
+	before = game.model.snapshot()
+	press(game.restart_button)
+	check(game.restart_dialog.visible, "changed unfinished encounter requests restart confirmation")
+	game.restart_dialog.get_cancel_button().pressed.emit()
+	game.restart_dialog.hide()
+	check(game.model.snapshot() == before and game.changed, "canceling restart preserves progress")
+	press(game.restart_button)
+	game.restart_dialog.confirmed.emit()
+	game.restart_dialog.hide()
+	check(game.state.turn == 1 and game.state.action_points == 2 and game.history_lines.size() == 1, "confirmed restart isolates budgets and history")
 
 func _run() -> void:
 	game = load("res://scenes/encounter.tscn").instantiate()
-	if capture_dir.is_empty(): root.add_child(game)
-	else:
-		DirAccess.make_dir_recursive_absolute(capture_dir)
-		capture_view = SubViewport.new()
-		capture_view.size = Vector2i(1280, 800)
-		capture_view.render_target_update_mode = SubViewport.UPDATE_ALWAYS
-		capture_view.gui_embed_subwindows = true
-		root.add_child(capture_view)
-		capture_view.add_child(game)
+	root.add_child(game)
 	await process_frame
 	await process_frame
-	check(game.state.variant == "R2" and game.state.status == "playing", "one R2 baseline opens immediately")
-	check(game.action_buttons.keys() == ["move", "capture", "release", "end_turn"], "only the four revised operations exist")
-	check(not game.has_method("set_presentation_mode") and not game.board.has_method("set_stage_mode"),
-		"retired presentation switching APIs are absent")
+	check(game.action_buttons.keys() == ["move", "capture", "shine", "end_turn"], "only the current four operations exist")
+	check(not game.has_method("set_presentation_mode") and not game.board.has_method("set_stage_mode"), "retired presentation selectors remain absent")
 	for picker in game.find_children("*", "OptionButton", true, false):
 		check(picker == game.encounter_picker, "only the encounter selector remains")
-	if OS.get_cmdline_user_args().has("--focus=shared-ap-wide"):
-		await _test_shared_ap_ui()
-		print("Shared AP UI: %d checks, %d failures. Controlled budget/copy joins, not pressure or enjoyment." % [checks, failures])
-		game.queue_free()
-		await process_frame
-		quit(1 if failures else 0)
-		return
-	if OS.get_cmdline_user_args().has("--focus=active-opponents"):
-		await _test_active_opponents()
-		print("Active opponents UI: %d checks, %d failures. Controlled joins, not enjoyment or visual acceptance." % [checks, failures])
-		game.queue_free()
-		await process_frame
-		quit(1 if failures else 0)
-		return
-	if OS.get_cmdline_user_args().has("--focus=no-invert"):
-		await _test_normal_shove()
-		print("R2 UI smoke: %d checks, %d failures. Injected GUI events, not physical OS input." % [checks, failures])
-		game.queue_free()
-		await process_frame
-		quit(1 if failures else 0)
-		return
-	if OS.get_cmdline_user_args().has("--focus=shadow"):
-		await _test_shadow_integration()
-		print("R2 UI smoke: %d checks, %d failures. Injected GUI events, not physical OS input." % [checks, failures])
-		game.queue_free()
-		await process_frame
-		quit(1 if failures else 0)
-		return
-	if OS.get_cmdline_user_args().has("--focus=two-pursuers") \
-		or OS.get_cmdline_user_args().has("--focus=two-pursuers-cli"):
-		if not _two_pursuers_setup():
-			game.queue_free()
-			await process_frame
-			quit(2)
-			return
-		if OS.get_cmdline_user_args().has("--focus=two-pursuers-cli"):
-			_test_two_pursuers_startup()
-		else:
-			await _test_two_pursuers_integration()
-		print("Two-pursuers UI smoke: %d checks, %d failures. Injected viewport input, not human playability approval." % [checks, failures])
-		game.queue_free()
-		await process_frame
-		quit(1 if failures else 0)
-		return
-	if not _stage_setup():
+	var focus := ""
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--focus="): focus = arg.trim_prefix("--focus=")
+	if focus not in ["", "armed-capture-shine", "stage", "two-pursuers-cli"]:
+		printerr("Unknown smoke focus: ", focus)
 		game.queue_free()
 		await process_frame
 		quit(2)
 		return
-	if OS.get_cmdline_user_args().has("--focus=stage"):
+	if focus == "two-pursuers-cli":
+		_test_two_pursuers_startup()
+	elif focus == "armed-capture-shine":
+		await _test_arm_damage_and_reuse()
+		await _test_shine_source_loss_and_replay()
+		await _test_shine_keys_and_cancellation()
+	elif focus == "stage":
 		await _test_stage_integration()
-		print("R2 UI smoke: %d checks, %d failures. Injected GUI events, not physical OS input." % [checks, failures])
-		game.queue_free()
-		await process_frame
-		quit(1 if failures else 0)
-		return
-	if capture_view:
-		for size in [Vector2i(1280, 800), Vector2i(1024, 720), Vector2i(1600, 900)]:
-			capture_view.size = size
-			await image("r2-%d-start.png" % size.x)
-		capture_view.size = Vector2i(1280, 800)
-	await _test_interleave()
-	await _test_replacements()
-	await _test_deadline()
-	await _test_ability_ranges()
-	await _test_normal_shove()
-	await _test_shadow_integration()
-	await _test_stage_integration()
-	# Board Enter selects without committing; the next explicit confirmation acts.
-	await load_fixture(F.encounter([]))
-	var before_keyboard: Dictionary = game.model.snapshot()
-	var end_key := InputEventKey.new()
-	end_key.keycode = KEY_E
-	end_key.pressed = true
-	game.get_viewport().push_input(end_key)
-	await process_frame
-	check(game.command.get("type", "") == "end_turn" and game.model.snapshot() == before_keyboard, "injected E prepares End turn without committing")
-	var escape_key := InputEventKey.new()
-	escape_key.keycode = KEY_ESCAPE
-	escape_key.pressed = true
-	game.get_viewport().push_input(escape_key)
-	await process_frame
-	check(game.command.is_empty() and game.model.snapshot() == before_keyboard, "injected Esc cancels End turn without advancing")
-	press(game.action_buttons.move)
-	game.board.cursor = [2, 3]
-	var key := InputEventKey.new()
-	key.keycode = KEY_ENTER
-	key.pressed = true
-	game.board.gui_input.emit(key)
-	check(game.state.action_points == 4 and game.confirm_button.has_focus(), "board Enter only selects and focuses confirmation without spending AP")
-	await commit()
-	var winning := F.encounter([])
-	winning.exit = {"pos": [2, 3], "opens": 1}
-	await load_fixture(winning)
-	await move([2, 3])
-	check(game.state.status == "won" and game.result.visible, "escape remains the objective and preserves terminal board")
-	await image("r2-escaped.png")
-	print("R2 UI smoke: %d checks, %d failures. Injected GUI events, not physical OS input." % [checks, failures])
+	else:
+		_test_two_pursuers_startup()
+		await _test_chooser()
+		await _test_arm_damage_and_reuse()
+		await _test_shine_source_loss_and_replay()
+		await _test_shine_keys_and_cancellation()
+		await _test_shared_ap_and_ranges()
+		await _test_actor_access()
+		await _test_active_motion()
+		await _test_stage_integration()
+		await _test_escape_keyboard_and_replay()
+	print("Stage UI smoke [%s]: %d checks, %d failures. Injected GUI input, not physical input or enjoyment." % [focus, checks, failures])
 	game.queue_free()
 	await process_frame
 	quit(1 if failures else 0)
