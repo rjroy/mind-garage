@@ -26,6 +26,19 @@ const F = preload("res://tests/shadow_rendering_fixtures.gd")
 const MovementFixture = preload("res://ui/smoke_fixtures.gd")
 const RENDERER := "res://ui/shadow_renderer.gd"
 const BOARD := "res://ui/board.gd"
+
+class ArrowProbe extends "res://ui/board.gd":
+	# Observe the real footprint drawing consumer without issuing Canvas calls.
+	# No alternate endpoint computation or production test hook.
+	var arrows: Array = []
+	var tiles: Array = []
+
+	func _arrow(from: Vector2, to: Vector2, _color: Color, _dashed: bool) -> void:
+		arrows.append({"from": from, "to": to})
+
+	func _tile(cell: Array, _inset: float, _color: Color, _filled: bool = false, _width: float = 1.0) -> void:
+		tiles.append(cell.duplicate())
+
 var renderer_script: Script
 var board_script: Script
 var checks := 0
@@ -207,7 +220,7 @@ func test_active_cue_footprints() -> void:
 	check(player_ray >= 0 and first.cells == after.events[player_ray].cells, "C02 cue cells are the actual model backlash ray")
 	var board = board_script.new()
 	board.set_view(after, {}, [], [], "")
-	board.set_presentation(true, frame)
+	board.set_presentation(frame)
 	board.last_events = after.events.duplicate(true)
 	board.accent = 1.0
 	check(drawn(board, "live legacy pulse") == cue_footprints(first),
@@ -228,7 +241,7 @@ func test_active_cue_footprints() -> void:
 		if active.is_empty() or active.get("event_index", -1) != first.event_index: break
 		if active.get("progress", 0.0) >= 0.75 and not saw_late_backlash:
 			saw_late_backlash = true
-			board.set_presentation(true, active_frame)
+			board.set_presentation(active_frame)
 			check(drawn(board, "late backlash") == cue_footprints(active), "FY3-C02: backlash tiles persist through the final portion of the active cue")
 		p.advance(1.0 / 240.0)
 	check(saw_late_backlash, "C02 sampled late active backlash before its boundary")
@@ -236,7 +249,7 @@ func test_active_cue_footprints() -> void:
 	check(later.get("type", "") == "resolve", "C02 reaches the queued enemy resolution after backlash")
 	var resolved := 0
 	while not later.is_empty() and resolved < 20:
-		board.set_presentation(true, p.frame())
+		board.set_presentation(p.frame())
 		if later.get("type", "") == "resolve":
 			var index: int = later.get("event_index", -1)
 			check(index >= 0 and index < after.events.size() and after.events[index].get("actor", "") == later.get("source", "") and after.events[index].get("cells", []) == later.get("cells", []),
@@ -246,16 +259,12 @@ func test_active_cue_footprints() -> void:
 			resolved += 1
 		later = next_cue(p, later)
 	check(resolved > 0 and not p.frame().busy, "C02 exercised later resolutions and finite completion")
-	board.set_presentation(true, p.frame())
+	board.set_presentation(p.frame())
 	check(drawn(board, "settled paper").is_empty(), "finished cue leaves no stale tactical effect tiles")
 	check(scenario.game.snapshot() == after, "footprint rendering and clock advancement leave the real model unchanged")
 
-	# Plain feedback and unconfirmed exact previews retain their existing complete
-	# event projection. The fix must not globally filter all UI to one cue.
-	board.set_presentation(false, frame)
-	board.last_events = after.events.duplicate(true)
-	check(drawn(board, "plain legacy feedback") == aggregate, "plain legacy footprint behavior is preserved")
-	board.set_presentation(true, frame)
+	# Unconfirmed previews retain the complete ordered event projection.
+	board.set_presentation(frame)
 	board.set_view(after, after, [], [], "")
 	board.clear_pulse()
 	check(drawn(board, "exact preview") == aggregate, "unconfirmed preview retains all exact ordered event footprints")
@@ -278,7 +287,7 @@ func collect_mixed_feedback(g, p, after: Dictionary, label: String, expect_captu
 	var finished := false
 	for step in range(14400):
 		var frame: Dictionary = p.frame()
-		board.set_presentation(true, frame)
+		board.set_presentation(frame)
 		var rows = board.call("effect_footprints")
 		if not rows is Array:
 			check(false, label + ": actual footprint consumer returns an array")
@@ -316,7 +325,7 @@ func collect_mixed_feedback(g, p, after: Dictionary, label: String, expect_captu
 	check(finished, label + ": ordered mixed feedback completes within a generous 60-second bound")
 	check(observed == expected, "FY3-C03: " + label + " displays EVERY committed ray/area once in order, including non-shove effects")
 	if expect_capture: check(capture_seen, "C03 replacement eventually presents the actual shove acquisition")
-	board.set_presentation(true, p.frame())
+	board.set_presentation(p.frame())
 	check(drawn(board, label + " settled").is_empty(), label + ": no stale committed footprints after finite completion")
 	check(g.snapshot() == after, label + ": presentation time/render queries do not change model outcomes")
 	board.free()
@@ -373,14 +382,13 @@ func test_moves_do_not_leak_into_ability_motion() -> void:
 	var board = board_script.new()
 	board.size = Vector2(1024, 650)
 	board.theatre_mode = true
-	board.set_stage_mode(true)
 	board.set_view(transition.after, {}, [], [], "")
 	board.show_transition(transition.before)
 	var seen: Array = []
 	var sliding: Array = []
 	for _step in range(14400):
 		var frame: Dictionary = p.frame()
-		board.set_presentation(true, frame)
+		board.set_presentation(frame)
 		if not frame.busy: break
 		var cue: Dictionary = frame.cue
 		var index: int = cue.get("event_index", -1)
@@ -408,11 +416,101 @@ func test_moves_do_not_leak_into_ability_motion() -> void:
 							and is_equal_approx(b.y, 3.0), "B slides only after A has reached its committed destination")
 		p.advance(1.0 / 120.0)
 	check(seen == [0, 3, 5, 6] and sliding == ["A", "B"], "actual board interpolation exercises both distinct finite slides")
-	board.set_presentation(true, p.frame())
+	board.set_presentation(p.frame())
 	check(actor_grid(board, "A") == Vector2(2, 1) and actor_grid(board, "B") == Vector2(2, 3),
 		"settled figures end at exact authoritative cells without changing the model")
 	check(board.announcement_marks().size() == 1, "settled board exposes the fresh shove announcement, not old resolved cells")
 	board.free()
+
+func assert_release_arrow(probe: ArrowProbe, row: Dictionary, origin: Array, target: Array, active: bool, label: String) -> void:
+	probe.arrows.clear()
+	probe.tiles.clear()
+	var unchanged := row.duplicate(true)
+	probe._draw_effect_footprint(row, active)
+	check(probe.tiles == row.cells and row == unchanged,
+		label + ": actual drawing retains every exact affected cell without changing the footprint")
+	check(probe.arrows.size() == 1, label + ": actual release drawing emits one directional arrow")
+	if probe.arrows.size() != 1: return
+	var arrow: Dictionary = probe.arrows[0]
+	var expected_from: Vector2 = probe.cell_center(origin)
+	var expected_to: Vector2 = probe.cell_center(target)
+	check(Rect2(Vector2.ZERO, probe.size).has_point(expected_from)
+		and Rect2(Vector2.ZERO, probe.size).has_point(expected_to), label + ": projected fixture endpoints are inside board-local bounds")
+	check(arrow.from.distance_to(expected_from) < 0.001
+		and arrow.to.distance_to(expected_to) < 0.001,
+		label + ": arrow uses the authored release origin/target, not an off-center footprint tail")
+	check(probe._from_pixel(arrow.to) == target,
+		label + ": recorded screen-space endpoint maps back to the selected target cell")
+
+func test_release_arrow_owns_target_not_last_wide_cell() -> void:
+	for scenario in [
+		{"name": "wide near", "width": 3, "target": [2, 3], "walls": [],
+			"cells": [[1, 3], [2, 3], [3, 3]]},
+		{"name": "wide full", "width": 3, "target": [2, 2], "walls": [],
+			"cells": [[1, 3], [2, 3], [3, 3], [1, 2], [2, 2], [3, 2]]},
+		{"name": "wide clipped side lane", "width": 3, "target": [2, 2], "walls": [[1, 3]],
+			"cells": [[2, 3], [3, 3], [2, 2], [3, 2]]},
+		{"name": "narrow control", "width": 1, "target": [2, 2], "walls": [],
+			"cells": [[2, 3], [2, 2]]},
+	]:
+		var fixture := MovementFixture.wide_capture()
+		fixture.enemies[1].ability.width = scenario.width
+		fixture.walls = scenario.walls.duplicate(true)
+		var model = Encounter.new()
+		model.configure(fixture, "R2")
+		var p = Shadow.new()
+		p.reset(model.snapshot(), 1)
+		# Real safe-flank acquisition, with sufficient test-owned shared AP.
+		if commit(model, p, {"type": "move", "to": [2, 4]}).is_empty(): continue
+		p.advance(60.0)
+		if commit(model, p, {"type": "capture", "source": "B"}).is_empty(): continue
+		p.advance(60.0)
+		var before: Dictionary = model.snapshot()
+		var command := {"type": "release", "target": scenario.target.duplicate()}
+		var assessed: Dictionary = model.assess(command)
+		check(assessed.get("legal", false) and model.snapshot() == before,
+			scenario.name + ": release assessment is legal and nonmutating")
+		if not assessed.get("legal", false): continue
+		var after := commit(model, p, command)
+		if after.is_empty(): continue
+		check(after == assessed.preview, scenario.name + ": committed state exactly matches the selected preview")
+		var release_event: Dictionary = {}
+		var cells: Array = []
+		for event in after.events:
+			if event.type == "release": release_event = event
+			if event.type == "ray" and event.actor == "player": cells = event.cells.duplicate(true)
+		check(before.player.pos == [2, 4] and release_event.get("target", []) == scenario.target
+			and cells == scenario.cells, scenario.name + ": controlled authored target and exact near/full/clipped footprint are exercised")
+		if cells.is_empty() or release_event.is_empty(): continue
+		if scenario.width == 3:
+			check(cells.back() != release_event.target,
+				scenario.name + ": fixture genuinely separates the chosen target from the lateral tail cell")
+		var frame: Dictionary = p.frame()
+		var cue: Dictionary = frame.get("cue", {})
+		check(frame.busy and cue.get("type", "") == "release" and cue.get("from", []) == before.player.pos
+			and cue.get("to", []) == release_event.target,
+			scenario.name + ": finite feedback owns the same authoritative release endpoints")
+		for extent in [Vector2(1008, 514), Vector2(1584, 694)]:
+			var probe := ArrowProbe.new()
+			probe.size = extent
+			probe.set_view(before, assessed.preview, [], scenario.target, "B")
+			var preview_rows: Array = drawn(probe, scenario.name + " preview")
+			check(preview_rows.size() == 1 and preview_rows[0].cells == cells,
+				"preview feeds exact model cells to the actual release drawing consumer")
+			if preview_rows.size() == 1:
+				assert_release_arrow(probe, preview_rows[0], before.player.pos, release_event.target, false, scenario.name + " preview")
+			# Normal confirmation clears selection; the cue, not board.selected,
+			# must still supply the arrow's chosen endpoint during feedback.
+			probe.set_view(after, {}, [], [], "")
+			probe.set_presentation(frame)
+			var live_rows: Array = drawn(probe, scenario.name + " finite")
+			check(live_rows.size() == 1 and live_rows[0].cells == cells and probe.selected.is_empty(),
+				"finite feedback retains exact footprint cells after the selected command is cleared")
+			if live_rows.size() == 1:
+				assert_release_arrow(probe, live_rows[0], cue.get("from", []), cue.get("to", []), true, scenario.name + " finite")
+			check(model.snapshot() == after and before.player.pos == [2, 4],
+				"rendering queries and observed draw commands never mutate model ownership or position")
+			probe.free()
 
 func _run() -> void:
 	if not _setup():
@@ -423,5 +521,6 @@ func _run() -> void:
 	test_bolt_backlash_before_shove_capture()
 	test_mixed_enemy_resolution()
 	test_moves_do_not_leak_into_ability_motion()
+	test_release_arrow_owns_target_not_last_wide_cell()
 	print("Shadow rendering regressions: %d checks, %d failures. Drawing decisions only; no visual-appeal or physical-input acceptance." % [checks, failures.size()])
 	quit(0 if failures.is_empty() else 1)

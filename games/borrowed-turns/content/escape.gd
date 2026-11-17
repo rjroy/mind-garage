@@ -7,7 +7,7 @@ const DATA := {
 	"walls": [[4, 1], [4, 5]],
 	"player": {"pos": [2, 3], "hp": 6},
 	"exit": {"pos": [6, 3], "opens": 3},
-	"rules": {"actions": 2, "movement": 1, "capture_range": 1},
+	"rules": {"actions": 3, "capture_range": 1},
 	"enemies": [
 		{"id": "a", "pos": [2, 2], "hp": 4, "kind": "bolt", "dir": [1, 0],
 		 "ability": {"kind": "bolt", "range": 4, "damage": 1, "radius": 0, "push": false}},

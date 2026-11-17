@@ -12,7 +12,7 @@ static func board(enemies: Array = [], health: int = 12) -> Dictionary:
 	return {
 		"width": 7, "height": 7, "walls": [],
 		"player": {"pos": [2, 3], "hp": health}, "exit": {"pos": [6, 6], "opens": 99},
-		"rules": {"actions": 2, "movement": 3, "capture_range": 1},
+		"rules": {"actions": 2, "capture_range": 1},
 		"enemies": enemies.duplicate(true),
 	}
 

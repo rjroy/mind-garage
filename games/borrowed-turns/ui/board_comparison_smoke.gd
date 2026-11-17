@@ -279,17 +279,6 @@ func _test_controlled_slice() -> void:
 				"held backlash and exact command effects stay available alongside the remaining enemy region")
 			_check_warning_sources()
 			_check_roster()
-			before = _gameplay_facts()
-			for view in ["plain", "paper", "stage"]:
-				game.set_presentation_mode(view)
-				await process_frame
-				check(_gameplay_facts() == before, view + ": view changes preserve actual selected state/command/history")
-				if view == "stage":
-					_check_default_slice()
-					_check_plane_join()
-				else:
-					check(game.board.announcement_regions().is_empty(), view + ": no invisible new Stage overlay remains")
-					check(game.board.standee_layout().is_empty(), view + ": no invisible Stage roster remains")
 			await commit()
 			check(game.state.stored.is_empty(), "ordinary real release continues play beyond capture")
 			_check_warning_sources()
@@ -347,6 +336,101 @@ func _test_roster_hp_sync() -> void:
 	await process_frame
 	_check_roster()
 	check(not _standee_entry("B").is_empty(), "Restart restores the selected fixture's living roster")
+
+func same_cells(actual: Array, expected: Array) -> bool:
+	if actual.size() != expected.size(): return false
+	for cell in expected:
+		if cell not in actual: return false
+	return true
+
+func describes_wide(text: String) -> bool:
+	var words := text.to_lower()
+	return words.contains("width 3") or words.contains("3-wide") or words.contains("three-wide")
+
+func _test_wide_borrowed_geometry() -> void:
+	await load_fixture(F.wide_capture())
+	var incoming := [[2, 3], [3, 3], [4, 3], [2, 2], [3, 2], [4, 2]]
+	var released := [[1, 3], [2, 3], [3, 3], [1, 2], [2, 2], [3, 2]]
+	var backlash: Array = [[2, 4]]
+	backlash.append_array(released)
+	var b_plan: Dictionary = {}
+	for intent in game.state.intentions:
+		if intent.source == "B": b_plan = intent
+	check(same_cells(b_plan.get("cells", []), incoming) and [2, 3] in incoming
+		and game.state.player.pos == [2, 3], "real wide B warning covers the side-only player cell and all six forward cells")
+	var named := false
+	for row in game.intention_list.get_children():
+		if row is Button and row.text.begins_with("B ·"): named = describes_wide(row.text)
+	check(named, "actual B ability details disclose width three before acquisition")
+	_check_default_slice()
+	var b_region: Dictionary = {}
+	for row in game.board.announcement_regions():
+		if row.source == "B": b_region = row
+	check(same_cells(b_region.get("cells", []), incoming), "actual wide region draw input retains exact B ownership and full width")
+	for cell in incoming:
+		var center: Vector2 = game.board.cell_center(cell)
+		check(game.board._from_pixel(center) == cell, "real angled wide side-lane cells share the floor projection/picking inverse")
+	var before: Dictionary = game.model.snapshot()
+	var history_before: Array = game.history_lines.duplicate()
+	press(game.action_buttons.capture)
+	await _roster_click("A")
+	check(game.confirm_button.disabled and game.prediction.is_empty(), "another source's wide-only lane forbids capture of otherwise reachable A")
+	game._confirm()
+	check(game.model.snapshot() == before and game.history_lines == history_before,
+		"wide-only threatened capture rejection is atomic, not a partial backlash")
+	game._cancel()
+	await move([2, 4])
+	check(game.state.action_points == 2 and game.model.assess({"type": "capture", "source": "B"}).legal,
+		"one real AP step reaches the safe adjacent origin-side flank for wide B")
+	await _prepare_capture("B")
+	await commit()
+	check(game.state.stored.get("ability", {}).get("width", 1) == 3
+		and same_cells(game.state.backlash_footprint.get("cells", []), backlash),
+		"borrowed B retains width in storage and backlash: full front plus self, never origin-side cells")
+	check(describes_wide(game.stored.text + " " + game.stage_held_details.text),
+		"captured ability details explain its real three-wide footprint")
+	_check_warning_sources()
+	var hp_before: int = _standee_entry("A").hp
+	press(game.action_buttons.release)
+	await _floor_click([2, 2])
+	check(not game.confirm_button.disabled and preview_matches(), "real wide borrowed release has a legal model-authoritative preview")
+	var hit_cells: Array = []
+	var side_hit := false
+	for event in game.prediction.get("events", []):
+		if event.type == "ray" and event.actor == "player": hit_cells = event.cells
+		if event.type == "damage" and event.actor == "A": side_hit = true
+	check(same_cells(hit_cells, released) and side_hit,
+		"wide release preview includes six cells and the off-center foe that a narrow ray misses")
+	var actual_effect: Array = []
+	for row in game.board.effect_footprints():
+		if row.actor == "player" and row.stage == "release": actual_effect = row.cells
+	check(same_cells(actual_effect, released) and _standee_entry("A").hp == hp_before,
+		"real preview drawing shows all wide hit cells while roster HP remains confirmed")
+	await commit()
+	check(_standee_entry("A").hp == game.state.enemies[0].hp and _standee_entry("A").hp < hp_before
+		and game.state.action_points == 1, "confirmed off-center hit synchronizes HP after one move and one release")
+	# Recreate the held case, then let the model re-aim a fresh occurrence.
+	await load_fixture(F.wide_capture())
+	await move([2, 4])
+	await _prepare_capture("B")
+	await commit()
+	var captured_turn: int = game.state.stored.captured_turn
+	select("end_turn")
+	await commit()
+	var desc: Dictionary = game._two_source_presentation.compose(game.state, game.shadow.frame(), game.generation, ["A", "B"], "")
+	check(desc.get("held_occurrence", {}).get("turn", -1) == captured_turn
+		and desc.get("sources", {}).get("B", {}).get("occurrence", {}).get("turn", -1) == game.state.turn
+		and game.state.turn > captured_turn and game.state.stored.ability.get("width", 1) == 3,
+		"old borrowed wide hands remain distinct from B's fresh re-aimed wide announcement")
+	check(same_cells(game.state.backlash_footprint.cells, backlash),
+		"fresh source aim does not retarget the old held wide backlash")
+	before = _gameplay_facts()
+	select("end_turn")
+	var shown: Array = []
+	for row in game.board.effect_footprints():
+		if row.actor == "player" and row.stage == "backlash": shown = row.cells
+	check(same_cells(shown, backlash) and game.model.snapshot() == before.model,
+		"deadline preview displays the full actual wide backlash, not a narrow reconstruction")
 
 func _capture_state(label: String) -> void:
 	game._stage_sheet.hide()
@@ -428,7 +512,6 @@ func _run() -> void:
 		await process_frame
 		quit(2)
 		return
-	game.set_presentation_mode("stage")
 	if game.encounter_id != "two-pursuers":
 		var origin: Vector2 = game.board.cell_center([1, 1])
 		check(is_equal_approx(game.board.cell_center([2, 1]).y, origin.y),
@@ -443,6 +526,7 @@ func _run() -> void:
 	if game.encounter_id == "two-pursuers": await _test_controlled_slice()
 	if game.encounter_id == "two-pursuers": await _test_roster_hp_sync()
 	if game.encounter_id == "two-pursuers": await _test_rehearsal_motion()
+	if game.encounter_id == "two-pursuers": await _test_wide_borrowed_geometry()
 	if failures == 0 and not capture_dir.is_empty(): await _capture_actual_encounter()
 	print("Angled wavefront UI: %d checks, %d failures. Injected controls; no visual acceptance." % [checks, failures])
 	game.queue_free()

@@ -10,7 +10,7 @@ related: [.lore/work/intents/player-brief.md, .lore/work/experiments/002-shadow-
 
 ## Inputs and provenance
 
-- Experiment ID: `003-active-opponents`. Current stage: candidate implemented, headlessly verified and technically reviewed; awaiting Ronald's fight play.
+- Experiment ID: `003-active-opponents`. Current stage: shared-AP, wide-shove and Stage-only revision technically verified and reviewed; awaiting Ronald's play.
 - Source baseline: `37026b6`, following packaged-resource checkpoint `8587639` and cleanup `144c1a9`. Accepted presentation and 2.7-second telegraph waves are the starting point.
 - Input procedures: repository experiment-record template and `implement`/`verification-planning` workflows. This is a revision of the selected capture mechanic, not fresh hook discovery.
 - Audience: Ronald only. Godot, existing packaged artwork, no new dependencies or asset generation.
@@ -48,7 +48,7 @@ Not applicable to this iteration: the human selected concrete revisions to the e
 
 ## Build and replay manifest
 
-Candidate implemented and technically reviewed. Replay the source checkpoint containing this record and the active-opponent model/content/UI/tests; predecessor baseline is `37026b6`. The candidate is checkpointed before human feedback so a later revision need not overwrite it.
+First candidate checkpoint: `9450bfe`, implemented and technically reviewed; predecessor baseline is `37026b6`. Keep that version for comparison rather than overwriting the evidence when tuning the next candidate.
 
 Normal launch from the repository root:
 
@@ -56,7 +56,7 @@ Normal launch from the repository root:
 godot --path games/borrowed-turns
 ```
 
-Close an older running process first to load the changed scripts. Normal entry selects Stage and the active two-pursuer fight. M/C/L/E select Move/Capture/Release/End Turn; inspect the model's preview and Confirm. Capture requires an unthreatened position within reach. Restart/terminal Replay restore the same fixture. The explicit old escape comparison remains `-- --encounter=escape --presentation=paper`; presentation changes preserve the current model.
+Close an older running process first to load the changed scripts. Normal entry selects Stage and the active two-pursuer fight. M/C/L/E select Move/Capture/Release/End Turn; inspect the model's preview and Confirm. Capture requires an unthreatened position within reach. Restart/terminal Replay restore the same fixture. The retained escape encounter is available with `-- --encounter=escape`, also in Stage. The second candidate removes the old presentation selectors and `--presentation` option; historical commands below describe their original checkpoint, not current launch instructions.
 
 Godot 4.7.2 on Linux; existing packaged game/source assets, no new dependencies, RNG, save/progression or unlock system. No seed is needed: sequential fixture order and left/up/down/right ties are deterministic. New temporary verification output belongs outside the retired scratch tree, under `.lore/local/verification/active-opponents/`. No graphical gate or physical-input claim accompanies headless checks; Ronald must judge the live slides and fight.
 
@@ -75,7 +75,7 @@ Godot 4.7.2 on Linux; existing packaged game/source assets, no new dependencies,
 
 ## Sessions and evidence
 
-No candidate human play session yet. The user observations above concern the baseline and design direction; technical results follow.
+Ronald's first qualitative candidate report follows the technical results below. No enjoyment score, complete command trace, actual damage total or voluntary replay measure was collected.
 
 ### Model behavioral RED
 
@@ -168,13 +168,103 @@ The subsequent separate refactor assessment found no worthwhile change before pl
 
 The next evidence is Ronald playing one complete fight without being coached through the verified route. Ask whether active opponents and safe-position capture create worthwhile choices and where play becomes repetitive or unclear. Do not start run/progression work, add attacks/abilities, tune difficulty or polish visuals without that feedback. `mind-garage-jkv` remains open for this human checkpoint; `mind-garage-7am` stays deferred.
 
+### Human feedback and next budget change
+
+After checkpoint `9450bfe`, Ronald reported: “It was playable, but I'm not sure it was intersting choices. There was no sense of peril.” He described the fight as feeling impossible to lose. This is perceived lack of danger, not a claim that the model has no loss state. Do not infer a specific play route, damage total or completed victory from this report.
+
+Ronald requested removing movement points entirely: each moved tile costs 1 AP, with 3 AP per turn instead of 2 AP plus 2 MP. This is the next intended player-budget rule, not yet implemented at this point in the record. He wants a genuinely fun fight before considering tutorial placement or run structure, and asked for ideas to create peril.
+
+The existing verified no-damage route uses at most two moves and one release per turn, with free capture and End Turn. It therefore still fits the proposed 3-AP pool. The merge creates opportunity costs but does not, by itself, invalidate that safe routine. This is a pre-intervention prediction, not evidence that the requested change is useless.
+
+Next discussion considered interacting threats, coordinated positioning and displacement hazards rather than merely inflating health, adding surprise retargeting, imposing unrelated timers or making capture impossible. Preserve visible full-tile attacks, source-driven waves and the any-threat capture restriction. No new capture, screenshot, video, asset or progression work is included.
+
+### Approved second candidate: shared AP and wide shove
+
+Ronald selected **Wide-shove opponent (Recommended)** with the requested shared 3-AP budget. Keep A's narrow chase/shove and B's maximum-usable-range positioning, but give B a three-tile-wide shove. Health, damage, range/depth, capture reach, enemy one-step budget, starting positions, art and pacing remain unchanged for this first pressure pass. The intended difference is threat interaction and a more useful borrowed shape, not a health sponge or guaranteed damage.
+
+- Remove the player's separate movement resource and active MP schema/copy. Moves cost 1 AP per tile; release costs 1 AP; capture remains free when legal; End Turn remains free and explicit. At zero AP, legal free capture still works; movement/release do not. Enemy `movement_budget` remains its own AI step setting, not a player resource.
+- Shove `width` defaults to 1; B uses 3. The affected region covers front depths 1 through range, lateral offsets −1, 0, +1, clipped by board bounds and forward blocking independently in each lane. Do not add the source row or behind-source tiles; safe adjacent flanks must remain possible.
+- Preserve width through capture, release, preview and ability-specific backlash. Backlash hits the player once plus the actual wide forward region; existing once-per-actor hit/push rules remain.
+- Use that same model geometry for attack announcements and ranged usability. UI consumes exact cells; the full-tile wash and existing source-driven fronts must span the wider region without a new arrow/asset vocabulary.
+- Controlled evidence should demonstrate a wide-only tile blocking a formerly safe capture approach, exact borrowed geometry, clipping/push behavior and shared-budget atomicity. The earlier 59-command routine remains the AP-only counterfactual; test whether the wide candidate breaks it for a meaningful reason rather than assume it does.
+- Verify one complete feasible candidate fight and a capturable lone-B endgame without silently relaxing safety or adding player attacks. A no-damage solution remains acceptable; human choice quality and felt peril are the actual outcome.
+
+Model/UI test-author scopes run separately. Old independent-AP/MP assertions are superseded, not preserved behind a compatibility mode. Minimal old-field absence guards may enable loadable RED setup, but final production must remove those temporary MP consumers. No new run, tutorial, hazard, third opponent, capture cost, health/damage tuning or asset generation is authorized by this choice.
+
+The second candidate's independent focused model RED is clean: `tests/run.gd -- --focus=shared-ap-wide-shove` exited 1 with **87 checks, 21 failures**, without script/import/setup errors. The neutral old model still rejects moves using zero legacy MP; wide geometry and payload tests expose missing cardinal/wall/edge/side-threat/release/backlash/ranger behavior. The main interleaving case returns early on its first rejected move, so its later two-move-plus-release and exhausted-AP checks are not yet exercised; GREEN must reach those branches. Test SHA-256 is `6fccb68f527fbfa8107d9fdc8d8c31a2ea6894faef9da87a439b1031f9689260`. Scoped source/fixture boundaries matched before and after. Evidence is under `.lore/local/verification/active-opponents/shared-ap-wide/model-red/`.
+
+Production model/content implementation is released with those tests frozen. Presentation test authoring remains separate; temporary missing-MP guards in old UI diagnostics/formatting are allowed only for setup and must disappear from the AP-only production version.
+
+### Second-candidate implementation and verification
+
+The model now uses one player AP pool. The UI displays AP-only costs and derives wide-ability descriptions from stored metadata; it does not retain a fallback player movement resource. The generic wavefront renderer already spans the wider region, so no new rendering algorithm or artwork was needed.
+
+An implementation review caught an unintended release-range fork: wide releases initially extended to maximum range while narrow releases stopped at the selected endpoint. This was not authorized. A controlled near-endpoint regression produced **115 checks, two failures** in the focused suite. The correction makes both widths stop at the selected endpoint; enemy announcements and backlash still use their authored range.
+
+Independent model GREEN then passed **115/0** focused checks and **504/0** full regression, both exit 0. Interleaved moves/capture/release, zero-AP free capture, paid-action rejection, cardinal wide regions, lane blocking, clipping, stored width, backlash, ranged usability and endpoint truncation were reached. Model SHA-256: `f59caf51d249f6c01c834425d2fd5b2ecb5e429bfb119c1511c00a92f95ff50e`. Evidence is under `shared-ap-wide/endpoint-red/` and `shared-ap-wide/model-green/` within the local verification directory.
+
+Independent presentation verification passed the shared-AP focus **166/0**, board comparison **4670/0**, board warnings **475/0**, controller **531/0**, rendering **357/0**, pure two-pursuer presenter **568/0**, standee board **302/0**, active-fight UI **250/0**, two-pursuer UI **277/0** and normal-entry CLI **30/0**. All exited 0 without script/import/setup errors; the 95-file boundary remained unchanged. The unfocused UI smoke did **not** pass: **603 checks, four failures**, concerning two corner-targeting and two retained plain/paper intention-row viewport assertions. Their cause is under investigation, not dismissed as unrelated or reported as GREEN. Logs are under `shared-ap-wide/ui-green/`.
+
+Diagnosis reproduced the two corner failures in an isolated `9450bfe` baseline. Opaque player artwork overlapped a corner tile; normal picking correctly selected that actor rather than the floor. The corner mapping test now uses the existing Alt-floor GUI path, retaining its selection/state assertions and leaving ordinary actor/marker/roster tests unchanged. Independent Stage-focused recheck is **312 checks, two failures**, exit 1, exclusively the scroll regressions, with no setup/script errors. This focused invocation does not itself run the separate actor/marker/roster paths.
+
+The two new scrolling failures are real: after restoring plain/paper Plans from Stage Events, content requiring 340 px retains a 291 px allocation and scroll range, placing the button 20 px outside the usable viewport. Additional frames do not cure it. Production correction must refresh layout allocation rather than shorten guidance, weaken visibility checks or add delays. Smoke SHA-256 at isolated RED: `f97f2d93f992d7454f9e1041639f8dcdeadbc177ba180683f22387fbcc77ba3a`. Evidence: `shared-ap-wide/ui-diagnosis/` and `shared-ap-wide/ui-scroll-red/`.
+
+Two bounded layout-refresh attempts did not fix the allocation; both were reverted. Work stopped at the retry limit. On learning that these failures concerned switching to obsolete comparison views, Ronald explicitly authorized removing plain/paper instead: their retention was precisely the cruft he expected the earlier cleanup to remove. This supersedes the proposed scroll repair, not the recorded failure history.
+
+Stage is now the sole supported presentation. The implementation removes obsolete modes, selectors, flat rendering branches and the comparison capture tool rather than merely hiding them. Switching-only tests are retired; distinct gameplay, escape-objective, picking, animation and presentation coverage is migrated to Stage. The shared shadow renderer still serves the escape encounter and is retained. The substantially useful board-comparison runner is retained despite its historical name. Independent final verification and technical review remain pending.
+
+Independent Stage-only verification passed all changed runners: projection **1018/0**, standee board **297/0**, board warnings **473/0**, rendering **351/0**, full UI smoke **483/0**, board comparison **3787/0**, active-fight UI **247/0**, shared-AP UI **88/0**, two-pursuer UI **267/0** and normal-entry CLI **32/0**. Each uses `godot --headless --path games/borrowed-turns --script res://<runner>` with the corresponding focus arguments and exits 0. The full smoke does not include the focused paths, so those were executed separately. Body, foot-marker, overlap and roster picking are exercised; actual roster clicks and escape victory pass.
+
+Main-scene startup with `--quit-after 3`, both normally and with `-- --encounter=escape`, exits 0 in Stage. Retired bare `--presentation` and `--presentation=paper` exit 2 with an explicit unsupported-option message. No supported documentation launch examples or old mode consumers remain in the checked game scope; historical records are not rewritten. The 93-file game/assets manifest is unchanged before/after, SHA-256 `43c66bf9026525076555c65ec8bf75d8f01fca52e03d25f8ebe52fd7a738f067`. Model/content hashes remain unchanged, preserving model **504/0** and the actual-route comparison. Controller and pure-presenter results are reused, not claimed as new executions. Exact commands, exit files, logs and scans: `.lore/local/verification/active-opponents/stage-only-cleanup/independent/`.
+
+Fresh correctness review found G1: release-ray rendering uses the final affected cell as its endpoint. Wide regions end on a lateral cell, so an otherwise correct cardinal release can display a diagonal arrow in preview and finite feedback. For example, origin `[2,4]`, selected endpoint `[2,2]`, width 3 ends its cell array at `[3,2]`. The exact affected tiles and model outcomes remain correct. A focused regression and correction must derive the ray from the owning release event/cue, preserving the selected endpoint and clipped footprint. No other material defects were reported; G1 remains open.
+
+Independent G1 RED reached **542 checks, 24 failures**, exit 1, exclusively wide-release endpoints in preview and finite feedback at two board extents, covering near/full targets and a wall-clipped side lane. Narrow control, valid fixture actions, exact footprint coverage and model purity pass. Tests observe the inherited renderer's actual arrow/tile calls through a test-owned subclass; no production testing seam or duplicate endpoint algorithm was added. The production correction changes only the board's release-ray consumer: finite playback uses the release cue's origin/target; preview uses the actual release event's target and pre-release player origin. The footprint tile loop is unchanged. Independent GREEN and focused review remain pending. Evidence: `stage-only-cleanup/g1-red/` and `g1-author/`.
+
+Independent G1 GREEN passed rendering **542/0**, board comparison **3787/0** and full UI smoke **483/0**, all exit 0. All 24 prior endpoint failures are reached and pass; exact cells and narrow control remain covered. The 93-file before/after manifest matches, SHA-256 `c1c52108d8dcedd28d3f61a3ec85d4f0d5fe7ab282ccc590161243e186014970`. A fresh focused correctness review closed G1 and found no remaining correction-scope defect; it inspected the logs, actual consumers/tests and matching frozen source rather than claiming new test execution. Evidence: `stage-only-cleanup/g1-green/`.
+
+The subsequent separate read-only refactor assessment found no worthwhile further change before play. Independent engineering-quality assessment found the shared geometry/command pipeline and direct Stage construction appropriate, with no material findings. The shared renderer and distinct test boundaries are retained for actual consumers, not hypothetical compatibility. Performance remains unprofiled; no measured bottleneck justifies a caching or AI framework. All 93 frozen source entries still match. No source changes followed these assessments.
+
+Second-candidate handoff: launch normally, without presentation arguments, after closing an older process. Judge whether shared AP and interacting wide/narrow threats create worthwhile choices and felt danger, and whether the lone-opponent phase becomes repetitive. Do not coach the recorded winning route unless requested. `mind-garage-jkv` stays open at the human checkpoint; run/progression work remains deferred under `mind-garage-7am`.
+
+### Controlled pressure comparison and feasibility
+
+Cloning the current configuration and changing only B's width to 1 preserves the old 59-command, turn-14 victory with 8 HP and no damage. In the actual width-3 candidate, the same routine rejects command 11: capture A on turn 3 from `[3,1]`, with 1 AP remaining. B at `[3,3]` faces upward and covers columns 2–4, rows 1–2. This first denial is on the centre lane: width also changes which ranged positions are usable, so it is not evidence of lateral coverage alone.
+
+A separate actual turn-5 state demonstrates the side-lane effect. From player `[3,1]`, AP1, A `[3,0]` and B `[2,2]` aiming right, B's lateral row blocks capturing A. Ending immediately reduces HP7 to HP6; spending the final AP moving to `[2,1]` before ending preserves HP7 but gives up that turn's capture/release opportunity. An earlier turn-3 detour also avoids damage. These are avoidable positioning costs, not evidence of unavoidable hits or enjoyable decisions.
+
+One complete actual-candidate route wins on turn 16 after **71 commands, HP7, one total damage**, five captures/releases from each source. Both enemies move; the lone-B endgame remains capturable. Every assessment is nonmutating and every committed result exactly matches it. Model/content hashes remain unchanged. The following recipe preserves replayability without requiring local generated JSON. Each row ends with End Turn except T16; execute actions in the stated order.
+
+| Turn | Moves | Capture/release |
+| --- | --- | --- |
+| 1 | `[1,2]`, `[2,2]` | — |
+| 2 | `[2,1]`, `[2,0]` | A → `[3,0]` |
+| 3 | `[2,1]`, `[3,1]` | —; take one damage |
+| 4 | `[4,1]`, `[4,0]` | A → `[3,0]` |
+| 5 | `[4,1]`, `[3,1]`, `[2,1]` | — |
+| 6 | `[1,1]`, `[1,0]` | A → `[2,0]` |
+| 7 | `[1,1]`, `[2,1]` | A → `[2,0]` |
+| 8 | `[3,1]`, `[3,0]` | A → `[2,0]`; A dies |
+| 9 | `[2,0]`, `[1,0]`, `[0,0]` | B; hold at AP0 |
+| 10 | After release: `[1,0]`, `[2,0]` | Release B → `[0,2]` first |
+| 11 | `[1,0]`, `[0,0]`, `[0,1]` | B; hold |
+| 12 | After release: `[1,1]`, `[2,1]` | Release B → `[0,3]` first |
+| 13 | `[1,1]`, `[0,1]`, `[0,2]` | B; hold |
+| 14 | After release: `[1,2]`, `[2,2]` | Release B → `[0,4]` first |
+| 15 | `[1,2]`, `[0,2]` | B → `[0,3]` |
+| 16 | `[0,3]`, `[0,4]` | B → `[1,4]`; victory |
+
+Temporary scripts, snapshots, commands and exit statuses are under `shared-ap-wide/route-comparison/`. One diagnostic JSON-number decoding setup error is retained separately; coordinates were converted to the existing integer command contract, not accepted through a gameplay relaxation. No search, tuning, graphics or game/test changes were used. This establishes feasibility and disruption of one known routine, not strategy dominance, felt peril or enjoyment.
+
 ## Revision log
 
 - Initial intervention authorized through the requested opponent/objective changes and explicit any-enemy capture clarification. Technical reconnaissance precedes controlled tests and implementation.
+- Candidate `9450bfe` is technically feasible but human feedback finds insufficient choices/peril. Proposed next budget is one 3-AP pool with movement costing 1 AP; opponent-pressure intervention remains to be selected.
+- Ronald selected the second candidate: shared 3 AP plus B's three-wide borrowed shove. Baseline `9450bfe` is retained; test the changed threat interaction before any damage/health calibration.
 
 ## Findings and next decision
 
-Game outcome: unknown. Method outcome: the human diagnosed the stationary-trap problem and chose the intervention; do not attribute these design contributions to an autonomous AI diagnosis.
+Game outcome: playable, but Ronald is unsure it offers interesting choices and reports no sense of peril. Enjoyment, continuation and voluntary replay remain unmeasured. Method outcome: technical checks established feasibility but not enjoyment; the human diagnosed both the stationary-trap issue and the subsequent lack of peril, and supplied the shared-AP change. Do not attribute those design contributions to an autonomous AI diagnosis.
 
 The next decision is whether one complete fight is engaging enough to iterate or to support later multi-fight run design. Narrative implementation and run progression remain deferred.
 

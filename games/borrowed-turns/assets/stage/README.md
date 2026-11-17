@@ -48,4 +48,4 @@ All three source components are approved; their in-game composition is not. The 
 
 ## Runtime use
 
-Commit the `.png.import` texture settings alongside these originals; the generated `.godot/imported/` cache is not source artwork. After a fresh checkout, run `godot --headless --editor --path games/borrowed-turns --import` from the repository root, or open the editor, before launching `--presentation=stage`. Normal texture import does not overwrite the PNG originals. No custom background removal, source resizing or art cleanup is part of this integration. See the [game instructions](../../README.md#optional-theatre-stage).
+Commit the `.png.import` texture settings alongside these originals; the generated `.godot/imported/` cache is not source artwork. After a fresh checkout, run `godot --headless --editor --path games/borrowed-turns --import` from the repository root, or open the editor, before launching the game. Normal texture import does not overwrite the PNG originals. No custom background removal, source resizing or art cleanup is part of this integration. See the [game instructions](../../README.md#theatre-stage).

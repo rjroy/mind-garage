@@ -16,11 +16,11 @@ Steal an enemy's announced action, then turn it against the hunt. Normal play no
 godot --path games/borrowed-turns
 ```
 
-The shared baseline retains independent action/movement points, free capture, action-cost release, and ability-specific backlash on replacement or expiry. Capture now requires a position outside **every current announced enemy attack**. One opponent chases; the other seeks usable maximum attack range. End Turn resolves old attacks, opponent movement, then fresh aim and announcements. There is no discard, progression or unlock system. Reaching zero points does not advance time. See the [play instructions](games/borrowed-turns/README.md) and [active-opponent revision record](.lore/work/experiments/003-active-opponents/record.md).
+The current candidate uses **3 shared AP per turn**: one cardinal step or release costs 1 AP; capture and explicit End Turn are free. Capture requires a position outside **every current announced enemy attack**. A chases with a narrow shove; B seeks usable maximum attack range with a three-wide shove. Borrowing B's ability retains its width for release and backlash, without changing forward endpoint rules. End Turn resolves old attacks, opponent movement, then fresh aim and announcements. There is no discard, progression or unlock system. Reaching zero AP does not advance time. See the [play instructions](games/borrowed-turns/README.md) and [active-opponent revision record](.lore/work/experiments/003-active-opponents/record.md).
 
-This is a mechanic prototype, not a finished roguelite or a validated progression system. The capture/release baseline was established in revision 02; the current fight adds mobile opponents and safe-position capture. Human enjoyment and replay evidence are still pending; completion alone does not demonstrate that capture creates worthwhile decisions. The [Curtain Call narrative direction](.lore/work/narrative/borrowed-turns/curtain-call-narrative-brief.md) supplies context, not an exhaustive mechanics specification.
+This is a mechanic prototype, not a finished roguelite or a validated progression system. Ronald found the preceding active fight playable but lacking interesting choices and peril. Shared AP and the wide shove are the next bounded comparison, not established improvements in fun or danger. Health, damage, range and the accepted presentation remain unchanged. The [Curtain Call narrative direction](.lore/work/narrative/borrowed-turns/curtain-call-narrative-brief.md) supplies context, not an exhaustive mechanics specification.
 
-Explicit `--presentation=plain` and `--presentation=paper` comparisons remain available. The earlier escape encounter is retained with `--encounter=escape --presentation=paper`; it is not the default goal. Active-fight feasibility and technical verification do not establish that the fight is fun.
+The earlier escape encounter is retained with `--encounter=escape`; it is not the default goal. Active-fight feasibility and technical verification do not establish that the fight is fun.
 
 The first six-variant prototype is preserved at source commit `fd8e91d`; it is not a parallel mode in the live game. Subsequent human feedback and the unlimited-capture/backlash direction are recorded in [design revision 02](.lore/work/experiments/001-hook-discovery/design-revision-02.md), with provisional [executable rules](.lore/work/experiments/001-hook-discovery/revision-02-executable-rules.md).
 
@@ -32,10 +32,10 @@ The [action-shadow experiment](.lore/work/experiments/002-shadow-paper/record.md
 
 ```bash
 godot --headless --editor --path games/borrowed-turns --import
-godot --path games/borrowed-turns -- --presentation=stage
+godot --path games/borrowed-turns
 ```
 
-Stage is now the default; `paper` and `plain` remain comparisons. The accepted art and shared board projection are unchanged by the active-opponent revision. Runtime puppet textures ship in the game; necessary preparation artwork and recipes live under `assets-source/`. No local experiment history is needed to play. See the [stage instructions](games/borrowed-turns/README.md#theatre-stage).
+Stage is the sole presentation. The accepted art and shared board projection are unchanged by the active-opponent revision. Runtime puppet textures ship in the game; necessary preparation artwork and recipes live under `assets-source/`. No local experiment history is needed to play. See the [stage instructions](games/borrowed-turns/README.md#theatre-stage).
 
 Current work `mind-garage-jkv` tests one fight with active opponents. Multi-fight runs and progression remain future discussion under `mind-garage-7am`, after the fight is worth playing.
 

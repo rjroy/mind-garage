@@ -69,7 +69,6 @@ func make_board():
 	var board = board_script.new()
 	# Outside the tree: no stage textures, rig or mutable production assembly.
 	board.size = Vector2(1008, 514)
-	board.set_stage_mode(true)
 	board.theatre_mode = true
 	board.set_view(snapshot(), {}, [], [], "")
 	return board
@@ -99,10 +98,6 @@ func test_region_projection_and_preservation() -> void:
 			and board.source == before.source and board.cursor == before.cursor and board.hover_cell == before.hover,
 			"region projection/resize preserve authoritative facts, target, preview and inspection")
 		check(board._focused_actor == "A" and board._hover_actor == "B", "region readback preserves rear focus and hover")
-	board.set_stage_mode(false)
-	check(board.announcement_marks().is_empty() and board.announcement_regions().is_empty(),
-		"non-Stage views have no new warning descriptors or regions")
-	board.set_stage_mode(true)
 	board.theatre_mode = false
 	check(board.announcement_marks().is_empty() and board.announcement_regions().is_empty(),
 		"other Stage profiles keep the existing renderer")
@@ -436,10 +431,10 @@ func assert_waves(board, phase: float) -> Array:
 
 func test_board_wave_phase_and_ownership() -> void:
 	var board = make_board()
-	board.set_presentation(true, {"loop_phase": 0.31})
+	board.set_presentation({"loop_phase": 0.31})
 	var before: Dictionary = board.state.duplicate(true)
 	var initial := assert_waves(board, 0.31)
-	board.set_presentation(true, {"loop_phase": 0.42})
+	board.set_presentation({"loop_phase": 0.42})
 	var later := assert_waves(board, 0.42)
 	check(mark(initial, "A").get("fronts", []) != mark(later, "A").get("fronts", [])
 		and mark(initial, "B").get("fronts", []) != mark(later, "B").get("fronts", []),
@@ -472,15 +467,12 @@ func test_board_wave_phase_and_ownership() -> void:
 			rows[0].fills[0][0] = Vector2(999, 999)
 			rows[0].fronts[0]["progress"] = -99.0
 		check(board.announcement_waves() != rows or rows.is_empty(), "real wave draw readback is detached")
-	board.set_stage_mode(false)
-	check(board.announcement_waves().is_empty(), "baseline views have no invisible source-wave rows")
-	board.set_stage_mode(true)
 	board.theatre_mode = false
 	check(board.announcement_waves().is_empty(), "original escape Stage retains its existing warning profile")
 	board.free()
 
 func wave_progress(board, frame: Dictionary) -> float:
-	board.set_presentation(true, frame)
+	board.set_presentation(frame)
 	var row := mark(board.announcement_waves(), "A")
 	var fronts: Array = row.get("fronts", [])
 	if fronts.is_empty():
@@ -534,6 +526,60 @@ func test_wave_pacing_against_director() -> void:
 		"new generation resets both visual phases without changing Director reset semantics")
 	board.free()
 
+func test_wide_curves_and_projection() -> void:
+	# Controlled region oracle, independent of live enemy tuning and the model's
+	# footprint builder. Six forward cells, never the source's side cells.
+	for direction in [Vector2i.RIGHT, Vector2i.DOWN, Vector2i.LEFT, Vector2i.UP]:
+		var origin := Vector2i(3, 3)
+		var side := Vector2i(direction.y, -direction.x)
+		var cells: Array = []
+		for depth in [1, 2]:
+			for lateral in [-1, 0, 1]:
+				var cell: Vector2i = origin + direction * depth + side * lateral
+				cells.append([cell.x, cell.y])
+		var data := snapshot()
+		data.enemies = [{"id": "B", "pos": [3, 3], "dir": [direction.x, direction.y], "hp": 13, "kind": "shove"}]
+		data.intentions = [{"source": "B", "kind": "shove", "cells": cells.duplicate(true)}]
+		var board = make_board()
+		board.set_view(data, {}, [], [], "")
+		board.set_presentation({"loop_cycles": 0.375})
+		var regions: Array = board.announcement_regions()
+		check(regions.size() == 1, "wide region retains one real source owner, not three unrelated lanes")
+		if regions.is_empty():
+			board.free()
+			continue
+		var row: Dictionary = regions[0]
+		check(row.source == "B" and row.cells == cells and row.origin == [3, 3]
+			and row.direction == [direction.x, direction.y], "wide row preserves exact source, direction and all six model-owned cells")
+		check_coverage(cells, row.contours, "three-wide region")
+		var waves: Array = board.announcement_waves()
+		check(waves.size() == 1 and waves[0].get("fills", []) == row.contours,
+			"actual wave draw input fills the complete wide union, not its center lane")
+		var spans_width := false
+		var clipped := true
+		for front in waves[0].get("fronts", []) if not waves.is_empty() else []:
+			for part in front.get("curves", []):
+				var near_side := INF
+				var far_side := -INF
+				for point in part:
+					near_side = minf(near_side, point.dot(Vector2(side)))
+					far_side = maxf(far_side, point.dot(Vector2(side)))
+				if is_equal_approx(far_side - near_side, 3.0): spans_width = true
+				for i in range(part.size() - 1):
+					for step in range(1, 10):
+						if not inside(part[i].lerp(part[i + 1], float(step) / 10.0), row.contours): clipped = false
+		check(spans_width, "curved fronts span all three affected lanes in every cardinal direction")
+		check(clipped, "wide moving curves remain clipped to the exact affected region")
+		for cell in cells:
+			var screen: Vector2 = board.cell_center(cell)
+			check(board._from_pixel(screen) == cell and board.pick_cell(screen) == cell,
+				"each wide side/center cell retains the shared projection and actual floor picking")
+		var source_side := origin + side
+		check(not inside(Vector2(origin) + Vector2(0.5, 0.5), row.contours)
+			and not inside(Vector2(source_side) + Vector2(0.5, 0.5), row.contours),
+			"width never invents threatened source or origin-side cells")
+		board.free()
+
 func _run() -> void:
 	if not setup():
 		quit(2)
@@ -546,6 +592,7 @@ func _run() -> void:
 	test_wave_exact_clipping_and_isolation()
 	test_wave_source_origin_and_translation()
 	test_board_wave_phase_and_ownership()
+	test_wide_curves_and_projection()
 	test_wave_pacing_against_director()
 	print("Board warnings: %d checks, %d failures. Controlled facts, not visual acceptance." % [checks, failures.size()])
 	quit(1 if not failures.is_empty() else 0)

@@ -64,7 +64,7 @@ func test_budget_boundary() -> void:
 	check(g.act(action) and g.snapshot() == result.get("preview", {}), "move preview equals commit")
 	var s: Dictionary = g.snapshot()
 	check(s.get("turn", -1) == 1, "movement does not advance turn")
-	check(s.get("movement_points", -1) == 3 and s.get("action_points", -1) == 2, "movement spends only one MP")
+	check(s.get("action_points", -1) == 2 and not s.has("movement_points") and not s.get("rules", {}).has("movement"), "movement spends one shared AP without player MP")
 	check(not types(s).has("ray"), "enemy does not resolve on movement")
 
 func test_interleaving() -> void:
@@ -74,13 +74,10 @@ func test_interleaving() -> void:
 	for pos in [[2, 3], [3, 3]]:
 		if not apply(g, {"type": "move", "to": pos}, "example move"): return
 	if not apply(g, {"type": "capture", "source": "a"}, "free capture"): return
-	check(g.snapshot().get("turn", -1) == 1 and g.snapshot().get("action_points", -1) == 2 and g.snapshot().get("movement_points", -1) == 2, "capture costs neither budget")
-	if not apply(g, {"type": "move", "to": [4, 3]}, "move after capture"): return
+	check(g.snapshot().get("turn", -1) == 1 and g.snapshot().get("action_points", -1) == 1, "capture costs no AP after movement")
 	if not apply(g, {"type": "release", "target": [6, 3]}, "same-turn release"): return
-	check(g.snapshot().get("action_points", -1) == 1 and g.snapshot().get("movement_points", -1) == 1, "release spends AP not MP")
-	if not apply(g, {"type": "move", "to": [5, 3]}, "move after release"): return
-	check(g.snapshot().get("turn", -1) == 1 and g.snapshot().get("movement_points", -1) == 0 and g.snapshot().get("action_points", -1) == 1, "four steps and one AP interleave in one turn")
-	reject(g, {"type": "move", "to": [6, 3]}, "exhausted MP")
+	check(g.snapshot().get("turn", -1) == 1 and g.snapshot().get("action_points", -1) == 0, "two moves and a release share three AP without ending turn")
+	reject(g, {"type": "move", "to": [4, 3]}, "exhausted AP prevents movement")
 
 func test_unlimited_occurrences() -> void:
 	var b := F.board()
@@ -96,7 +93,7 @@ func test_unlimited_occurrences() -> void:
 		if not apply(g, {"type": "capture", "source": id}, "unlimited capture " + id): return
 	var s: Dictionary = g.snapshot()
 	check(s.get("cancelled", []) == ["a", "b", "c", "d"] and s.get("stored", {}).get("source") == "d", "four distinct occurrences captured")
-	check(s.get("player", {}).get("hp") == 17 and s.get("action_points") == 2 and s.get("movement_points") == 4, "three replacements cost only ability backlash")
+	check(s.get("player", {}).get("hp") == 17 and s.get("action_points") == 3, "three replacements cost only ability backlash")
 	reject(g, {"type": "capture", "source": "a"}, "same occurrence cannot be captured twice")
 	if not apply(g, {"type": "end_turn"}, "refresh occurrences"): return
 	check(g.snapshot().get("cancelled", []).is_empty(), "new turn clears captured occurrences")
@@ -224,6 +221,7 @@ func test_range_sight_and_discard() -> void:
 
 func test_action_budget() -> void:
 	var b := F.board()
+	b.rules.actions = 2
 	b.player.pos = [3, 3]
 	b.enemies = [F.foe("a", [4, 3], [1, 0], F.ability("bolt", 2, 1)), F.foe("b", [3, 4], [0, 1], F.ability("bolt", 2, 1)), F.foe("c", [2, 3], [-1, 0], F.ability("bolt", 2, 1))]
 	var g = model(b)
@@ -231,8 +229,9 @@ func test_action_budget() -> void:
 		if not apply(g, {"type": "capture", "source": entry[0]}, "capture for AP"): return
 		if not apply(g, {"type": "release", "target": entry[1]}, "spend AP"): return
 	if not apply(g, {"type": "capture", "source": "c"}, "capture remains free at zero AP"): return
-	check(g.snapshot().get("action_points") == 0 and g.snapshot().get("movement_points") == 4, "two releases exhaust AP but not MP")
+	check(g.snapshot().get("action_points") == 0 and g.snapshot().get("turn") == 1, "two releases exhaust AP without advancing turn")
 	reject(g, {"type": "release", "target": [2, 3]}, "release with zero AP")
+	reject(g, {"type": "move", "to": [3, 2]}, "move with zero AP")
 
 func test_area_release_and_moving_footprint() -> void:
 	var b := F.board()
@@ -295,7 +294,7 @@ func test_end_turn_intentions_and_reset() -> void:
 	check(first.snapshot().get("player", {}).get("hp") == 20, "fixture and snapshot are deep copied")
 	if not apply(first, {"type": "move", "to": [1, 2]}, "move before refresh"): return
 	if not apply(first, {"type": "end_turn"}, "explicit end turn"): return
-	check(first.snapshot().get("turn") == 2 and first.snapshot().get("action_points") == 2 and first.snapshot().get("movement_points") == 4, "end turn refreshes both budgets")
+	check(first.snapshot().get("turn") == 2 and first.snapshot().get("action_points") == 3 and not first.snapshot().has("movement_points"), "end turn refreshes shared AP")
 	check(second.snapshot() == second_initial, "runs are isolated")
 	first.reset()
 	check(first.snapshot() == second_initial, "reset restores exact independent initial state")
@@ -483,6 +482,114 @@ func test_combat_objective() -> void:
 	if not apply(g, {"type": "capture", "source": "new"}, "lethal replacement priority"): return
 	check(g.snapshot().get("status") == "lost" and not types(g.snapshot()).has("win"), "player death takes priority over combat victory")
 
+func wide_shove() -> Dictionary:
+	var skill := F.ability("shove", 2, 1, 0, true)
+	skill.width = 3
+	return skill
+
+func same_cells(actual: Array, expected: Array) -> bool:
+	if actual.size() != expected.size(): return false
+	for cell in expected:
+		if not actual.has(cell): return false
+	return true
+
+func test_wide_intention_geometry() -> void:
+	var b := F.board()
+	b.player.pos = [0, 0]
+	for direction in [[1, 0], [-1, 0], [0, 1], [0, -1]]:
+		b.enemies = [F.foe("wide", [3, 3], direction, wide_shove())]
+		var g = model(b)
+		var cells: Array = intention(g.snapshot(), "wide").get("cells", [])
+		var expected := []
+		var lateral := [-direction[1], direction[0]]
+		for depth in [1, 2]:
+			for offset in [-1, 0, 1]:
+				expected.append([3 + direction[0] * depth + lateral[0] * offset, 3 + direction[1] * depth + lateral[1] * offset])
+		check(same_cells(cells, expected), "wide front covers exactly six forward cells for %s" % [direction])
+		check(intention(model(b).snapshot(), "wide").get("cells", []) == cells, "wide front order is deterministic for %s" % [direction])
+	b.enemies = [F.foe("narrow", [3, 3], [1, 0], F.ability("shove", 2, 1, 0, true))]
+	check(intention(model(b).snapshot(), "narrow").get("cells") == [[4, 3], [5, 3]], "missing width keeps narrow shove unchanged")
+	b.enemies = [F.foe("wide", [3, 3], [1, 0], wide_shove())]
+	b.walls = [[4, 2]]
+	check(same_cells(intention(model(b).snapshot(), "wide").get("cells", []), [[4, 3], [5, 3], [4, 4], [5, 4]]), "wall blocks only its lane and cells behind it")
+	b.walls = []
+	b.enemies = [F.foe("wide", [0, 0], [1, 0], wide_shove())]
+	b.player.pos = [7, 6]
+	check(same_cells(intention(model(b).snapshot(), "wide").get("cells", []), [[1, 0], [2, 0], [1, 1], [2, 1]]), "wide front clips cleanly at board edge")
+
+func test_wide_capture_and_release() -> void:
+	var b := F.board()
+	b.player.pos = [3, 3]
+	b.enemies = [
+		F.foe("safe", [3, 2], [0, -1], F.ability("bolt", 2, 1)),
+		F.foe("wide", [5, 2], [-1, 0], wide_shove()),
+	]
+	var g = model(b)
+	check(intention(g.snapshot(), "wide").get("cells", []).has([3, 3]), "wide-only lateral cell is announced")
+	reject(g, {"type": "capture", "source": "safe"}, "wide lateral threat blocks other capture")
+	b.enemies[1].ability.erase("width")
+	g = model(b)
+	if not apply(g, {"type": "capture", "source": "safe"}, "same position safe from narrow attack"): return
+
+	b.enemies = [
+		F.foe("wide", [3, 2], [1, 0], wide_shove()),
+		F.foe("upper", [4, 2], [0, -1], F.ability("bolt", 1, 1)),
+		F.foe("lower", [4, 4], [0, 1], F.ability("bolt", 1, 1)),
+	]
+	g = model(b)
+	if not apply(g, {"type": "capture", "source": "wide"}, "capture wide from source-row flank"): return
+	check(g.snapshot().get("stored", {}).get("ability", {}).get("width") == 3, "stored ability retains width")
+	var held: Array = g.snapshot().get("backlash_footprint", {}).get("cells", [])
+	check(same_cells(held, [[3, 3], [4, 2], [5, 2], [4, 3], [5, 3], [4, 4], [5, 4]]), "held backlash includes player once and complete forward front")
+	if not apply(g, {"type": "release", "target": [5, 3]}, "release borrowed wide shove"): return
+	var s: Dictionary = g.snapshot()
+	var rays := events(s, "ray")
+	check(not rays.is_empty() and same_cells(rays[0].get("cells", []), [[4, 2], [5, 2], [4, 3], [5, 3], [4, 4], [5, 4]]), "released borrowed shove retains full width and depth")
+	check(enemy(s, "upper").get("hp") == 9 and enemy(s, "lower").get("hp") == 9, "wide release damages both lateral enemies once")
+	var displacements := events(s, "displace")
+	check(displacements.size() == 2, "wide release pushes each hit actor once")
+
+	var blocked := F.board()
+	blocked.player.pos = [3, 3]
+	blocked.walls = [[4, 2]]
+	blocked.enemies = [F.foe("wide", [3, 2], [1, 0], wide_shove())]
+	g = model(blocked)
+	if not apply(g, {"type": "capture", "source": "wide"}, "capture wide for blocked release"): return
+	if not apply(g, {"type": "release", "target": [5, 3]}, "release wide with one blocked lane"): return
+	rays = events(g.snapshot(), "ray")
+	check(not rays.is_empty() and same_cells(rays[0].get("cells", []), [[4, 3], [5, 3], [4, 4], [5, 4]]), "wide release blocks only the obstructed lane")
+
+	b.enemies.append(F.foe("replacement", [3, 4], [0, 1], F.ability("bolt", 1, 1)))
+	g = model(b)
+	if not apply(g, {"type": "capture", "source": "wide"}, "hold wide before replacement"): return
+	if not apply(g, {"type": "capture", "source": "replacement"}, "replace held wide"): return
+	s = g.snapshot()
+	check(s.get("player", {}).get("hp") == 19 and enemy(s, "upper").get("hp") == 9 and enemy(s, "lower").get("hp") == 9, "wide backlash hits player once and both side lanes")
+	check(s.get("stored", {}).get("source") == "replacement" and events(s, "displace").size() == 2, "backlash pushes lateral actors once and acquires safe replacement")
+
+func test_wide_ranger_goal() -> void:
+	var b := F.board()
+	b.player.pos = [1, 3]
+	b.enemies = [mobile("ranger", [3, 2], [1, 0], wide_shove(), "keep_max_range")]
+	var g = model(b)
+	if not apply(g, {"type": "end_turn"}, "wide ranger usable lateral firing position"): return
+	check(enemy(g.snapshot(), "ranger").get("pos") == [3, 2] and intention(g.snapshot(), "ranger").get("cells", []).has([1, 3]), "range policy recognizes usable wide lateral cell")
+
+func test_wide_release_near_endpoint() -> void:
+	var b := F.board()
+	b.player.pos = [3, 3]
+	b.enemies = [
+		F.foe("wide", [3, 2], [1, 0], wide_shove()),
+		F.foe("behind", [5, 3], [1, 0], F.ability("bolt", 1, 1)),
+	]
+	var g = model(b)
+	if not apply(g, {"type": "capture", "source": "wide"}, "capture wide for near endpoint"): return
+	if not apply(g, {"type": "release", "target": [4, 3]}, "release wide at near endpoint"): return
+	var s: Dictionary = g.snapshot()
+	var rays := events(s, "ray")
+	check(not rays.is_empty() and same_cells(rays[0].get("cells", []), [[4, 2], [4, 3], [4, 4]]), "wide release stops all lanes at selected near endpoint")
+	check(enemy(s, "behind").get("hp") == 10 and enemy(s, "behind").get("pos") == [5, 3], "wide release cannot damage or push beyond endpoint")
+
 func _initialize() -> void:
 	if OS.get_cmdline_user_args().has("--focus=budget"):
 		test_budget_boundary()
@@ -497,6 +604,14 @@ func _initialize() -> void:
 		test_max_range_and_occupancy()
 		test_capture_moves_and_source_geometry()
 		test_combat_objective()
+	elif OS.get_cmdline_user_args().has("--focus=shared-ap-wide-shove"):
+		test_budget_boundary()
+		test_interleaving()
+		test_action_budget()
+		test_wide_intention_geometry()
+		test_wide_capture_and_release()
+		test_wide_ranger_goal()
+		test_wide_release_near_endpoint()
 	else:
 		test_budget_boundary()
 		test_interleaving()
@@ -517,5 +632,9 @@ func _initialize() -> void:
 		test_max_range_and_occupancy()
 		test_capture_moves_and_source_geometry()
 		test_combat_objective()
+		test_wide_intention_geometry()
+		test_wide_capture_and_release()
+		test_wide_ranger_goal()
+		test_wide_release_near_endpoint()
 	print("Checks: ", checks, "; failures: ", failures.size())
 	quit(0 if failures.is_empty() else 1)

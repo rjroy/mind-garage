@@ -1,18 +1,18 @@
 extends RefCounted
 ## Controlled UI integration inputs. No dependence on production tuning.
 
-static func ability(kind: String, damage: int = 1, reach: int = 3, radius: int = 0, push: bool = false) -> Dictionary:
-	return {"kind": kind, "damage": damage, "range": reach, "radius": radius, "push": push}
+static func ability(kind: String, damage: int = 1, reach: int = 3, radius: int = 0, push: bool = false, width: int = 1) -> Dictionary:
+	return {"kind": kind, "damage": damage, "range": reach, "radius": radius, "push": push, "width": width}
 
 static func enemy(id: String, pos: Array, skill: Dictionary, hp: int = 12, direction: Array = [0, -1]) -> Dictionary:
 	return {"id": id, "pos": pos, "hp": hp, "kind": skill.kind, "dir": direction, "ability": skill}
 
-static func encounter(enemies: Array, movement: int = 4, health: int = 20, capture_range: int = 1) -> Dictionary:
+static func encounter(enemies: Array, actions: int = 4, health: int = 20, capture_range: int = 1) -> Dictionary:
 	return {
 		"objective": "escape",
 		"width": 7, "height": 7, "walls": [], "player": {"pos": [1, 3], "hp": health},
 		"exit": {"pos": [6, 6], "opens": 30},
-		"rules": {"actions": 2, "movement": movement, "capture_range": capture_range}, "enemies": enemies,
+		"rules": {"actions": actions, "capture_range": capture_range}, "enemies": enemies,
 	}
 
 static func two_pursuers(overlap_inspection: bool = false) -> Dictionary:
@@ -37,7 +37,7 @@ static func movement_transition() -> Dictionary:
 	], 3, 29)
 	before.objective = "defeat_all"
 	before.erase("exit")
-	before.merge({"turn": 4, "status": "playing", "action_points": 2, "movement_points": 3,
+	before.merge({"turn": 4, "status": "playing", "action_points": 3,
 		"stored": {}, "backlash_footprint": {}, "events": [],
 		"intentions": [{"source": "A", "kind": "shove", "cells": [[3, 2], [3, 3], [3, 4]]},
 			{"source": "B", "kind": "bolt", "cells": [[2, 2], [1, 2], [0, 2]]}]})
@@ -70,6 +70,16 @@ static func active_fight() -> Dictionary:
 	data.enemies[0]["movement_pattern"] = "chase_player"
 	data.enemies[1]["movement_pattern"] = "keep_max_range"
 	for foe in data.enemies: foe["movement_budget"] = 1
+	data.erase("exit")
+	return data
+
+static func wide_capture() -> Dictionary:
+	var data := encounter([
+		enemy("A", [1, 2], ability("shove", 1, 2, 0, true), 11, [0, -1]),
+		enemy("B", [3, 4], ability("shove", 2, 2, 0, true, 3), 13, [0, -1]),
+	], 3, 29, 2)
+	data.objective = "defeat_all"
+	data.player.pos = [2, 3] # B's side lane, never its narrow center column.
 	data.erase("exit")
 	return data
 

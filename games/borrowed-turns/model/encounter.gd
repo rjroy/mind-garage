@@ -16,7 +16,7 @@ func reset() -> void:
 	_state.merge({
 		"turn": 1, "status": "playing", "variant": "R2",
 		"action_points": _fixture.rules.actions,
-		"movement_points": _fixture.rules.movement, "cancelled": [], "stored": {},
+		"cancelled": [], "stored": {},
 		"intentions": [], "backlash_footprint": {}, "events": [],
 	}, true)
 	_refresh_footprints()
@@ -77,13 +77,26 @@ func _enemy(id: String) -> Dictionary:
 
 
 func _ray(origin: Array, direction: Array, length: int) -> Array:
+	return _front(origin, direction, length, 1)
+
+
+func _front(origin: Array, direction: Array, length: int, width: int) -> Array:
 	var cells := []
-	var pos := origin
-	for step in range(length):
-		pos = _add(pos, direction)
-		if not _walkable(pos):
-			break
-		cells.append(pos)
+	var blocked := {}
+	var half := int(width / 2)
+	var lateral := [-direction[1], direction[0]]
+	for depth in range(1, length + 1):
+		for offset in range(-half, half + 1):
+			if blocked.has(offset):
+				continue
+			var pos := [
+				origin[0] + direction[0] * depth + lateral[0] * offset,
+				origin[1] + direction[1] * depth + lateral[1] * offset,
+			]
+			if not _walkable(pos):
+				blocked[offset] = true
+			else:
+				cells.append(pos)
 	return cells
 
 
@@ -97,18 +110,19 @@ func _area(center: Array, radius: int) -> Array:
 	return cells
 
 
-func _target_ray(origin: Array, target: Array, reach: int) -> Array:
+func _target_ray(origin: Array, target: Array, reach: int, width: int = 1) -> Array:
 	var distance := _distance(origin, target)
 	if distance < 1 or distance > reach or (origin[0] != target[0] and origin[1] != target[1]):
 		return []
 	var direction := [signi(target[0] - origin[0]), signi(target[1] - origin[1])]
 	var cells := _ray(origin, direction, distance)
-	return cells if cells.size() == distance else []
+	return _front(origin, direction, distance, width) if cells.size() == distance else []
 
 
 func _enemy_footprint(enemy: Dictionary) -> Array:
 	var ability: Dictionary = enemy.ability
-	var cells := _ray(enemy.pos, enemy.dir, ability.range)
+	var width: int = ability.get("width", 1) if ability.kind == "shove" else 1
+	var cells := _front(enemy.pos, enemy.dir, ability.range, width)
 	if ability.kind == "burst" and not cells.is_empty():
 		return _area(cells.back(), ability.radius)
 	return cells
@@ -129,7 +143,8 @@ func _held_footprint() -> Dictionary:
 	if skill.kind == "burst":
 		return {"type": "area", "cells": _area(origin, skill.radius)}
 	var cells := [origin.duplicate()]
-	cells.append_array(_ray(origin, _state.stored.dir, skill.range))
+	var width: int = skill.get("width", 1) if skill.kind == "shove" else 1
+	cells.append_array(_front(origin, _state.stored.dir, skill.range, width))
 	return {"type": "ray", "cells": cells}
 
 
@@ -159,8 +174,8 @@ func _rejection(action: Dictionary) -> String:
 		"move":
 			if not _keys_allowed(action, ["type", "to"]) or not _cell(action.get("to")):
 				return "Move requires a destination cell."
-			if _state.movement_points <= 0:
-				return "No movement points remain."
+			if _state.action_points <= 0:
+				return "No action points remain."
 			if _distance(_state.player.pos, action.to) != 1 or not _walkable(action.to) or not _occupant(action.to).is_empty():
 				return "Destination must be a free adjacent cell."
 		"capture":
@@ -208,7 +223,7 @@ func _apply(action: Dictionary) -> void:
 		"move":
 			var previous: Array = _state.player.pos
 			_state.player.pos = action.to.duplicate()
-			_state.movement_points -= 1
+			_state.action_points -= 1
 			_event("move", {"actor": "player", "from": previous.duplicate(), "to": action.to.duplicate()})
 		"capture": _capture(action.source)
 		"release": _release(action)
@@ -252,7 +267,12 @@ func _release(action: Dictionary) -> void:
 	var ability: Dictionary = held.ability
 	var origin: Array = _state.player.pos.duplicate()
 	var center: Array = action.target if ability.kind == "burst" else origin
-	var cells: Array = _area(center, ability.radius) if ability.kind == "burst" else _target_ray(origin, action.target, ability.range)
+	var cells: Array
+	if ability.kind == "burst":
+		cells = _area(center, ability.radius)
+	else:
+		var width: int = ability.get("width", 1) if ability.kind == "shove" else 1
+		cells = _target_ray(origin, action.target, ability.range, width)
 	_event("release", {"source": held.source, "kind": ability.kind, "target": action.target.duplicate()})
 	_resolve_ability("player", ability, cells, center, false)
 
@@ -291,7 +311,6 @@ func _end_turn() -> void:
 		enemy.dir = _aim(enemy.pos)
 	_state.turn += 1
 	_state.action_points = _state.rules.actions
-	_state.movement_points = _state.rules.movement
 	_state.cancelled = []
 	_event("turn", {"number": _state.turn})
 	_check_objective()

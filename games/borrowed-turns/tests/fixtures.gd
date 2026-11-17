@@ -12,6 +12,6 @@ static func board() -> Dictionary:
 		"width": 8, "height": 7, "walls": [],
 		"player": {"pos": [1, 3], "hp": 20},
 		"exit": {"pos": [7, 6], "opens": 20},
-		"rules": {"actions": 2, "movement": 4, "capture_range": 1},
+		"rules": {"actions": 3, "capture_range": 1},
 		"enemies": [foe("a", [2, 3], [1, 0], ability("bolt", 3, 1))],
 	}

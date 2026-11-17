@@ -78,28 +78,51 @@ func image(name: String) -> void:
 func preview_matches() -> bool:
 	return game.preview_details.text == P.preview_text(game.prediction)
 
+func ap_only(text: String) -> bool:
+	var legacy := RegEx.new()
+	legacy.compile("(?i)\\bMP\\b|movement points")
+	return legacy.search(text) == null
+
 func _test_interleave() -> void:
-	await load_fixture(F.encounter([F.enemy("a", [4, 3], F.ability("bolt", 1, 4))]))
+	await load_fixture(F.encounter([F.enemy("a", [4, 3], F.ability("bolt", 1, 4))], 3))
 	await move([2, 3])
 	await move([3, 3])
 	await capture([4, 3])
-	check(game.state.turn == 1 and game.state.action_points == 2 and game.state.movement_points == 2, "free capture after two moves keeps independent budgets")
-	await move([3, 2])
-	select("release", [4, 2])
+	check(game.state.turn == 1 and game.state.action_points == 1,
+		"two moves spend two of three shared AP; capture remains free")
+	select("release", [4, 3])
 	check(not game.prediction.is_empty(), "same-turn release is legal")
+	check(ap_only(game.instruction.text) and ap_only(game.consequence.text)
+		and game.consequence.text.contains("1 AP"), "release explains its AP cost and remaining AP without MP")
 	await image("r2-interleave-release.png")
 	await commit()
-	await move([3, 1])
-	check(game.state.action_points == 1 and game.state.movement_points == 0 and game.state.turn == 1, "human 2AP4MP example leaves 1AP0MP without ending turn")
+	check(game.state.action_points == 0 and game.state.turn == 1 and not game.state.has("movement_points")
+		and not game.state.rules.has("movement"), "two moves plus one release exhaust only shared AP without auto-ending")
+	check(game.action_buttons.move.disabled and game.action_buttons.release.disabled
+		and not game.action_buttons.capture.disabled and not game.action_buttons.end_turn.disabled,
+		"zero AP blocks paid actions, not free capture or explicit End turn")
+	var exhausted: Dictionary = game.model.snapshot()
+	var exhausted_history: Array = game.history_lines.duplicate()
+	game._choose_action("move")
+	check(ap_only(game.instruction.text) and game.instruction.text.contains("1 AP"),
+		"move help names one shared AP per tile, not a separate movement resource")
+	click([3, 2])
+	check(game.confirm_button.disabled and game.prediction.is_empty(), "over-budget movement cannot prepare a stale legal preview")
+	game._confirm()
+	check(game.model.snapshot() == exhausted and game.history_lines == exhausted_history,
+		"over-budget confirmation is atomic and does not advance the turn")
+	game._cancel()
 	check(game.state.player.hp == 20, "no premature enemy resolution between commands")
 	select("end_turn")
 	check(preview_matches(), "End turn ordered preview is current")
+	check(ap_only(game.consequence.text) and ap_only(game.preview_details.text),
+		"explicit End turn preview/refresh wording contains AP only")
 	var before: Dictionary = game.state.duplicate(true)
 	press(game.cancel_button)
 	check(game.model.snapshot() == before, "End turn cancellation changes nothing")
 	select("end_turn")
 	await commit()
-	check(game.state.turn == 2 and game.state.action_points == 2 and game.state.movement_points == 4, "explicit End turn refreshes model budgets")
+	check(game.state.turn == 2 and game.state.action_points == 3, "explicit End turn refreshes the test-owned shared AP budget")
 
 func _test_replacements() -> void:
 	var enemies := [
@@ -114,8 +137,8 @@ func _test_replacements() -> void:
 	await capture([1, 2])
 	await capture([2, 3])
 	await capture([1, 4])
-	check(game.state.turn == 1 and game.state.action_points == 0 and game.state.movement_points == 0, "more than two free captures work at zero AP and MP")
-	check(not game.action_buttons.capture.disabled and not game.action_buttons.end_turn.disabled, "capture and End turn remain available at zero budgets")
+	check(game.state.turn == 1 and game.state.action_points == 0, "more than two safe free captures work at zero AP")
+	check(not game.action_buttons.capture.disabled and not game.action_buttons.end_turn.disabled, "capture and End turn remain available at zero AP")
 	select("capture", [0, 3])
 	check(game.prediction.stored.source == "d" and game.prediction.player.hp < game.state.player.hp, "area replacement previews self damage and acquisition")
 	var enemy_damage := false
@@ -241,28 +264,28 @@ func _test_normal_shove() -> void:
 	check(game.state.turn == 1 and game.state.stored.is_empty() and game.history_lines.size() == 1, "restart isolates storage, budgets and history")
 
 func _test_shadow_integration() -> void:
-	var reference: Array = []
-	var reference_history: Array[String] = []
-	for view in ["plain", "paper", "stage"]:
-		game.set_presentation_mode(view)
-		check(game.presentation_mode == view, "explicit presentation selection accepts " + view)
-		await load_fixture(F.shadow_single())
-		var observed: Array = []
-		for step in [["capture", [2, 3]], ["end_turn", []], ["release", [2, 3]]]:
-			select(step[0], step[1])
-			observed.append(game.prediction.duplicate(true))
-			observed.append(game.board.effect_footprints().duplicate(true))
-			await commit()
-			observed.append(game.state.duplicate(true))
-			if step[0] == "end_turn":
-				var frame: Dictionary = game.shadow.frame()
-				check(not frame.held.is_empty() and frame.announcements.size() == 1, view + ": fresh source announcement coexists with old held shadow")
-		if view == "plain":
-			reference = observed
-			reference_history = game.history_lines.duplicate()
-		else:
-			check(observed == reference and game.history_lines == reference_history, view + ": actual controls yield baseline-identical assessments, model state, events and history")
-	game.set_presentation_mode("paper")
+	await load_fixture(F.shadow_single())
+	for step in [["capture", [2, 3]], ["end_turn", []], ["release", [2, 3]]]:
+		select(step[0], step[1])
+		await commit()
+		if step[0] == "end_turn":
+			var frame: Dictionary = game.shadow.frame()
+			check(not frame.held.is_empty() and frame.announcements.size() == 1, "fresh source announcement coexists with old held shadow")
+			var before_plans: Dictionary = game.model.snapshot()
+			press(game._stage_plans)
+			game.event_tabs.current_tab = game.event_tabs.get_tab_idx_from_control(game.details_scroll)
+			await process_frame
+			check(game.details_scroll.is_visible_in_tree() and game.stage_held_details.text == P.stored_text(before_plans),
+				"Stage Plans exposes held details and current intentions")
+			var plan: Button
+			for child in game.intention_list.get_children():
+				if child is Button: plan = child; break
+			check(plan != null, "Stage Plans exposes the current source control")
+			if plan:
+				press(plan)
+				check(game.source == "a" and game.model.snapshot() == before_plans,
+					"Stage intention control inspects the real source without advancing gameplay")
+			press(game._stage_plans)
 	await load_fixture(F.shadow_single())
 	var before: Dictionary = game.model.snapshot()
 	select("capture", [4, 4])
@@ -272,22 +295,15 @@ func _test_shadow_integration() -> void:
 	check(game.shadow.frame().cues.is_empty() and game.model.snapshot() == before, "canceling capture preview creates no transfer")
 	select("capture", [2, 3])
 	press(game.confirm_button)
-	check(game.resolving and game.shadow.frame().busy, "paper capture starts finite feedback")
+	check(game.resolving and game.shadow.frame().busy, "capture starts finite feedback")
 	var once: Dictionary = game.model.snapshot()
 	var lines: int = game.history_lines.size()
 	game._confirm()
 	check(game.model.snapshot() == once and game.history_lines.size() == lines, "repeated confirmation during feedback cannot commit twice")
-	game.paper_switch.set_pressed(false)
-	check(game.presentation_mode == "plain" and not game.resolving and not game.shadow.frame().busy, "view switch cancels transfer without retaining busy work")
-	check(game.model.snapshot() == once and game.history_lines.size() == lines, "view change preserves progress, budgets and history")
-	game.paper_switch.set_pressed(true)
-	check(game.shadow.frame().held == once.stored and game.shadow.frame().cues.is_empty(), "returning to paper restores settled ownership without replay")
+	await settle()
+	check(game.shadow.frame().held == once.stored, "settled feedback preserves ownership")
 	select("release", [2, 3])
-	var selected_command: Dictionary = game.command.duplicate(true)
-	var selected_prediction: Dictionary = game.prediction.duplicate(true)
-	game.paper_switch.set_pressed(false)
-	game.paper_switch.set_pressed(true)
-	check(game.command == selected_command and game.prediction == selected_prediction and preview_matches(), "view switches preserve targeting and synchronized prediction")
+	check(preview_matches(), "release targeting retains synchronized prediction")
 	press(game.cancel_button)
 	await load_fixture(F.shadow_single())
 	select("capture", [2, 3])
@@ -323,7 +339,7 @@ func _test_shadow_integration() -> void:
 		capture_view.size = Vector2i(1280, 800)
 
 func _stage_setup() -> bool:
-	for method in ["set_stage_mode", "cell_polygon", "piece_appearance", "figure_layout"]:
+	for method in ["cell_polygon", "piece_appearance", "figure_layout"]:
 		if not game.board.has_method(method):
 			printerr("SETUP REQUIRED: loadable shared stage board seams before RED; missing " + method + ". See tests/stage_projection_run.gd and stage integration brief.")
 			return false
@@ -335,18 +351,20 @@ func _stage_resize(viewport_size: Vector2i) -> void:
 	await process_frame
 	await process_frame
 
-func _stage_gui_click(local_point: Vector2) -> void:
+func _stage_gui_click(local_point: Vector2, floor_only: bool = false) -> void:
 	# Through the actual viewport GUI path, so decorative layers cannot silently
 	# eat clicks. This is still injected input, not physical OS input evidence.
 	var event := InputEventMouseButton.new()
 	event.button_index = MOUSE_BUTTON_LEFT
 	event.pressed = true
+	event.alt_pressed = floor_only
 	event.position = game.board.get_global_transform() * local_point
 	game.get_viewport().push_input(event)
 	await process_frame
 	event = InputEventMouseButton.new()
 	event.button_index = MOUSE_BUTTON_LEFT
 	event.pressed = false
+	event.alt_pressed = floor_only
 	event.position = game.board.get_global_transform() * local_point
 	game.get_viewport().push_input(event)
 	await process_frame
@@ -362,78 +380,7 @@ func _stage_controls_fit(label: String) -> void:
 		var bounds: Rect2 = game.action_buttons[action].get_global_rect()
 		check(game.action_buttons[action].is_visible_in_tree() and viewport_rect.encloses(bounds), label + ": operation remains visible and in bounds: " + action)
 
-func _test_stage_return_panels() -> void:
-	# STAGE-C01: leaving a TabContainer must restore the rail's actual controls,
-	# not retain the inactive Plans tab's hidden flag. Active Plans is a distinct
-	# control case. Held storage plus a fresh announcement exercises both panels.
-	await _stage_resize(Vector2i(1024, 720))
-	game.set_presentation_mode("paper")
-	await load_fixture(F.shadow_single())
-	await capture([2, 3])
-	select("end_turn")
-	await commit()
-	check(not game.state.stored.is_empty() and game.state.intentions.size() == 1,
-		"STAGE-C01 fixture has held details and a fresh enemy intention")
-	for baseline in ["plain", "paper"]:
-		for panel in ["preview", "events", "plans"]:
-			game.set_presentation_mode("stage")
-			press(game._stage_plans)
-			var tab: Control = game.preview_details if panel == "preview" else (game.history.get_parent() if panel == "events" else game.details_scroll)
-			var tab_index: int = game.event_tabs.get_tab_idx_from_control(tab)
-			check(tab_index >= 0, "STAGE-C01 requested stage tab exists: " + panel)
-			if tab_index < 0: continue
-			game.event_tabs.current_tab = tab_index
-			await process_frame
-			await process_frame
-			check(game.details_scroll.is_visible_in_tree() == (panel == "plans"),
-				"STAGE-C01 tab visibility precondition: " + panel)
-			var before: Dictionary = game.model.snapshot()
-			var history_before: Array[String] = game.history_lines.duplicate()
-			game.set_presentation_mode(baseline)
-			await process_frame
-			await process_frame
-			var label: String = "STAGE-C01 stage/" + panel + " -> " + baseline
-			var viewport_bounds: Rect2 = game.get_viewport_rect()
-			var rail_bounds: Rect2 = game.rail.get_global_rect()
-			var details_bounds: Rect2 = game.details_scroll.get_global_rect()
-			check(game.details_scroll.get_parent() == game.rail and game.details_scroll.is_visible_in_tree(),
-				label + ": details return as a visible rail panel, not a hidden tab")
-			check(details_bounds.size.x > 0 and details_bounds.size.y > 0 and rail_bounds.encloses(details_bounds) and viewport_bounds.encloses(details_bounds),
-				label + ": restored details have nonzero in-viewport rail allocation")
-			check(game.stored.is_visible_in_tree() and game.stored.text == P.stored_text(before),
-				label + ": complete held-ability details are visible, not the compact stage summary")
-			check(game.intention_list.is_visible_in_tree(), label + ": enemy intention controls return visibly")
-			game.details_scroll.ensure_control_visible(game.stored)
-			await process_frame
-			await process_frame
-			var stored_bounds: Rect2 = game.stored.get_global_rect()
-			var line_height: float = game.stored.get_theme_font("font").get_height(game.stored.get_theme_font_size("font_size"))
-			check(stored_bounds.size.x > 0 and details_bounds.intersection(stored_bounds).size.y >= line_height,
-				label + ": stored text occupies readable space inside the scroll viewport")
-			var plan_button: Button
-			for child in game.intention_list.get_children():
-				if child is Button:
-					plan_button = child
-					break
-			check(plan_button != null, label + ": fresh model intention has a real source control")
-			if plan_button == null: continue
-			game.details_scroll.ensure_control_visible(plan_button)
-			await process_frame
-			await process_frame
-			var button_bounds := plan_button.get_global_rect()
-			check(plan_button.is_visible_in_tree() and details_bounds.encloses(button_bounds) and viewport_bounds.encloses(button_bounds)
-				and button_bounds.size.y >= plan_button.get_combined_minimum_size().y,
-				label + ": intention row can be scrolled fully into usable viewport space")
-			press(plan_button)
-			check(game.source == "a" and game.selected == [2, 3],
-				label + ": restored intention control selects its actual source")
-			check(game.model.snapshot() == before and game.history_lines == history_before,
-				label + ": restoring and using panels does not advance gameplay or rewrite history")
-
 func _test_stage_integration() -> void:
-	game.set_presentation_mode("stage")
-	check(game.presentation_mode == "stage", "optional stage presentation is selectable")
-	if game.presentation_mode != "stage": return
 	for viewport_size in [Vector2i(1024, 720), Vector2i(1600, 900)]:
 		await _stage_resize(viewport_size)
 		for dimensions in [Vector2i(4, 3), Vector2i(9, 5)]:
@@ -447,7 +394,18 @@ func _test_stage_integration() -> void:
 			_stage_controls_fit("stage %s / %s" % [viewport_size, dimensions])
 			for cell in [[0, 0], [dimensions.x - 1, 0], [0, dimensions.y - 1], [dimensions.x - 1, dimensions.y - 1]]:
 				var center: Vector2 = game.board.cell_center(cell)
-				await _stage_gui_click(center)
+				# This checks floor mapping, including under opaque standee art.
+				# Ordinary clicks elsewhere retain the real actor/tab priority.
+				await _stage_gui_click(center, true)
+				if not (game.selected == cell and game.model.snapshot() == before):
+					print("DIAG stage corner: ", {"requested_viewport": viewport_size, "viewport": game.get_viewport_rect(),
+						"dimensions": dimensions, "cell": cell, "selected": game.selected,
+						"center_local": center, "center_global": game.board.get_global_transform() * center,
+						"floor_cell": game.board._from_pixel(center), "actor": game.board.actor_at(center),
+						"picked_cell": game.board.pick_cell(center), "input_cell": game.board._input_cell(center),
+						"floor_only_cell": game.board._input_cell(center, true),
+						"board_bounds": game.board.get_global_rect(), "sheet_visible": game._stage_sheet.visible,
+						"state_unchanged": game.model.snapshot() == before})
 				check(game.selected == cell and game.model.snapshot() == before, "actual viewport targeting reaches every corner without spending a turn")
 			var selected_before: Array = game.selected.duplicate()
 			await _stage_gui_click(Vector2(1, 1))
@@ -474,13 +432,7 @@ func _test_stage_integration() -> void:
 			press(game.confirm_button)
 			check(game.resolving, "stage command starts existing finite feedback")
 			check(game.board.piece_appearance([1, 1]) == paper_piece, "capture outcomes do not change the paper field")
-			var committed: Dictionary = game.model.snapshot()
-			var committed_history: Array[String] = game.history_lines.duplicate()
-			game.set_presentation_mode("plain")
-			check(not game.resolving and not game.shadow.frame().busy, "leaving stage during feedback cancels stale visual work")
-			check(game.model.snapshot() == committed and game.history_lines == committed_history, "leaving stage preserves committed outcomes and history")
-			game.set_presentation_mode("stage")
-			check(game.shadow.frame().held == committed.stored and game.shadow.frame().cues.is_empty(), "returning to stage restores ownership without replay")
+			await settle()
 			select("end_turn")
 			press(game.confirm_button)
 			check(game.resolving and game.board.piece_appearance([1, 1]) == paper_piece, "new-turn feedback preserves the same visual paper seed")
@@ -503,8 +455,6 @@ func _test_stage_integration() -> void:
 		await image("stage-%d-shove-preview.png" % viewport_size.x)
 		await commit()
 		await image("stage-%d-shove-held.png" % viewport_size.x)
-	await _test_stage_return_panels()
-	game.set_presentation_mode("paper")
 	await _stage_resize(Vector2i(1280, 800))
 
 func _two_pursuers_setup() -> bool:
@@ -581,9 +531,12 @@ func _standee_body_point(id: String) -> Vector2:
 
 func _test_two_pursuers_startup() -> void:
 	_check_default_puppet_pack()
-	check(game.encounter_id == "two-pursuers" and game.presentation_mode == "stage",
+	check(game.encounter_id == "two-pursuers",
 		"actual command-line encounter and presentation select the normal playable scene")
 	check(game.state.get("objective", "") == "defeat_all", "normal fight objective is explicitly defeat all opponents")
+	check(game.state.rules.actions == 3 and game.state.action_points == 3
+		and not game.state.has("movement_points") and not game.state.rules.has("movement"),
+		"actual candidate starts with three shared AP and no player MP schema")
 	var player: Array = game.state.player.pos
 	check(player == [0, int(game.state.height / 2.0)], "actual fight starts at the left edge midpoint")
 	var corners: Array = []
@@ -591,6 +544,14 @@ func _test_two_pursuers_startup() -> void:
 	for enemy in game.state.enemies:
 		corners.append(enemy.pos)
 		patterns.append(enemy.get("movement_pattern", ""))
+		check(enemy.ability.get("width", 1) == (3 if enemy.id == "B" else 1),
+			"actual B uses the three-wide shove while A remains narrow")
+	for intent in game.state.intentions:
+		if intent.source == "B":
+			check([game.state.width - 2, game.state.height - 2] in intent.cells
+				and [game.state.width - 2, game.state.height - 1] in intent.cells
+				and [game.state.width - 1, game.state.height - 2] not in intent.cells,
+				"actual corner B warning includes its in-bounds side lane, not origin-side cells")
 	check(corners.size() == 2 and [game.state.width - 1, 0] in corners
 		and [game.state.width - 1, game.state.height - 1] in corners,
 		"actual opponents start at the opposite edge's two corners")
@@ -602,7 +563,7 @@ func _test_two_pursuers_startup() -> void:
 	check(game.board.standee_layout().size() == 3, "command-line entry loads all three approved standee actors")
 
 func _test_two_pursuers_integration() -> void:
-	check(game.encounter_id == "two-pursuers" and game.presentation_mode == "stage",
+	check(game.encounter_id == "two-pursuers",
 		"normal entry opens the active fight and accepted Stage without buried choices")
 	if game.encounter_id == "two-pursuers":
 		_test_two_pursuers_startup()
@@ -613,7 +574,6 @@ func _test_two_pursuers_integration() -> void:
 		await process_frame
 	check(game.encounter_id == "escape" and game.fixture == Production.DATA,
 		"explicit escape comparison retains its authored source fixture")
-	game.set_presentation_mode("stage")
 	await _stage_resize(Vector2i(1024, 720))
 	var original: Dictionary = game.model.snapshot()
 	await _choose_encounter_ui("two-pursuers")
@@ -702,16 +662,7 @@ func _test_two_pursuers_integration() -> void:
 				id + ": capture removes only that source announcement; the other remains authoritative")
 			await image("dual-layer-%d-%s-held.png" % [viewport_size.x, id.to_lower()])
 			var committed: Dictionary = game.state.duplicate(true)
-			var lines: Array[String] = game.history_lines.duplicate()
 			select("end_turn")
-			var prepared: Dictionary = game.prediction.duplicate(true)
-			var submitted: Dictionary = game.command.duplicate(true)
-			for view in ["plain", "paper", "stage"]:
-				game.set_presentation_mode(view)
-				await process_frame
-				check(game.encounter_id == "two-pursuers" and game.state == committed
-					and game.history_lines == lines and game.command == submitted and game.prediction == prepared,
-					view + ": view changes preserve selected encounter, command, prediction and progress")
 			await commit()
 			check(game.state.turn > committed.turn and not game.state.stored.is_empty(),
 				"real End turn continues the encounter while retaining the old held occurrence")
@@ -775,10 +726,9 @@ func _test_two_pursuers_integration() -> void:
 	await process_frame
 	check(game.encounter_id == "escape" and game.fixture == Production.DATA,
 		"original content remains available unchanged through the real chooser")
-	game.set_presentation_mode("paper")
 
 func _test_active_opponents() -> void:
-	check(game.encounter_id == "two-pursuers" and game.presentation_mode == "stage",
+	check(game.encounter_id == "two-pursuers",
 		"normal entry is the active Stage fight, not the retained escape comparison")
 	if game.encounter_id != "two-pursuers":
 		await _choose_encounter_ui("two-pursuers")
@@ -786,7 +736,6 @@ func _test_active_opponents() -> void:
 			game.encounter_dialog.confirmed.emit()
 			game.encounter_dialog.hide()
 		await process_frame
-	game.set_presentation_mode("stage")
 	_test_two_pursuers_startup()
 	# Formatter inputs are explicit authored facts. Missing exit is not the
 	# rule selector, and an irreversible failed replacement is not rejection.
@@ -871,15 +820,7 @@ func _test_active_opponents() -> void:
 	# Cancellation uses the same generation/reset path, not a movement clock.
 	select("end_turn")
 	press(game.confirm_button)
-	var after: Dictionary = game.model.snapshot()
 	var generation: int = game.generation
-	game.set_presentation_mode("plain")
-	check(game.generation > generation and not game.resolving and not game.shadow.frame().busy
-		and game.model.snapshot() == after, "view change cancels finite slides while keeping committed movement")
-	game.set_presentation_mode("stage")
-	select("end_turn")
-	press(game.confirm_button)
-	generation = game.generation
 	game._apply_restart()
 	await process_frame
 	check(game.generation > generation and game.model.snapshot() == initial and not game.shadow.frame().busy
@@ -907,13 +848,13 @@ func _test_active_opponents() -> void:
 		"fresh upward attack blocks reacquisition before repositioning, without changing state/history")
 	press(game.cancel_button)
 	var flank_path := [[2, 3], [2, 4]]
-	var usable_path: bool = game.state.movement_points >= flank_path.size()
+	var usable_path: bool = game.state.action_points >= flank_path.size() + 1
 	for cell in flank_path:
 		usable_path = usable_path and cell[0] >= 0 and cell[0] < game.state.width \
 			and cell[1] >= 0 and cell[1] < game.state.height and cell not in game.state.walls
 		for enemy in game.state.enemies:
 			if enemy.pos == cell: usable_path = false
-	check(usable_path, "controlled victory fixture has enough MP and two free in-bounds flank cells")
+	check(usable_path, "controlled victory fixture reserves shared AP for two free flank cells and a release")
 	if not usable_path: return
 	for cell in flank_path: await move(cell)
 	var safe_flank := true
@@ -935,6 +876,49 @@ func _test_active_opponents() -> void:
 	check(game.state.status == "playing" and game.state.enemies.size() == 2 and not game.restart_dialog.visible,
 		"terminal replay restarts the fight without progression, unlocks or an unnecessary confirmation")
 
+func _test_shared_ap_ui() -> void:
+	_test_two_pursuers_startup()
+	check(ap_only(game.help_dialog.dialog_text), "actual controls help removes the retired player MP resource")
+	await _test_interleave()
+	check(ap_only(game.budgets.text) and ap_only(game.availability.text)
+		and ap_only(game.history.text), "HUD, availability and turn history use only shared AP")
+	select("move", [3, 2])
+	check(game.prediction.get("action_points", -1) == 2 and ap_only(game.consequence.text)
+		and game.consequence.text.contains("1 AP"), "model-authoritative move preview spends one AP")
+	game._cancel()
+	# A small zero-budget fixture protects genuinely free capture and End turn,
+	# separately from an exhausted/consumed announcement in the interleave test.
+	await load_fixture(F.encounter([F.enemy("a", [2, 3], F.ability("shove", 1, 2, 0, true))], 0))
+	await capture([2, 3])
+	check(game.state.action_points == 0 and game.state.turn == 1 and not game.state.stored.is_empty(),
+		"safe acquisition at zero AP is free and does not auto-end the turn")
+	var before: Dictionary = game.model.snapshot()
+	var history_before: Array = game.history_lines.duplicate()
+	game._choose_action("release")
+	click([2, 3])
+	check(game.confirm_button.disabled and game.prediction.is_empty(),
+		"holding an ability at zero AP cannot prepare a paid release")
+	game._confirm()
+	check(game.model.snapshot() == before and game.history_lines == history_before,
+		"over-budget release rejection preserves storage, history and state atomically")
+	game._cancel()
+	select("end_turn")
+	check(not game.confirm_button.disabled and game.model.snapshot() == before,
+		"End turn remains explicitly selectable at zero AP without auto-commit")
+	await commit()
+	check(game.state.turn == 2 and game.state.action_points == 0 and not game.state.has("movement_points"),
+		"explicit End turn respects the controlled AP budget without resurrecting MP")
+	# The actual retained escape content must also use the new one-resource schema.
+	if game.encounter_id != "escape":
+		await _choose_encounter_ui("escape")
+		if game.encounter_dialog.visible:
+			game.encounter_dialog.confirmed.emit()
+			game.encounter_dialog.hide()
+		await process_frame
+	check(game.state.get("objective", "") == "escape" and not game.state.has("movement_points")
+		and not game.state.rules.has("movement") and ap_only(game.budgets.text),
+		"explicit escape comparison also has AP-only state and HUD")
+
 func _run() -> void:
 	game = load("res://scenes/encounter.tscn").instantiate()
 	if capture_dir.is_empty(): root.add_child(game)
@@ -950,6 +934,17 @@ func _run() -> void:
 	await process_frame
 	check(game.state.variant == "R2" and game.state.status == "playing", "one R2 baseline opens immediately")
 	check(game.action_buttons.keys() == ["move", "capture", "release", "end_turn"], "only the four revised operations exist")
+	check(not game.has_method("set_presentation_mode") and not game.board.has_method("set_stage_mode"),
+		"retired presentation switching APIs are absent")
+	for picker in game.find_children("*", "OptionButton", true, false):
+		check(picker == game.encounter_picker, "only the encounter selector remains")
+	if OS.get_cmdline_user_args().has("--focus=shared-ap-wide"):
+		await _test_shared_ap_ui()
+		print("Shared AP UI: %d checks, %d failures. Controlled budget/copy joins, not pressure or enjoyment." % [checks, failures])
+		game.queue_free()
+		await process_frame
+		quit(1 if failures else 0)
+		return
 	if OS.get_cmdline_user_args().has("--focus=active-opponents"):
 		await _test_active_opponents()
 		print("Active opponents UI: %d checks, %d failures. Controlled joins, not enjoyment or visual acceptance." % [checks, failures])
@@ -1032,7 +1027,7 @@ func _run() -> void:
 	key.keycode = KEY_ENTER
 	key.pressed = true
 	game.board.gui_input.emit(key)
-	check(game.state.movement_points == 4 and game.confirm_button.has_focus(), "board Enter only selects and focuses confirmation")
+	check(game.state.action_points == 4 and game.confirm_button.has_focus(), "board Enter only selects and focuses confirmation without spending AP")
 	await commit()
 	var winning := F.encounter([])
 	winning.exit = {"pos": [2, 3], "opens": 1}

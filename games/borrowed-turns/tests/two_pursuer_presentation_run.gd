@@ -42,7 +42,7 @@ func fixture(safe_capture: bool = false) -> Dictionary:
 	return {
 		"objective": "escape", "width": 5, "height": 5, "walls": [],
 		"player": {"pos": [2, 2], "hp": 8}, "exit": {"pos": [4, 4], "opens": 3},
-		"rules": {"actions": 2, "movement": 2, "capture_range": 1},
+		"rules": {"actions": 2, "capture_range": 1},
 		"enemies": [
 			{"id": "A", "pos": [1, 2] if safe_capture else [2, 1], "dir": [0, 1], "hp": 5, "kind": "shove", "ability": ability.duplicate(true)},
 			{"id": "B", "pos": [2, 3], "dir": [1, 0] if safe_capture else [0, -1], "hp": 5, "kind": "shove", "ability": ability.duplicate(true)},

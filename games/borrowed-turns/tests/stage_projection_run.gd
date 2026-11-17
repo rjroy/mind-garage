@@ -10,7 +10,7 @@ extends SceneTree
 ## - ui/paper_cells.gd, RefCounted: sample(cell: Array, visual_seed: int) -> Dictionary
 ##   Detached {uv_rect: Rect2 in normalized texture coordinates,
 ##             quarter_turn: int, tint: Color}. No global RNG or gameplay data.
-## - board.gd: set_stage_mode(bool), cell_polygon(Array), piece_appearance(Array),
+## - board.gd: cell_polygon(Array), piece_appearance(Array),
 ##   figure_layout(Array) -> {origin: Vector2, foot: Vector2, size: float}.
 ##   Extract existing rectangular geometry and figure origin/size without changing
 ##   baseline behavior. Draw paths MUST consume these shared seams, not test copies.
@@ -65,7 +65,7 @@ func _setup() -> bool:
 		and _method(projection, "configure_ground", 4) \
 		and _method(projection, "unproject", 1) and _method(projection, "cell_at", 1) \
 		and _method(projection, "cell_polygon", 1) and _method(material, "sample", 2) \
-		and _method(board, "set_stage_mode", 1) and _method(board, "cell_polygon", 1) \
+		and _method(board, "cell_polygon", 1) \
 		and _method(board, "piece_appearance", 1) and _method(board, "figure_layout", 1)
 	if ready:
 		ready = projection.call("project", Vector2.ZERO) is Vector2 \
@@ -267,11 +267,8 @@ func test_board_consumer() -> void:
 		var snapshot: Dictionary = model.snapshot()
 		var intact := snapshot.duplicate(true)
 		board.set_view(snapshot, {}, [], [], "")
-		board.set_presentation(true, {})
+		board.set_presentation({})
 		board.size = Vector2(960, 620)
-		board.call("set_stage_mode", false)
-		var plain_center: Vector2 = board.cell_center([1, 1])
-		board.call("set_stage_mode", true)
 		for cell in [[0, 0], [1, 1], [dimensions.x - 1, dimensions.y - 1]]:
 			var polygon: PackedVector2Array = board.call("cell_polygon", cell)
 			var center: Vector2 = board.cell_center(cell)
@@ -301,13 +298,9 @@ func test_board_consumer() -> void:
 		board.size = Vector2(650, 470)
 		check(not near(board.cell_center([1, 1]), old_center), "actual board recomputes placement after resizing")
 		check(board._from_pixel(board.cell_center([1, 1])) == [1, 1], "resized drawing and hit mapping stay aligned")
-		board.call("set_stage_mode", false)
-		board.call("set_stage_mode", true)
-		check(board.call("piece_appearance", [1, 1]) == old_piece, "view changes and resizing do not reshuffle paper")
-		check(snapshot == intact and model.snapshot() == intact, "projection, material and view changes leave model-owned input immutable")
+		check(board.call("piece_appearance", [1, 1]) == old_piece, "resizing does not reshuffle paper")
+		check(snapshot == intact and model.snapshot() == intact, "projection and material leave model-owned input immutable")
 		board.size = Vector2(960, 620)
-		board.call("set_stage_mode", false)
-		check(near(board.cell_center([1, 1]), plain_center), "returning to baseline restores rectangular placement")
 	board.free()
 
 func _run() -> void:

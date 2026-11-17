@@ -89,8 +89,7 @@ func make_board(dimensions: Vector2i = Vector2i(5, 5), isolated: bool = false):
 	# Deliberately outside SceneTree: no stage artwork or rendering dependency.
 	board.size = Vector2(1280, 650)
 	board.set_view(snapshot(dimensions, isolated), {}, [], [], "")
-	board.set_stage_mode(true)
-	board.set_presentation(true, {})
+	board.set_presentation({})
 	return board
 
 func entry(rows: Array, id: String) -> Dictionary:
@@ -197,9 +196,6 @@ func test_alpha_and_floor_picking() -> void:
 	var empty: Vector2 = board.cell_center([7, 0])
 	check(board.actor_at(empty).is_empty() and board.pick_cell(empty) == [7, 0],
 		"unoccupied floor remains directly targetable through the shared projection")
-	board.set_stage_mode(false)
-	check(board.standee_layout().is_empty() and board.actor_at(body).is_empty(), "plain/paper have no invisible Stage actor hit regions")
-	check(board.pick_cell(board.cell_center([2, 2])) == [2, 2], "non-Stage picking retains rectangular behavior")
 	board.free()
 
 func test_overlap_focus_and_lifetime() -> void:
@@ -276,9 +272,6 @@ func test_yawed_anchors_and_depth() -> void:
 			check(board._from_pixel(row.foot) == row.cell, "yawed floor inverse agrees with each foot")
 			check(board.actor_at(row.tab_rect.get_center()) == row.actor, "yawed source tab picks its owning actor")
 		check(order.find("B") < order.find("A"), "standee sorting uses projected depth, not logical row order")
-	var intact := data.duplicate(true)
-	board.set_stage_mode(false)
-	check(board.state == intact and board.standee_layout().is_empty(), "leaving yawed Stage does not alter the game or retain invisible actors")
 	board.free()
 
 func actor_hp(data: Dictionary, id: String) -> int:
@@ -358,10 +351,6 @@ func test_roster_geometry_data_and_lifetime() -> void:
 	check(entry(board.standee_layout(), "A").is_empty(), "removed actor leaves neither a roster row nor a foot marker")
 	if positions.A.has_area():
 		check(board.actor_at(positions.A.get_center()) != "A", "removed roster cannot retain a stale source hit")
-	board.set_stage_mode(false)
-	check(board.standee_layout().is_empty(), "baseline views have no Stage roster descriptors")
-	if positions.B.has_area():
-		check(board.actor_at(positions.B.get_center()).is_empty(), "baseline views retain no invisible roster hit regions")
 	board.free()
 
 func test_roster_priority_over_art() -> void:

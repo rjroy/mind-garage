@@ -19,8 +19,6 @@ var stage_renderer: RefCounted
 var visual_seed := 731
 var _projection_size := Vector2(-1, -1)
 var _projection_dimensions := Vector2i.ZERO
-var paper_mode := false
-var stage_mode := false
 var shadow_frame: Dictionary = {}
 var state: Dictionary = {}
 var preview: Dictionary = {}
@@ -43,6 +41,7 @@ var wavefront_overlay = WavefrontOverlay.new()
 
 func _ready() -> void:
 	focus_mode = Control.FOCUS_ALL
+	clip_contents = true
 	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	custom_minimum_size = Vector2(294, 294)
 	resized.connect(_on_resized)
@@ -65,17 +64,9 @@ func set_view(snapshot: Dictionary, predicted: Dictionary, legal_cells: Array, t
 	_sync_stage()
 	queue_redraw()
 
-func set_presentation(paper: bool, frame: Dictionary) -> void:
-	paper_mode = paper
+func set_presentation(frame: Dictionary) -> void:
 	shadow_frame = frame
 	if not frame.get("busy", false) and accent <= 0.0: _motion_before.clear()
-	queue_redraw()
-
-func set_stage_mode(enabled: bool) -> void:
-	if stage_mode == enabled: return
-	stage_mode = enabled
-	clip_contents = enabled
-	_sync_stage()
 	queue_redraw()
 
 func _visible_intentions() -> Array:
@@ -85,7 +76,7 @@ func _visible_intentions() -> Array:
 	return state.get("intentions", [])
 
 func announcement_marks() -> Array:
-	if not stage_mode or not theatre_mode or state.is_empty(): return []
+	if not theatre_mode or state.is_empty(): return []
 	var marks: Array = []
 	for intent in _visible_intentions():
 		if intent.source not in ["A", "B"] or intent.kind != "shove": continue
@@ -105,7 +96,7 @@ func announcement_regions() -> Array:
 	return regions
 
 func _uses_wavefronts() -> bool:
-	return stage_mode and theatre_mode and not _standee_textures.is_empty()
+	return theatre_mode and not _standee_textures.is_empty()
 
 func announcement_waves() -> Array:
 	var rows := announcement_regions()
@@ -202,7 +193,7 @@ func _visual_actors() -> Array:
 	return actors.values()
 
 func standee_layout() -> Array:
-	if not stage_mode or _standee_textures.is_empty() or state.is_empty(): return []
+	if _standee_textures.is_empty() or state.is_empty(): return []
 	var rows: Array = []
 	var projection = _ensure_projection()
 	var living := ["player"]
@@ -314,9 +305,6 @@ func _ensure_projection():
 
 func _sync_stage() -> void:
 	if not is_inside_tree(): return
-	if not stage_mode:
-		if stage_renderer: stage_renderer.set_visible(false)
-		return
 	if state.is_empty(): return
 	if stage_renderer == null:
 		stage_renderer = StageRenderer.new()
@@ -347,29 +335,21 @@ func _process(_delta: float) -> void:
 
 func _cell_size() -> float:
 	if state.is_empty(): return 1.0
-	if stage_mode: return float(figure_layout(state.player.pos)["size"])
-	return floor(minf(64.0, minf((size.x - 52) / state.width, (size.y - 42) / state.height)))
+	return float(figure_layout(state.player.pos)["size"])
 
 func _board_rect() -> Rect2:
-	if stage_mode:
-		var projection = _ensure_projection()
-		var rect := Rect2(projection.project(Vector2.ZERO), Vector2.ZERO)
-		for corner in [Vector2(state.get("width", 0), 0), Vector2(state.get("width", 0), state.get("height", 0)), Vector2(0, state.get("height", 0))]:
-			rect = rect.expand(projection.project(corner))
-		return rect
-	var extent := Vector2(float(state.get("width", 7)), float(state.get("height", 7))) * _cell_size()
-	return Rect2((size - extent) / 2.0 + Vector2(10, 6), extent)
+	var projection = _ensure_projection()
+	var rect := Rect2(projection.project(Vector2.ZERO), Vector2.ZERO)
+	for corner in [Vector2(state.get("width", 0), 0), Vector2(state.get("width", 0), state.get("height", 0)), Vector2(0, state.get("height", 0))]:
+		rect = rect.expand(projection.project(corner))
+	return rect
 
 func cell_center(cell: Array) -> Vector2:
-	if stage_mode: return _ensure_projection().project(Vector2(cell[0] + 0.5, cell[1] + 0.5))
-	return _board_rect().position + (Vector2(cell[0], cell[1]) + Vector2(0.5, 0.5)) * _cell_size()
+	return _ensure_projection().project(Vector2(cell[0] + 0.5, cell[1] + 0.5))
 
 func cell_polygon(cell: Array) -> PackedVector2Array:
 	if state.is_empty() or cell.size() != 2: return PackedVector2Array()
-	if stage_mode: return _ensure_projection().cell_polygon(cell)
-	var rect := Rect2(cell_center(cell) - Vector2.ONE * _cell_size() / 2, Vector2.ONE * _cell_size())
-	return PackedVector2Array([rect.position, Vector2(rect.end.x, rect.position.y),
-		rect.end, Vector2(rect.position.x, rect.end.y)])
+	return _ensure_projection().cell_polygon(cell)
 
 func _cell_rect(cell: Array) -> Rect2:
 	var polygon := cell_polygon(cell)
@@ -385,19 +365,13 @@ func figure_layout(cell: Array) -> Dictionary:
 	if state.is_empty() or cell.size() != 2:
 		return {"origin": Vector2.ZERO, "foot": Vector2.ZERO, "size": 0.0}
 	var origin := cell_center(cell)
-	if stage_mode:
-		var polygon := cell_polygon(cell)
-		if polygon.size() != 4: return {"origin": origin, "foot": origin, "size": 0.0}
-		var extent := (polygon[0].distance_to(polygon[1]) + polygon[3].distance_to(polygon[2])) * 0.26
-		return {"origin": origin - Vector2(0, extent * 0.40), "foot": origin, "size": extent}
-	var figure_size := _cell_size()
-	return {"origin": origin, "foot": origin + Vector2(0, 0.40 * figure_size), "size": figure_size}
+	var polygon := cell_polygon(cell)
+	if polygon.size() != 4: return {"origin": origin, "foot": origin, "size": 0.0}
+	var extent := (polygon[0].distance_to(polygon[1]) + polygon[3].distance_to(polygon[2])) * 0.26
+	return {"origin": origin - Vector2(0, extent * 0.40), "foot": origin, "size": extent}
 
 func _from_pixel(pixel: Vector2) -> Array:
-	if stage_mode: return _ensure_projection().cell_at(pixel)
-	if state.is_empty() or not _board_rect().has_point(pixel): return []
-	var position_in_grid := (pixel - _board_rect().position) / _cell_size()
-	return [int(position_in_grid.x), int(position_in_grid.y)]
+	return _ensure_projection().cell_at(pixel)
 
 func _on_gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion:
@@ -452,16 +426,12 @@ func _text(at: Vector2, text: String, color: Color, font_size: int = 14) -> void
 	draw_string(ThemeDB.fallback_font, at, text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, color)
 
 func _danger() -> Color:
-	return Color("ffac89") if stage_mode else P.DANGER
+	return Color("ffac89")
 
 func _borrowed() -> Color:
-	return Color("9de8d5") if stage_mode else P.BORROWED
+	return Color("9de8d5")
 
 func _tile(cell: Array, inset: float, color: Color, filled: bool = false, width: float = 1.0) -> void:
-	if not stage_mode:
-		if filled: draw_rect(_cell_rect(cell).grow(-inset), color)
-		else: draw_rect(_cell_rect(cell).grow(-inset), color, false, width)
-		return
 	var polygon := cell_polygon(cell)
 	if polygon.is_empty(): return
 	var center := cell_center(cell)
@@ -480,7 +450,7 @@ func _arrow(from: Vector2, to: Vector2, color: Color, dashed: bool) -> void:
 	draw_colored_polygon(PackedVector2Array([to, to - direction * 9 + side * 5, to - direction * 9 - side * 5]), color)
 
 func _uses_shadow_effects() -> bool:
-	return paper_mode and preview.is_empty() and not shadow_frame.get("cues", []).is_empty()
+	return preview.is_empty() and not shadow_frame.get("cues", []).is_empty()
 
 func effect_footprints() -> Array:
 	if _uses_shadow_effects():
@@ -505,7 +475,22 @@ func _draw_effect_footprint(footprint: Dictionary, active_shadow: bool = false) 
 		if active_shadow and footprint.stage == "backlash":
 			_tile(cell, 10, color, false, 1)
 	if footprint.type == "ray" and footprint.actor == "player" and footprint.stage == "release" and not footprint.cells.is_empty():
-		_arrow(cell_center(state.player.pos), cell_center(footprint.cells.back()), _borrowed(), false)
+		# The last affected cell may be a side lane, not the chosen endpoint.
+		var origin: Array = state.player.pos
+		var target: Array = []
+		if active_shadow:
+			var cue: Dictionary = shadow_frame.get("cue", {})
+			if cue.get("type", "") == "release":
+				origin = cue.from
+				target = cue.to
+		else:
+			var effects: Array = preview.get("events", []) if not preview.is_empty() else last_events
+			for event in effects:
+				if event.type == "release":
+					target = event.target
+					break
+		if origin.size() == 2 and target.size() == 2:
+			_arrow(cell_center(origin), cell_center(target), _borrowed(), false)
 
 func _draw_backlash_and_choices() -> void:
 	var backlash: Dictionary = state.get("backlash_footprint", {})
@@ -514,29 +499,25 @@ func _draw_backlash_and_choices() -> void:
 			_tile(cell, 2, _danger(), false, 1.4 if _uses_wavefronts() else 2.0)
 			_tile(cell, 5, _danger(), false, 1)
 	for cell in candidates:
-		var tile := _cell_rect(cell).grow(-5)
 		_tile(cell, 5, _borrowed(), false, 1.5)
-		draw_circle(cell_center(cell) + Vector2(-5, 0) if stage_mode else tile.position + Vector2(5, 5), 2, _borrowed())
+		draw_circle(cell_center(cell) + Vector2(-5, 0), 2, _borrowed())
 
 func _draw_enemy(enemy: Dictionary, stored: Dictionary) -> void:
 	var placement := figure_layout(enemy.pos)
 	var origin: Vector2 = placement.origin
 	var figure_size: float = placement["size"]
 	var pawn := Rect2(origin - Vector2.ONE * figure_size * 0.23, Vector2.ONE * figure_size * 0.46)
-	if stage_mode:
-		pawn.position = placement.foot - Vector2(figure_size * 0.23, figure_size * 0.46)
-	if paper_mode and enemy.kind == "shove":
+	pawn.position = placement.foot - Vector2(figure_size * 0.23, figure_size * 0.46)
+	if enemy.kind == "shove":
 		shadow_renderer.draw_figure(self, origin, figure_size, false)
 		_text(origin + Vector2(-4, 4), str(enemy.id).left(1).to_upper(), P.INK, 12)
 	else:
-		draw_rect(pawn, Color("efe8d5") if stage_mode else P.INK)
-		_text(pawn.position + Vector2(5, pawn.size.y - 5), str(enemy.id).to_upper(), P.INK if stage_mode else P.FLOOR, 14 if stage_mode else 16)
-	var hp_at := origin + Vector2(-figure_size * 0.23, -figure_size * (0.42 if paper_mode and enemy.kind == "shove" else 0.23) - 4)
+		draw_rect(pawn, Color("efe8d5"))
+		_text(pawn.position + Vector2(5, pawn.size.y - 5), str(enemy.id).to_upper(), P.INK, 14)
 	# Side labels avoid piling an HP tag on the standee in the preceding row.
-	if stage_mode: hp_at = placement.foot + Vector2(figure_size * 0.33, -figure_size * 0.16)
-	if paper_mode:
-		var text_width := ThemeDB.fallback_font.get_string_size("%d HP" % enemy.hp, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
-		draw_rect(Rect2(hp_at - Vector2(1, 12), Vector2(text_width + 2, 14)), P.FLOOR)
+	var hp_at: Vector2 = placement.foot + Vector2(figure_size * 0.33, -figure_size * 0.16)
+	var text_width := ThemeDB.fallback_font.get_string_size("%d HP" % enemy.hp, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
+	draw_rect(Rect2(hp_at - Vector2(1, 12), Vector2(text_width + 2, 14)), P.FLOOR)
 	_text(hp_at, "%d HP" % enemy.hp, P.INK, 12)
 	if enemy.id == source or (not stored.is_empty() and enemy.id == stored.source):
 		draw_rect(pawn.grow(5), _borrowed(), false, 2)
@@ -545,12 +526,8 @@ func _draw_player() -> void:
 	var placement := figure_layout(state.player.pos)
 	var player: Vector2 = placement.origin
 	var player_size: float = placement["size"]
-	if paper_mode:
-		shadow_renderer.draw_figure(self, player, player_size, true)
-		_text(player + Vector2(-4, 4), "Y", P.INK, 12)
-	else:
-		draw_circle(player, player_size * 0.20, P.INK)
-		_text(player + Vector2(-5, 5), "Y", P.FLOOR, 14)
+	shadow_renderer.draw_figure(self, player, player_size, true)
+	_text(player + Vector2(-4, 4), "Y", P.INK, 12)
 	var diamond := player + Vector2(player_size * 0.30, -player_size * 0.20)
 	draw_polyline(PackedVector2Array([diamond + Vector2(0, -5), diamond + Vector2(5, 0), diamond + Vector2(0, 5), diamond + Vector2(-5, 0), diamond + Vector2(0, -5)]), _borrowed(), 2, true)
 
@@ -603,35 +580,22 @@ func _draw_roster(rows: Array) -> void:
 func _draw() -> void:
 	if state.is_empty(): return
 	var cell_size := _cell_size()
-	var rect := _board_rect()
-	if not stage_mode: draw_rect(rect, P.FLOOR)
-	if paper_mode and not theatre_mode:
+	if not theatre_mode:
 		shadow_renderer.draw_shadows(self, state, shadow_frame, cell_center, cell_size, source)
 	for x in range(state.width + 1):
-		var start := rect.position + Vector2(x * cell_size, 0)
-		if stage_mode:
-			start = _ensure_projection().project(Vector2(x, 0))
-			draw_line(start, _ensure_projection().project(Vector2(x, state.height)), Color("bb887b", 0.55), 1)
-			if x < state.width: _text(_ensure_projection().project(Vector2(x + 0.5, 0)) + Vector2(-3, -8), str(x), Color("f0d2a0"), 12)
-		else:
-			draw_line(start, start + Vector2(0, rect.size.y), P.GRID, 1)
-			if x < state.width: _text(start + Vector2(cell_size / 2 - 4, -10), str(x), P.SECONDARY)
+		var start: Vector2 = _ensure_projection().project(Vector2(x, 0))
+		draw_line(start, _ensure_projection().project(Vector2(x, state.height)), Color("bb887b", 0.55), 1)
+		if x < state.width: _text(_ensure_projection().project(Vector2(x + 0.5, 0)) + Vector2(-3, -8), str(x), Color("f0d2a0"), 12)
 	for y in range(state.height + 1):
-		var start := rect.position + Vector2(0, y * cell_size)
-		if stage_mode:
-			start = _ensure_projection().project(Vector2(0, y))
-			draw_line(start, _ensure_projection().project(Vector2(state.width, y)), Color("bb887b", 0.55), 1)
-			if y < state.height: _text(_ensure_projection().project(Vector2(0, y + 0.5)) + Vector2(-20, 4), str(y), Color("f0d2a0"), 12)
-		else:
-			draw_line(start, start + Vector2(rect.size.x, 0), P.GRID, 1)
-			if y < state.height: _text(start + Vector2(-22, cell_size / 2 + 5), str(y), P.SECONDARY)
-	for wall in state.walls: _tile(wall, 3, Color("837077") if stage_mode else P.WALL, true)
+		var start: Vector2 = _ensure_projection().project(Vector2(0, y))
+		draw_line(start, _ensure_projection().project(Vector2(state.width, y)), Color("bb887b", 0.55), 1)
+		if y < state.height: _text(_ensure_projection().project(Vector2(0, y + 0.5)) + Vector2(-20, 4), str(y), Color("f0d2a0"), 12)
+	for wall in state.walls: _tile(wall, 3, Color("837077"), true)
 	if state.get("objective", "escape") == "escape" and state.has("exit"):
-		var exit_rect := _cell_rect(state.exit.pos).grow(-5)
-		var exit_color := Color("ffe1a0") if stage_mode else P.EXIT
+		var exit_color := Color("ffe1a0")
 		_tile(state.exit.pos, 5, exit_color, false, 2)
 		_tile(state.exit.pos, 9, exit_color, false, 1)
-		_text(cell_center(state.exit.pos) + Vector2(-14, 4) if stage_mode else exit_rect.position + Vector2(3, exit_rect.size.y - 6), "EXIT", exit_color, 12)
+		_text(cell_center(state.exit.pos) + Vector2(-14, 4), "EXIT", exit_color, 12)
 	var threat_counts := {}
 	var regions: Array = announcement_waves() if _uses_wavefronts() else []
 	var actor_rows := standee_layout()
@@ -644,14 +608,14 @@ func _draw() -> void:
 			var key := str(cell)
 			threat_counts[key] = threat_counts.get(key, 0) + 1
 			var tile := _cell_rect(cell).grow(-3)
-			_tile(cell, 3, Color(_danger(), 0.16 if stage_mode else 0.08), true)
-			var hatch := cell_center(cell) + Vector2(-6, -2) if stage_mode else tile.position + Vector2(2, 10)
-			if _standee_textures.is_empty() or not stage_mode:
+			_tile(cell, 3, Color(_danger(), 0.16), true)
+			var hatch := cell_center(cell) + Vector2(-6, -2)
+			if _standee_textures.is_empty():
 				draw_line(hatch, hatch + Vector2(8, -8), _danger(), 1)
 			if intent.source == source: _tile(cell, 3, _danger(), false, 2)
-			if threat_counts[key] > 1 and (_standee_textures.is_empty() or not stage_mode):
+			if threat_counts[key] > 1 and _standee_textures.is_empty():
 				_text(tile.position + Vector2(tile.size.x - 14, 14), str(threat_counts[key]), _danger())
-		if intent.kind != "burst" and not intent.cells.is_empty() and (_standee_textures.is_empty() or not stage_mode):
+		if intent.kind != "burst" and not intent.cells.is_empty() and _standee_textures.is_empty():
 			for enemy in state.enemies:
 				if enemy.id == intent.source:
 					_arrow(cell_center(enemy.pos), cell_center(intent.cells.back()), _danger(), true)
@@ -680,7 +644,7 @@ func _draw() -> void:
 			effect_positions[event.actor] = event.to
 		if event.type == "death" and effect_positions.has(event.actor): death_cells.append(effect_positions[event.actor])
 	var enemies: Array = state.enemies.duplicate()
-	if stage_mode: enemies.sort_custom(func(a: Dictionary, b: Dictionary): return cell_center(a.pos).y < cell_center(b.pos).y)
+	enemies.sort_custom(func(a: Dictionary, b: Dictionary): return cell_center(a.pos).y < cell_center(b.pos).y)
 	var player_drawn := false
 	if not actor_rows.is_empty():
 		_draw_standees(actor_rows)
@@ -698,7 +662,7 @@ func _draw() -> void:
 				_text(point, str(intent.source), _danger(), 12)
 	else:
 		for enemy in enemies:
-			if stage_mode and not player_drawn and cell_center(state.player.pos).y <= cell_center(enemy.pos).y:
+			if not player_drawn and cell_center(state.player.pos).y <= cell_center(enemy.pos).y:
 				_draw_player()
 				player_drawn = true
 			_draw_enemy(enemy, stored)
@@ -717,5 +681,4 @@ func _draw() -> void:
 	for cell in [hover_cell, selected]:
 		if not cell.is_empty(): _tile(cell, 2, _borrowed(), false, 2)
 	if has_focus():
-		_tile(cursor, 1, Color("ffe5b7") if stage_mode else P.INK, false, 3)
-		if not stage_mode: draw_rect(rect.grow(7), P.INK, false, 2)
+		_tile(cursor, 1, Color("ffe5b7"), false, 3)

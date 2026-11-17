@@ -18,7 +18,9 @@ static func actor(id: String) -> String:
 	return "You" if id == "player" else id.to_upper()
 
 static func geometry(ability: Dictionary) -> String:
-	return "Area radius %d" % ability.radius if ability.kind == "burst" else "Line"
+	if ability.kind == "burst": return "Area radius %d" % ability.radius
+	var width: int = ability.get("width", 1)
+	return "Line · Width %d" % width if width > 1 else "Line"
 
 static func ability_text(ability: Dictionary) -> String:
 	return "%s · %d damage\nRange %d · %s%s" % [str(ability.kind).capitalize(), ability.damage, ability.range, geometry(ability), " · Push" if ability.push else ""]
@@ -52,7 +54,7 @@ static func event_text(event: Dictionary) -> String:
 		"damage": return "%s took %d damage; %d HP left." % [who, event.amount, event.hp]
 		"displace": return "%s displaced to %s." % [who, cell(event.to)]
 		"death": return "%s fell." % who
-		"turn": return "Turn %d · AP and MP refreshed; fresh intentions." % event.number
+		"turn": return "Turn %d · AP refreshed; fresh intentions." % event.number
 		"win": return "Victory. All foes defeated." if event.get("objective", "escape") == "defeat_all" else "Escaped through the open exit."
 		"loss": return "Caught. Your health reached zero."
 	return str(event.get("type", ""))
@@ -73,6 +75,8 @@ static func stored_text(state: Dictionary) -> String:
 	var stored: Dictionary = state.stored
 	var ability: Dictionary = stored.ability
 	var effect := "Area centered on you" if ability.kind == "burst" else "You + the stored source-direction line"
+	if ability.kind != "burst" and ability.get("width", 1) > 1:
+		effect = "You + the stored %d-wide source-direction line" % ability.width
 	return "%s · %d damage · Source %s\n%s\nBacklash here: %s; %d damage%s.\nRelease avoids you; backlash does not." % [
 		str(ability.kind).capitalize(), ability.damage, str(stored.source).to_upper(), ability_text(ability).get_slice("\n", 1), effect, ability.damage,
 		", pushes surviving enemies" if ability.push else "",
@@ -80,9 +84,9 @@ static func stored_text(state: Dictionary) -> String:
 
 static func command_summary(current: Dictionary, predicted: Dictionary, action: Dictionary) -> String:
 	var kind: String = action.type
-	var cost: String = {"move": "Move · 1 MP", "capture": "Capture · free", "release": "Release · 1 AP", "end_turn": "End turn"}[kind]
-	var end := "%d AP · %d MP · %d HP · %s" % [predicted.action_points, predicted.movement_points, predicted.player.hp, cell(predicted.player.pos)]
-	if kind == "end_turn": cost += " · Leaving %d AP / %d MP" % [current.action_points, current.movement_points]
+	var cost: String = {"move": "Move · 1 AP", "capture": "Capture · free", "release": "Release · 1 AP", "end_turn": "End turn · free"}[kind]
+	var end := "%d AP · %d HP · %s" % [predicted.action_points, predicted.player.hp, cell(predicted.player.pos)]
+	if kind == "end_turn": cost += " · Leaving %d AP" % current.action_points
 	var outcomes: Array[String] = []
 	if predicted.status == "lost":
 		outcomes.append("This discharge kills you. No new ability is acquired." if kind == "capture" else "This command kills you.")
