@@ -1,6 +1,6 @@
 # Borrowed Turns
 
-One small turn-based fight built around enduring an enemy attack to acquire its ability, then using it through Shine. The current candidate replaces the earlier cancellation/backlash bargain and is technically verified and reviewed, awaiting Ronald's play. It is not a run, unlock system, six-way comparison or evidence of enjoyment. Mind Garage names the research effort, not this game.
+One small turn-based fight built around enduring an enemy attack to acquire its ability, then using it through Shine. Ronald reports this version felt good, engaging and puzzle-like, but not particularly replayable as the same encounter. It is not a run, unlock system or general enjoyment finding. Mind Garage names the research effort, not this game.
 
 ## Run
 

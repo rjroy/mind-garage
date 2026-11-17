@@ -10,7 +10,7 @@ related: [.lore/work/intents/player-brief.md, .lore/work/experiments/002-shadow-
 
 ## Inputs and provenance
 
-- Experiment ID: `003-active-opponents`. Current stage: armed-Capture/reusable-Shine/source-link candidate technically verified and reviewed; awaiting Ronald's play.
+- Experiment ID: `003-active-opponents`. Current stage: Ronald reports the `744fca3` fight felt good, engaging and puzzle-like; next discussion concerns encounter boards and opponent variety.
 - Source baseline: `37026b6`, following packaged-resource checkpoint `8587639` and cleanup `144c1a9`. Accepted presentation and 2.7-second telegraph waves are the starting point.
 - Input procedures: repository experiment-record template and `implement`/`verification-planning` workflows. This is a revision of the selected capture mechanic, not fresh hook discovery.
 - Audience: Ronald only. Godot, existing packaged artwork, no new dependencies or asset generation.
@@ -338,6 +338,16 @@ The subsequent separate refactor assessment recommends no further changes before
 
 Third-candidate handoff: launch normally after closing an old process; use C to arm Capture and S for repeated Shine, with 1 AP for each and for each movement tile. Observe the real hit before acquisition and the ability disappearing when its source dies. Ask whether acquisition is a worthwhile risk, whether preserving a source creates a meaningful choice, and where combat becomes repetitive. Do not infer enjoyment, continuation or replay from the successful automated route. `mind-garage-jkv` remains open for this human decision; `mind-garage-7am` remains blocked. No progression, healing or further tuning is authorized by technical completion.
 
+#### Human report on `744fca3` and next direction
+
+Ronald reports: “That felt good. It was engaging, but not really repeatable. Which I think is fine.” He describes the encounter as a puzzle and wants encounters composed from the board, starting positions, environmental features, opponent count and opponent types. He suspects the 5×5 area limits both play and opponent design; board size and possibly shape should be considered.
+
+His desired next focus is opponent variety: movement, attacks and multiple attacks, damage/displacement effects including push/throw/pull/swap, cooperation and behavior changes based on other participants. He suggests a larger stage-filling tiled foundation, possibly nonrectangular, with encounter variation produced by added features such as rocks or fire. This is a direction for discussion, not approval of every listed effect, a fixed board footprint, asset generation or implementation.
+
+This is positive reported engagement for one played encounter, not measured session duration, voluntary replay, run retention or a general fun finding. Replaying an already-understood fixed puzzle and wanting another encounter are distinct outcomes. Do not treat the report as evidence that a full run already works or that a mandatory repeatable-room loop is the goal.
+
+The bounded fight checkpoint `mind-garage-jkv` is complete. Next settle board/opponent design scope under `mind-garage-dxm` before implementation; run/progression remains deferred and blocked under `mind-garage-7am`. Preserve the accepted bargain and encounter as a baseline while discussing what genuinely different tactical problems new casts and boards could create.
+
 ### Capture limitation investigation after `d230a48`
 
 Ronald reports the candidate is “better” but remains unsure. He asks how capture could be limited, which previous decisions would change, and what options exist, noting that comparable powers can feel like endgame abilities. This authorizes investigation and proposals, not implementation.
@@ -378,4 +388,4 @@ The next decision is whether one complete fight is engaging enough to iterate or
 - Replay: use this candidate's source checkpoint, follow the normal launch above and use Restart/Replay for an empty-storage, full-budget start. A fresh checkout must first import the shipped textures as described in the game README. Restore `37026b6` only for the earlier stationary/escape baseline comparison.
 - Repeat method: use controlled fixtures and the same human fight questions; reopen tuning rather than hardcoding the first candidate's values into tests.
 - Limits: one experienced player, bundled rule changes, prior exposure and no claim that automated play predicts enjoyment.
-- Actionable work: `mind-garage-jkv`. Deferred run/progression discussion: `mind-garage-7am`.
+- Next design discussion: `mind-garage-dxm` (board capacity and opponent roles). Completed fight checkpoint: `mind-garage-jkv`. Deferred run/progression discussion: `mind-garage-7am`.
