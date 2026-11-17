@@ -13,6 +13,7 @@ var _seed := -1
 var _loaded := false
 var _inverse := PackedFloat64Array()
 var _apron_depth := 0.06
+var _floor_top := 0.0
 
 func attach(canvas: Control) -> void:
 	print("Borrowed Turns stage: loading approved backdrop, floor and foreground sources")
@@ -61,6 +62,7 @@ func _material(projection, dimensions: Vector2i, origin: Vector2, span: Vector2,
 	material.set_shader_parameter("quarter_turn", piece.quarter_turn)
 	material.set_shader_parameter("paper_tint", piece.tint)
 	material.set_shader_parameter("apron", apron)
+	material.set_shader_parameter("repeat_apron", apron && _floor_top > 0)
 	return material
 
 func _piece(polygon: PackedVector2Array, material: ShaderMaterial) -> void:
@@ -71,15 +73,17 @@ func _piece(polygon: PackedVector2Array, material: ShaderMaterial) -> void:
 	paper.material = material
 	floor_root.add_child(paper)
 
-func configure(rect: Rect2, dimensions: Vector2i, projection, sample_piece: Callable, visual_seed: int, apron_depth: float = 0.06) -> void:
+func configure(rect: Rect2, dimensions: Vector2i, projection, sample_piece: Callable, visual_seed: int, apron_depth: float = 0.06, floor_top: float = 0.0) -> void:
 	if not _loaded or projection.inverse_coefficients().is_empty(): return
 	var inverse: PackedFloat64Array = projection.inverse_coefficients()
-	if rect == _rect and dimensions == _dimensions and visual_seed == _seed and inverse == _inverse and apron_depth == _apron_depth: return
+	if rect == _rect and dimensions == _dimensions and visual_seed == _seed and inverse == _inverse \
+		and apron_depth == _apron_depth and floor_top == _floor_top: return
 	_rect = rect
 	_dimensions = dimensions
 	_seed = visual_seed
 	_inverse = inverse
 	_apron_depth = apron_depth
+	_floor_top = floor_top
 	backdrop.position = rect.position
 	foreground.position = rect.position
 	backdrop.scale = rect.size / SOURCE_SIZE
@@ -94,6 +98,11 @@ func configure(rect: Rect2, dimensions: Vector2i, projection, sample_piece: Call
 		projection.project(origin + span), projection.project(origin + Vector2(0, span.y))])
 	var clip := PackedVector2Array([rect.position, Vector2(rect.end.x, rect.position.y), rect.end, Vector2(rect.position.x, rect.end.y)])
 	var clipped := Geometry2D.intersect_polygons(apron, clip)
+	if floor_top > 0:
+		# Keep the accepted horizontal theatre seam while the grid below it
+		# yaws. The ungridded apron still samples the exact same plane inverse.
+		var seam := rect.position.y + rect.size.y * floor_top
+		clipped = [PackedVector2Array([Vector2(rect.position.x, seam), Vector2(rect.end.x, seam), rect.end, Vector2(rect.position.x, rect.end.y)])]
 	var base := {"uv_rect": Rect2(Vector2.ZERO, Vector2.ONE), "quarter_turn": 0, "tint": Color(0.76, 0.76, 0.76, 1)}
 	for polygon in clipped:
 		_piece(polygon, _material(projection, dimensions, origin, span, base, true))

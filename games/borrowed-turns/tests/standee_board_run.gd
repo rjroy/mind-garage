@@ -39,6 +39,16 @@ func _setup() -> bool:
 			board.free()
 			return false
 	board.free()
+	var schema_board = make_board()
+	var configured: bool = schema_board.configure_standees(textures(), assembly())
+	var samples: Array = schema_board.standee_layout()
+	var schema_ready: bool = configured and samples.size() == 3
+	for row in samples:
+		schema_ready = schema_ready and row.get("name") is String and row.get("roster_rect") is Rect2
+	schema_board.free()
+	if not schema_ready:
+		printerr("SETUP REQUIRED: standee rows include neutral name:String and roster_rect:Rect2; not behavioral RED")
+		return false
 	return true
 
 func snapshot(dimensions: Vector2i = Vector2i(5, 5), isolated: bool = false) -> Dictionary:
@@ -92,7 +102,8 @@ func valid_entry(row: Dictionary, label: String) -> bool:
 	var valid: bool = row.get("actor") is String and row.get("cell") is Array \
 		and row.get("rect") is Rect2 and row.get("foot") is Vector2 \
 		and row.get("tab_rect") is Rect2 and row.get("opacity") is float \
-		and row.get("texture") is Texture2D
+		and row.get("texture") is Texture2D and row.get("hp") is int \
+		and row.get("name") is String and row.get("roster_rect") is Rect2
 	check(valid, label + ": actual draw descriptor has the contracted geometry and texture")
 	return valid
 
@@ -167,7 +178,9 @@ func test_geometry() -> void:
 		board.free()
 
 func test_alpha_and_floor_picking() -> void:
-	var board = make_board(Vector2i(5, 5), true)
+	# Wide controlled gallery leaves a genuine empty floor patch after yaw;
+	# body/gap assertions still exercise the same actual alpha picker.
+	var board = make_board(Vector2i(8, 6), true)
 	check(board.configure_standees(textures(), assembly()), "isolated alpha fixture configures")
 	var a := entry(board.standee_layout(), "A")
 	if not valid_entry(a, "alpha fixture"):
@@ -181,8 +194,8 @@ func test_alpha_and_floor_picking() -> void:
 		var gap := canvas_point(a, pixel)
 		check(board.actor_at(gap).is_empty(), "transparent outer padding/interior gaps do not become opaque hit boxes")
 		check(board.pick_cell(gap) == board._from_pixel(gap), "transparent artwork preserves shared inverse floor mapping")
-	var empty: Vector2 = board.cell_center([1, 0])
-	check(board.actor_at(empty).is_empty() and board.pick_cell(empty) == [1, 0],
+	var empty: Vector2 = board.cell_center([7, 0])
+	check(board.actor_at(empty).is_empty() and board.pick_cell(empty) == [7, 0],
 		"unoccupied floor remains directly targetable through the shared projection")
 	board.set_stage_mode(false)
 	check(board.standee_layout().is_empty() and board.actor_at(body).is_empty(), "plain/paper have no invisible Stage actor hit regions")
@@ -191,14 +204,19 @@ func test_alpha_and_floor_picking() -> void:
 
 func test_overlap_focus_and_lifetime() -> void:
 	var board = make_board()
-	check(board.configure_standees(textures(), assembly()), "overlap fixture configures")
+	# Yaw can separate the old same-column bodies. Keep the occlusion invariant
+	# with deliberately oversized test silhouettes, not live size adjustments.
+	var collision := assembly()
+	collision.A.height_fraction = 0.95
+	collision.B.height_fraction = 0.95
+	check(board.configure_standees(textures(), collision), "overlap fixture configures")
 	var rows: Array = board.standee_layout()
 	var a := entry(rows, "A")
 	var front := entry(rows, "B")
 	if not valid_entry(a, "rear actor") or not valid_entry(front, "front actor"):
 		board.free()
 		return
-	check(a.rect.intersects(front.rect), "same-column test actually stresses tall-piece occlusion")
+	check(a.rect.intersects(front.rect), "controlled collision actually stresses tall-piece occlusion")
 	var overlap_found := false
 	var intersection: Rect2 = a.rect.intersection(front.rect)
 	for y in range(int(intersection.position.y), int(intersection.end.y), 2):
@@ -231,6 +249,139 @@ func test_overlap_focus_and_lifetime() -> void:
 	check(board.state == after, "stale source focus cannot resurrect an actor or mutate the snapshot")
 	board.free()
 
+func test_yawed_anchors_and_depth() -> void:
+	var board = make_board()
+	check(board.configure_standees(textures(), assembly()), "yaw/depth fixture configures")
+	var data := snapshot()
+	data.enemies[0].pos = [4, 0]
+	data.enemies[1].pos = [0, 1]
+	data.player.pos = [2, 3]
+	board.set_view(data, {}, [], [], "")
+	for extent in [Vector2(1024, 510), Vector2(1600, 700)]:
+		board.size = extent
+		var origin: Vector2 = board.cell_center([1, 1])
+		var across: Vector2 = board.cell_center([2, 1]) - origin
+		var down: Vector2 = board.cell_center([1, 2]) - origin
+		check(across.x > 0 and across.y > 0 and down.x < 0 and down.y > 0,
+			"two-pursuer ground has oblique rows and staggered columns by default")
+		var rows: Array = board.standee_layout()
+		var a := entry(rows, "A")
+		var b := entry(rows, "B")
+		if not valid_entry(a, "yaw A") or not valid_entry(b, "yaw B"): continue
+		check(a.foot.y > b.foot.y, "rotated depth can place a larger-X rear-row actor in front")
+		var order: Array = []
+		for row in rows:
+			order.append(row.actor)
+			check(near(row.foot, board.cell_center(row.cell)), "yaw preserves native actor-to-cell registration")
+			check(board._from_pixel(row.foot) == row.cell, "yawed floor inverse agrees with each foot")
+			check(board.actor_at(row.tab_rect.get_center()) == row.actor, "yawed source tab picks its owning actor")
+		check(order.find("B") < order.find("A"), "standee sorting uses projected depth, not logical row order")
+	var intact := data.duplicate(true)
+	board.set_stage_mode(false)
+	check(board.state == intact and board.standee_layout().is_empty(), "leaving yawed Stage does not alter the game or retain invisible actors")
+	board.free()
+
+func actor_hp(data: Dictionary, id: String) -> int:
+	if id == "player": return data.player.hp
+	for enemy in data.enemies:
+		if enemy.id == id: return enemy.hp
+	return -1
+
+func test_roster_geometry_data_and_lifetime() -> void:
+	var board = make_board()
+	check(board.configure_standees(textures(), assembly()), "controlled roster fixture configures")
+	var data := snapshot()
+	var names := {}
+	for extent in [Vector2(1024, 510), Vector2(1600, 700)]:
+		board.size = extent
+		var before: Dictionary = board.state.duplicate(true)
+		var rows: Array = board.standee_layout()
+		var roster_bounds: Array[Rect2] = []
+		var distinct_names: Array = []
+		for row in rows:
+			if not valid_entry(row, "roster descriptor"): continue
+			var roster: Rect2 = row.roster_rect
+			var marker: Rect2 = row.tab_rect
+			check(not row.name.strip_edges().is_empty(), row.actor + ": roster has a visible identity name, not only HP")
+			if row.name not in distinct_names: distinct_names.append(row.name)
+			if names.has(row.actor):
+				check(names[row.actor] == row.name, row.actor + ": resize retains the same identity name")
+			else: names[row.actor] = row.name
+			check(row.hp == actor_hp(data, row.actor), row.actor + ": roster HP comes from the controlled current actor")
+			check(roster.has_area(), row.actor + ": actual roster draw/hit rectangle has area")
+			var polygon: PackedVector2Array = board.cell_polygon(row.cell)
+			var in_cell := true
+			for point in [marker.position, Vector2(marker.end.x, marker.position.y),
+				marker.end, Vector2(marker.position.x, marker.end.y)]:
+				if not Geometry2D.is_point_in_polygon(point, polygon): in_cell = false
+			check(in_cell, row.actor + ": foot marker fits its true projected cell instead of remaining a large HP plate")
+			check(marker.grow(2).has_point(row.foot), row.actor + ": small marker remains attached to its true foot")
+			if not roster.has_area(): continue # Neutral setup must fail cleanly, not click a fictitious rectangle.
+			check(board._stage_rect().encloses(roster) and Rect2(Vector2.ZERO, board.size).encloses(roster),
+				row.actor + ": roster remains inside the actual Stage allocation")
+			check(not roster.intersects(board._board_rect()), row.actor + ": roster does not cover any of the grid bounds")
+			check(not roster.intersects(marker) and marker.get_area() < roster.get_area(),
+				row.actor + ": identity/HP have a separate surface rather than an enlarged foot plate")
+			for other in roster_bounds:
+				check(not roster.intersects(other), "always-visible roster rows do not cover each other")
+			roster_bounds.append(roster)
+			check(board._from_pixel(roster.get_center()).is_empty(), row.actor + ": roster does not invent a floor cell")
+			check(board.actor_at(roster.get_center()) == row.actor and board.pick_cell(roster.get_center()) == row.cell,
+				row.actor + ": roster selects the actor's true cell despite being off the grid")
+		check(distinct_names.size() == rows.size(), "living identities are individually named in the roster")
+		check(board.state == before, "roster geometry/data readback does not mutate the model snapshot")
+	var positions := {}
+	for row in board.standee_layout(): positions[row.actor] = row.roster_rect
+	var changed := data.duplicate(true)
+	changed.player.hp = 7
+	changed.enemies[0].hp = 3
+	changed.enemies[1].hp = 13
+	changed.player.pos = [2, 3]
+	changed.enemies[0].pos = [4, 0]
+	changed.enemies[1].pos = [0, 1]
+	board.set_view(changed, {}, [], [], "")
+	var rows: Array = board.standee_layout()
+	for row in rows:
+		check(row.hp == actor_hp(changed, row.actor), row.actor + ": changed HP replaces stale roster values")
+		check(row.name == names.get(row.actor, ""), row.actor + ": HP changes do not rename the actor")
+		check(row.roster_rect == positions[row.actor], row.actor + ": roster slots follow identity, not changing body depth order")
+		var id: String = row.actor
+		row.name = "corrupt"
+		row.hp = -999
+		row.roster_rect = Rect2(999, 999, 1, 1)
+		var fresh := entry(board.standee_layout(), id)
+		check(fresh.get("name", "") == names.get(id, "") and fresh.get("hp", -1) == actor_hp(changed, id)
+			and fresh.get("roster_rect", Rect2()) == positions[id], "returned roster fields are detached from later readback")
+	var removed := changed.duplicate(true)
+	removed.enemies.remove_at(0)
+	board.set_view(removed, {}, [], [], "")
+	check(entry(board.standee_layout(), "A").is_empty(), "removed actor leaves neither a roster row nor a foot marker")
+	if positions.A.has_area():
+		check(board.actor_at(positions.A.get_center()) != "A", "removed roster cannot retain a stale source hit")
+	board.set_stage_mode(false)
+	check(board.standee_layout().is_empty(), "baseline views have no Stage roster descriptors")
+	if positions.B.has_area():
+		check(board.actor_at(positions.B.get_center()).is_empty(), "baseline views retain no invisible roster hit regions")
+	board.free()
+
+func test_roster_priority_over_art() -> void:
+	var board = make_board()
+	check(board.configure_standees(textures(), assembly()), "roster/alpha priority fixture configures")
+	var rows: Array = board.standee_layout()
+	var front := entry(rows, "B")
+	var rear := entry(rows, "A")
+	if not valid_entry(front, "roster priority front") or not valid_entry(rear, "roster priority rear"):
+		board.free()
+		return
+	var body := canvas_point(front, Vector2(5, 5))
+	check(opaque_at(front, body), "controlled priority sample is an actual opaque body pixel")
+	# Feed test-owned descriptors through the SAME picker used by actor_at and
+	# cached visibility. No test-only runtime path or altered board tuning.
+	for row in rows: row.roster_rect = Rect2()
+	rear.roster_rect = Rect2(body - Vector2(3, 3), Vector2(6, 6))
+	check(board._actor_at_rows(body, rows) == "A", "explicit roster target wins over overlapping foreground art")
+	board.free()
+
 func _run() -> void:
 	if not _setup():
 		quit(2)
@@ -239,5 +390,8 @@ func _run() -> void:
 	test_geometry()
 	test_alpha_and_floor_picking()
 	test_overlap_focus_and_lifetime()
+	test_yawed_anchors_and_depth()
+	test_roster_geometry_data_and_lifetime()
+	test_roster_priority_over_art()
 	print("Standee board: %d checks, %d failures. Synthetic alpha/geometry, not visual acceptance." % [checks, failures.size()])
 	quit(1 if not failures.is_empty() else 0)

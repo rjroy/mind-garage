@@ -6,6 +6,32 @@ var rows := 0
 var _forward := PackedFloat64Array()
 var _inverse := PackedFloat64Array()
 
+func configure_ground(new_columns: int, new_rows: int, bounds: Rect2, yaw_degrees: float) -> bool:
+	columns = 0
+	rows = 0
+	_forward.clear()
+	_inverse.clear()
+	if new_columns <= 0 or new_rows <= 0 or not is_finite(yaw_degrees) \
+		or not bounds.position.is_finite() or not bounds.size.is_finite() \
+		or bounds.size.x <= 0 or bounds.size.y <= 0: return false
+	var angle := deg_to_rad(yaw_degrees)
+	var center := Vector2(new_columns, new_rows) / 2.0
+	var distance := float(maxi(new_columns, new_rows)) * 3.0
+	var corners := PackedVector2Array()
+	var extent := Rect2()
+	for point in [Vector2.ZERO, Vector2(new_columns, 0), Vector2(new_columns, new_rows), Vector2(0, new_rows)]:
+		var ground: Vector2 = point - center
+		var horizontal := cos(angle) * ground.x - sin(angle) * ground.y
+		var depth := sin(angle) * ground.x + cos(angle) * ground.y
+		var projected := Vector2(horizontal, depth * 0.37) / (distance - depth)
+		if corners.is_empty(): extent = Rect2(projected, Vector2.ZERO)
+		else: extent = extent.expand(projected)
+		corners.append(projected)
+	var factor := minf(bounds.size.x / extent.size.x, bounds.size.y / extent.size.y)
+	var offset := bounds.get_center() - extent.get_center() * factor
+	for i in range(corners.size()): corners[i] = corners[i] * factor + offset
+	return configure(new_columns, new_rows, corners)
+
 func configure(new_columns: int, new_rows: int, quad: PackedVector2Array) -> bool:
 	columns = 0
 	rows = 0

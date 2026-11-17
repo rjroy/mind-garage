@@ -62,6 +62,7 @@ func _setup() -> bool:
 	var material = material_script.new()
 	var board = board_script.new()
 	var ready: bool = _method(projection, "configure", 3) and _method(projection, "project", 1) \
+		and _method(projection, "configure_ground", 4) \
 		and _method(projection, "unproject", 1) and _method(projection, "cell_at", 1) \
 		and _method(projection, "cell_polygon", 1) and _method(material, "sample", 2) \
 		and _method(board, "set_stage_mode", 1) and _method(board, "cell_polygon", 1) \
@@ -155,6 +156,63 @@ func test_invalid_configuration() -> void:
 		check(p.call("configure", invalid[0], invalid[1], invalid[2]) == false, "invalid/degenerate mapping rejected")
 		check(p.call("cell_at", Vector2(260, 160)).is_empty() and p.call("cell_polygon", [0, 0]).is_empty(),
 			"each invalid reconfiguration clears a previously valid hittable/drawable mapping")
+
+func test_ground_projection() -> void:
+	# Bounds, angle and dimensions belong to these tests, not live scene tuning.
+	for yaw in [27.0, -34.0]:
+		for dimensions in [Vector2i(5, 5), Vector2i(9, 4)]:
+			for bounds in [Rect2(37, 51, 800, 300), Rect2(91, 120, 470, 210)]:
+				var p = projection_script.new()
+				var applied: bool = p.configure_ground(dimensions.x, dimensions.y, bounds, yaw)
+				check(applied, "controlled yawed ground plane configures")
+				if not applied: continue
+				var corners := [Vector2.ZERO, Vector2(dimensions.x, 0),
+					Vector2(dimensions), Vector2(0, dimensions.y)]
+				for corner in corners:
+					check(bounds.grow(0.01).has_point(p.project(corner)), "uniformly fitted ground corners stay inside supplied bounds")
+				var center := Vector2(dimensions) / 2.0
+				var across: Vector2 = p.project(center + Vector2.RIGHT * 0.4) - p.project(center)
+				var down: Vector2 = p.project(center + Vector2.DOWN * 0.4) - p.project(center)
+				check(across.x > 0 and signf(across.y) == signf(yaw),
+					"positive ground yaw brings increasing X toward the viewer")
+				check(down.y > 0 and signf(down.x) == -signf(yaw),
+					"ground yaw staggers the columns rather than rotating upright images")
+				var left_span: float = p.project(Vector2(1, center.y)).distance_to(p.project(Vector2(0, center.y)))
+				var right_span: float = p.project(Vector2(dimensions.x, center.y)).distance_to(p.project(Vector2(dimensions.x - 1, center.y)))
+				check((right_span - left_span) * signf(yaw) > 0,
+					"yaw changes perspective depth along X, not just a 2D rotation of the old board")
+				var inverse: PackedFloat64Array = p.inverse_coefficients()
+				check(inverse.size() == 9, "yawed ground exports the same homography inverse used by floor material")
+				for y in range(dimensions.y):
+					for x in range(dimensions.x):
+						var point := Vector2(x + 0.37, y + 0.63)
+						var pixel: Vector2 = p.project(point)
+						check(near(p.unproject(pixel), point) and p.cell_at(pixel) == [x, y],
+							"yawed fractional points round-trip to exact floor ownership")
+						if inverse.size() == 9:
+							var divisor := inverse[6] * pixel.x + inverse[7] * pixel.y + inverse[8]
+							var logical := Vector2(
+								(inverse[0] * pixel.x + inverse[1] * pixel.y + inverse[2]) / divisor,
+								(inverse[3] * pixel.x + inverse[4] * pixel.y + inverse[5]) / divisor) * Vector2(dimensions)
+							check(near(logical, point), "actual shader inverse equation agrees with yawed floor picking")
+				for point in [Vector2(-0.01, 1), Vector2(dimensions.x, 1), Vector2(1, dimensions.y)]:
+					check(p.cell_at(p.project(point)).is_empty(), "yawed plane retains half-open outer ownership")
+				var one: PackedVector2Array = p.cell_polygon([1, 1])
+				var two: PackedVector2Array = p.cell_polygon([2, 1])
+				check(one.size() == 4 and two.size() == 4, "yawed cells expose real projected corners")
+				if one.size() == 4 and two.size() == 4:
+					check(near(one[1], two[0]) and near(one[2], two[3]), "yaw does not open logical seams between cells")
+	for invalid in [
+		[0, 4, Rect2(0, 0, 600, 240), 27.0],
+		[4, 4, Rect2(0, 0, 0, 240), 27.0],
+		[4, 4, Rect2(0, 0, 600, -1), 27.0],
+		[4, 4, Rect2(Vector2(INF, 0), Vector2(600, 240)), 27.0],
+		[4, 4, Rect2(0, 0, 600, 240), NAN],
+	]:
+		var p = configured(4, 4, rectangle())
+		check(not p.configure_ground(invalid[0], invalid[1], invalid[2], invalid[3]), "invalid ground configuration rejects")
+		check(p.inverse_coefficients().is_empty() and p.cell_polygon([0, 0]).is_empty()
+			and p.cell_at(Vector2(100, 100)).is_empty(), "failed ground reconfiguration clears a formerly valid map")
 
 func valid_piece(value: Dictionary) -> bool:
 	if not value.get("uv_rect") is Rect2 or not value.get("tint") is Color or not value.get("quarter_turn") is int: return false
@@ -260,6 +318,7 @@ func _run() -> void:
 	test_boundaries_and_cells()
 	test_dimensions_and_reconfiguration()
 	test_invalid_configuration()
+	test_ground_projection()
 	test_stable_material()
 	test_board_consumer()
 	print("Stage projection: %d checks, %d failures. Controlled geometry/material and board boundaries; not visual acceptance." % [checks, failures.size()])

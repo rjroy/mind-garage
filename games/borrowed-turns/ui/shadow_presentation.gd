@@ -9,7 +9,7 @@ var _held: Dictionary = {}
 var _cues: Array = []
 var _index := 0
 var _elapsed := 0.0
-var _loop_phase := 0.0
+var _loop_cycles := 0.0
 
 func reset(snapshot: Dictionary, generation: int) -> void:
 	if generation < _generation: return
@@ -18,7 +18,7 @@ func reset(snapshot: Dictionary, generation: int) -> void:
 	_cues = []
 	_index = 0
 	_elapsed = 0.0
-	_loop_phase = 0.0
+	_loop_cycles = 0.0
 
 func observe(before: Dictionary, command: Dictionary, after: Dictionary, generation: int) -> bool:
 	if generation != _generation or before == after: return false
@@ -69,7 +69,7 @@ func _duration(cue: Dictionary) -> float:
 
 func advance(delta: float) -> void:
 	if delta <= 0.0: return
-	_loop_phase = fposmod(_loop_phase + delta / 1.8, 1.0)
+	_loop_cycles += delta / 1.8
 	var remaining := delta
 	while _index < _cues.size() and remaining > 0.0:
 		var duration := _duration(_cues[_index])
@@ -92,5 +92,6 @@ func frame() -> Dictionary:
 		"cues": _cues.duplicate(true),
 		"cue": cue,
 		"busy": not cue.is_empty(),
-		"loop_phase": _loop_phase,
+		"loop_phase": fposmod(_loop_cycles, 1.0),
+		"loop_cycles": _loop_cycles,
 	}
