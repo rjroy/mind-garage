@@ -77,7 +77,7 @@ var _flat_positions: Array[Dictionary] = []
 func _ready() -> void:
 	theme = P.make_theme()
 	fixture = Production.DATA.duplicate(true)
-	_puppet_pack = ProjectSettings.globalize_path("res://../../.lore/local/experiments/002-shadow-paper/dual-layer/puppets")
+	_puppet_pack = "res://assets/puppets/two-pursuers"
 	for argument in OS.get_cmdline_user_args():
 		if argument == "--invert" or argument.begins_with("--invert="):
 			push_error("Borrowed Turns: --invert is no longer supported.")

@@ -535,16 +535,26 @@ func _choose_encounter_ui(id: String) -> void:
 		picker.item_selected.emit(index)
 	await process_frame
 
-func _two_pursuers_pack_ready() -> bool:
-	var directory := ProjectSettings.globalize_path("res://../../.lore/local/experiments/002-shadow-paper/dual-layer/puppets")
+func _check_default_puppet_pack() -> void:
 	for arg in OS.get_cmdline_user_args():
-		if arg.begins_with("--puppet-pack="): directory = arg.trim_prefix("--puppet-pack=")
-	for name in ["a-body.png", "a-hands.png", "b-body.png", "b-hands.png", "p-lantern.png"]:
-		if not FileAccess.file_exists(directory.path_join(name)):
-			printerr("SETUP REQUIRED: temporary puppet pack missing " + directory.path_join(name)
-				+ ". Supply --puppet-pack=<prepared-directory>; not behavioral RED.")
-			return false
-	return true
+		if arg.begins_with("--puppet-pack="): return
+	var directory := "res://assets/puppets/two-pursuers"
+	check(game._puppet_pack == directory, "default puppet pack is a shipped resource path")
+	for name in ["a-body", "a-hands", "b-body", "b-hands", "p-lantern"]:
+		var path := directory.path_join(name + ".png")
+		check(ResourceLoader.exists(path, "Texture2D"), "shipped puppet resource exists: " + path)
+		var source = load(path) if ResourceLoader.exists(path, "Texture2D") else null
+		var actual = game._puppet_art.get(name.replace("-", "_"))
+		if not source is Texture2D or not actual is Texture2D:
+			check(false, "puppet source and loaded texture exist: " + name)
+			continue
+		var source_image: Image = source.get_image()
+		var actual_image: Image = actual.get_image()
+		var expected := Vector2i(145, 145) if name == "p-lantern" else Vector2i(290, 145)
+		check(source_image != null and not source_image.is_empty() and source_image.get_size() == expected
+			and source_image.detect_alpha() != Image.ALPHA_NONE, "shipped puppet source has native alpha canvas: " + name)
+		check(actual_image != null and source_image != null and actual_image.get_size() == source_image.get_size()
+			and actual_image.get_data() == source_image.get_data(), "runtime puppet pixels match shipped source: " + name)
 
 func _standee_entry(id: String) -> Dictionary:
 	for row in game.board.standee_layout():
@@ -570,6 +580,7 @@ func _standee_body_point(id: String) -> Vector2:
 	return Vector2(INF, INF)
 
 func _test_two_pursuers_startup() -> void:
+	_check_default_puppet_pack()
 	check(game.encounter_id == "two-pursuers" and game.presentation_mode == "stage",
 		"actual command-line encounter and presentation select the normal playable scene")
 	check(game.state.width == 5 and game.state.height == 5 and game.state.player.pos == [2, 2],
@@ -603,6 +614,7 @@ func _test_two_pursuers_integration() -> void:
 		game.encounter_dialog.hide()
 	await process_frame
 	check(game.encounter_id == "two-pursuers", "confirmed chooser starts the real playable two-pursuer encounter")
+	_check_default_puppet_pack()
 	if game.encounter_id != "two-pursuers": return
 	var initial: Dictionary = game.state.duplicate(true)
 	check(initial.width == 5 and initial.height == 5 and initial.player.pos == [2, 2],
@@ -771,7 +783,7 @@ func _run() -> void:
 		return
 	if OS.get_cmdline_user_args().has("--focus=two-pursuers") \
 		or OS.get_cmdline_user_args().has("--focus=two-pursuers-cli"):
-		if not _two_pursuers_setup() or not _two_pursuers_pack_ready():
+		if not _two_pursuers_setup():
 			game.queue_free()
 			await process_frame
 			quit(2)

@@ -387,6 +387,17 @@ func _capture_actual_encounter() -> void:
 					check(game.command == {"type": "release", "target": target}, "captured preview is the actual chosen floor command")
 					await _capture_state("release-preview")
 
+func _comparison_pack_ready() -> bool:
+	var directory := "res://assets/puppets/two-pursuers"
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--puppet-pack="): directory = arg.trim_prefix("--puppet-pack=")
+	var assets = load("res://ui/two_pursuer_assets.gd")
+	var pack: Dictionary = assets.puppets(directory)
+	if pack.has("error"):
+		printerr("SETUP REQUIRED: " + str(pack.error))
+		return false
+	return true
+
 func _run() -> void:
 	if not capture_dir.is_empty():
 		var local_root := ProjectSettings.globalize_path("res://../../.lore/local").simplify_path() + "/"
@@ -394,7 +405,7 @@ func _run() -> void:
 			printerr("SETUP REQUIRED: use an absolute --capture-dir under repository .lore/local; evidence must survive reboot.")
 			quit(2)
 			return
-	if not _two_pursuers_pack_ready():
+	if not _comparison_pack_ready():
 		quit(2)
 		return
 	game = load("res://scenes/encounter.tscn").instantiate()

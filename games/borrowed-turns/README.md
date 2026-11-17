@@ -79,13 +79,12 @@ The original encounter retains its provisional figures/shove feedback. The two-p
 
 ```bash
 godot --path games/borrowed-turns -- \
-  --presentation=stage --encounter=two-pursuers \
-  --puppet-pack="$PWD/.lore/local/experiments/002-shadow-paper/dual-layer/puppets"
+  --presentation=stage --encounter=two-pursuers
 ```
 
 The visible encounter selector also opens **Two pursuers** from normal play. Changing encounters explicitly confirms a new run; Cancel keeps the existing one. Restart restores the selected encounter. View changes preserve its state, selected command and history. Omitting `--encounter` still opens the original encounter; omitting `--presentation` still selects paper.
 
-**Local material prerequisite:** the temporary pack must contain native RGBA `a-body.png`, `a-hands.png`, `b-body.png`, `b-hands.png` (290×145) and `p-lantern.png` (145×145). The default directory is the repository-local path in the command above; `--puppet-pack` overrides it. These derivatives and their inspected extraction recipes remain local, not bundled source assets. A fresh checkout alone cannot supply them. Missing/invalid material fails clearly on direct launch; a chooser failure keeps the existing run and reports the setup problem. No generated substitutes or tiny primitive fallback are used for this selected Stage encounter.
+The five puppet textures ship in `res://assets/puppets/two-pursuers`; import them as described above after a fresh checkout. Their source and portable extraction recipes are documented in [`assets-source/borrowed-turns/two-pursuers`](../../assets-source/borrowed-turns/two-pursuers/README.md). An optional `--puppet-pack=<directory>` override accepts native RGBA `a-body.png`, `a-hands.png`, `b-body.png`, `b-hands.png` (290×145) and `p-lantern.png` (145×145). Missing or invalid material fails clearly on direct launch; a chooser failure keeps the existing run and reports the problem. No substitute art is used.
 
 The 5×5, wall-free fixture deliberately starts A behind the player and B in front in the same logical column. Both announce existing shoves. The Stage ground plane now yaws about 30 degrees: that column appears staggered, while the accepted standee sizes, source images and native foot anchors remain unchanged. Small **P / A / B** source markers stay at the true actor feet, above overlapping art. Names and current HP appear in an always-visible roster to the right of the grid, below the Director. Click a roster row, visible figure pixels or a foot marker to select the same actor; transparent image padding clicks through. Roster slots stay fixed as figures move, and dead sources lose their row. Hover/focus a rear source to reduce front-piece opacity. With board focus, **[ / ]** cycles figures and Enter selects; arrows still inspect floor cells. **Alt-click** explicitly selects floor through figures. A legal floor target also takes priority when the overlapping actor is not a legal target for the chosen operation.
 
@@ -116,15 +115,16 @@ godot --path games/borrowed-turns --script res://ui/board_comparison_smoke.gd --
   --capture-dir="$PWD/.lore/local/experiments/002-shadow-paper/source-wave-motion/author/v1"
 ```
 
-The same local puppet pack is required. Captures include actual initial, A-held, B-held and release-preview states at both 1024×720 and 1600×900. Only scene processing is paused during readback, after normal settlement. Use a graphical renderer and a fresh directory under persistent, gitignored `.lore/local/`; this runner rejects other capture locations. These are injected-control author/test evidence, not physical input, human legibility judgments or independent proof of enjoyment.
+The shipped puppet pack is used by default. Captures include actual initial, A-held, B-held and release-preview states at both 1024×720 and 1600×900. Only scene processing is paused during readback, after normal settlement. Use a graphical renderer and a fresh directory under persistent, gitignored `.lore/local/`; this runner rejects other capture locations. These are injected-control author/test evidence, not physical input, human legibility judgments or independent proof of enjoyment.
 
 For a live motion comparison, use the Stage / Two pursuers launch command above. Watch both sources, then choose Capture, click A's roster/marker/body and Confirm: only A's current tile warning and traveling fronts disappear. Restart and repeat with B. A selected capture preview does not remove warnings. The matching initial/held stills establish composition, but cannot establish readable motion. Any recording should begin after startup is ready and preserve actual elapsed timing, rather than assigning a fixed FPS to slow readbacks.
 
-Focused checks (the real-scene checks require that local pack):
+Focused checks (the real-scene checks use the shipped pack):
 
 ```bash
 godot --headless --path games/borrowed-turns --script res://tests/standee_board_run.gd
 godot --headless --path games/borrowed-turns --script res://tests/two_pursuer_presentation_run.gd
+godot --headless --path games/borrowed-turns --script res://tests/puppet_assets_run.gd
 godot --headless --path games/borrowed-turns --script res://ui/smoke.gd -- --focus=two-pursuers
 godot --headless --path games/borrowed-turns --script res://ui/smoke.gd -- \
   --focus=two-pursuers-cli --presentation=stage --encounter=two-pursuers
