@@ -147,15 +147,8 @@ func _check_warning_sources() -> void:
 	for row in regions:
 		observed[row.get("source", "")] = row.get("cells", [])
 		var contours: Array = row.get("contours", [])
-		var projected: Array = row.get("projected", [])
 		check(row.get("cells", []).is_empty() or not contours.is_empty(),
 			"nonempty actual announcement has a broad logical region by default")
-		check(projected.size() == contours.size(), "actual renderer receives every projected region boundary")
-		for i in range(mini(projected.size(), contours.size())):
-			var expected_polygon := PackedVector2Array()
-			for point in contours[i]: expected_polygon.append(game.board._ensure_projection().project(point))
-			check(_polygon_near(projected[i], expected_polygon),
-				"actual overlay geometry shares the floor/feet/picking plane")
 	check(observed == expected and regions.size() == expected.size(),
 		"one exact current region per source; overlap/capture cannot merge or leave stale announcements")
 	_check_wave_join()
@@ -174,7 +167,7 @@ func _check_wave_join() -> void:
 			var metadata: Dictionary = row.duplicate(true)
 			metadata.erase("fills")
 			metadata.erase("fronts")
-			check(metadata == region, "actual wave row keeps source/origin/direction/turn/cells and shared-plane projection")
+			check(metadata == region, "actual wave row keeps source/origin/direction/turn/cells and logical contours")
 			var geometry: Dictionary = MotionOverlay.wave_geometry(region, phase)
 			check(row.get("fills", []) == region.contours and row.get("fills", []) == geometry.fills,
 				"real floor wash covers each whole model-affected tile, without inset or invented source coverage")

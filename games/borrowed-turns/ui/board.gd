@@ -94,14 +94,8 @@ func announcement_marks() -> Array:
 func announcement_regions() -> Array:
 	var regions := announcement_marks()
 	if regions.is_empty(): return regions
-	var projection = _ensure_projection()
 	for row in regions:
 		row["contours"] = Regions.boundaries(row.cells)
-		row["projected"] = []
-		for contour in row.contours:
-			var polygon := PackedVector2Array()
-			for point in contour: polygon.append(projection.project(point))
-			row.projected.append(polygon)
 	return regions
 
 func _uses_wavefronts() -> bool:

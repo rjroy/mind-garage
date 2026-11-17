@@ -159,22 +159,13 @@ func assert_regions(board) -> void:
 		var row := mark(regions, fact.source)
 		var metadata := row.duplicate(true)
 		metadata.erase("contours")
-		metadata.erase("projected")
 		check(metadata == fact, "overlay retains exact source, occurrence, direction, origin and ordered cells")
 		var contours = row.get("contours", [])
 		check(contours is Array, "overlay exposes logical contours for the shared plane")
 		if not contours is Array: continue
 		check_coverage(fact.cells, contours, fact.source)
-		var projected: Array = row.get("projected", [])
-		check(projected.size() == contours.size(), "real draw polygons join every logical region to the shared plane")
-		for i in range(mini(projected.size(), contours.size())):
-			check(projected[i].size() == contours[i].size(), "projected boundary keeps logical contour topology")
-			for j in range(mini(projected[i].size(), contours[i].size())):
-				check(projected[i][j].distance_to(board._ensure_projection().project(contours[i][j])) < 0.002,
-					"overlay draw vertices share the actual floor projection")
 		var baseline: Array = contours.duplicate(true)
 		if not contours.is_empty() and contours[0].size() > 0: contours[0][0] = Vector2(999, 999)
-		if not projected.is_empty() and projected[0].size() > 0: projected[0][0] = Vector2(999, 999)
 		if row.get("cells") is Array: row.cells.append([99, 99])
 		if row.get("origin") is Array and row.origin.size() == 2: row.origin[0] = 99
 		if row.get("direction") is Array and row.direction.size() == 2: row.direction[1] = 99
@@ -182,10 +173,7 @@ func assert_regions(board) -> void:
 		check(fresh.get("contours", []) == baseline, "returned logical contours cannot mutate later geometry")
 		var fresh_metadata := fresh.duplicate(true)
 		fresh_metadata.erase("contours")
-		fresh_metadata.erase("projected")
 		check(fresh_metadata == fact, "returned overlay source/cell facts are detached from model and later calls")
-		if not fresh.get("projected", []).is_empty():
-			check(fresh.projected[0][0] != Vector2(999, 999), "returned screen contours are detached too")
 
 func assert_marks(board, expected: Dictionary) -> void:
 	var rows: Array = board.announcement_marks()

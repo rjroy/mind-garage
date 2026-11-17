@@ -130,6 +130,8 @@ godot --headless --path games/borrowed-turns --script res://ui/smoke.gd -- \
   --focus=two-pursuers-cli --presentation=stage --encounter=two-pursuers
 ```
 
+The standalone capture-motion study tool was retired after checkpoint `42702e3`; that checkpoint preserves its original launch and test instructions. The live two-pursuer rig retains the study glow shader.
+
 Focused stage checks and actual rendered captures:
 
 ```bash

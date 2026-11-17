@@ -2,7 +2,21 @@ extends Node2D
 ## Bounded two-source performance. Positions are theatrical, never map bearings.
 ## All time and outcomes come from the shared controller and pure descriptor.
 
-const Glow = preload("res://studies/capture_motion/rig.gd")
+const GLOW := """
+shader_type canvas_item;
+render_mode unshaded;
+uniform vec4 tint : source_color = vec4(0.71, 0.90, 0.81, 1.0);
+uniform float strength = 0.8;
+void fragment() {
+	float halo = 0.0;
+	for (int x = -2; x <= 2; x++) {
+		for (int y = -2; y <= 2; y++) {
+			halo += texture(TEXTURE, UV + vec2(float(x), float(y)) * TEXTURE_PIXEL_SIZE * 1.7).a;
+		}
+	}
+	COLOR = vec4(tint.rgb, clamp(halo / 15.0, 0.0, 1.0) * strength);
+}
+"""
 const BASELINES := {"A": Vector2(105, 145), "B": Vector2(180, 145)}
 const HINGES := {"A": Vector2(171, 96), "B": Vector2(119, 87)}
 const POSITIONS := {"A": Vector2(0.30, 0.45), "B": Vector2(0.80, 0.45)}
@@ -36,7 +50,7 @@ func configure_assets(textures: Dictionary) -> bool:
 		if textures[key].get_size() != canvas: return false
 	_textures = textures.duplicate()
 	_glow = Shader.new()
-	_glow.code = Glow.GLOW
+	_glow.code = GLOW
 	for id in ["A", "B"]:
 		_bodies[id] = _sprite(_textures[id.to_lower() + "_body"])
 		add_child(_bodies[id])
@@ -69,7 +83,6 @@ func _hand(occurrence: Dictionary) -> Node2D:
 	var key := _key(occurrence)
 	if not _hands.has(key):
 		var node := Node2D.new()
-		node.set_meta("occurrence", occurrence.duplicate(true))
 		var texture: Texture2D = _textures[str(occurrence.source).to_lower() + "_hands"]
 		var halo := _sprite(texture)
 		halo.name = "Glow"
@@ -89,7 +102,6 @@ func _hand(occurrence: Dictionary) -> Node2D:
 func _pose(occurrence: Dictionary, role: String, position: Vector2, scale_factor: float,
 	phase: float, mirror: float = 1.0, angle: float = 0.0) -> void:
 	var node := _hand(occurrence)
-	node.set_meta("role", role)
 	node.transform = Transform2D(angle, Vector2(mirror, 1) * scale_factor, 0.0, position)
 	node.visible = true
 	var halo: Sprite2D = node.get_node("Glow")
@@ -241,12 +253,3 @@ func _draw() -> void:
 		if label.get("floor", false): continue
 		draw_string(ThemeDB.fallback_font, label.at, label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, 13,
 			Color("382433"))
-
-func hand_instances() -> Array:
-	var result: Array = []
-	for node in _hands.values():
-		var art: Sprite2D = node.get_node("Art")
-		result.append({"occurrence": node.get_meta("occurrence").duplicate(true),
-			"role": node.get_meta("role"), "transform": art.global_transform,
-			"visible": art.is_visible_in_tree(), "instance_id": node.get_instance_id()})
-	return result
