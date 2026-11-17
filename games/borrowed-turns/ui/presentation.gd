@@ -23,6 +23,19 @@ static func geometry(ability: Dictionary) -> String:
 static func ability_text(ability: Dictionary) -> String:
 	return "%s · %d damage\nRange %d · %s%s" % [str(ability.kind).capitalize(), ability.damage, ability.range, geometry(ability), " · Push" if ability.push else ""]
 
+static func objective_text(state: Dictionary) -> String:
+	if state.get("objective", "escape") == "defeat_all":
+		return "%d HP · Foes left: %d\nDefeat all foes." % [state.player.hp, state.enemies.size()]
+	if not state.has("exit"): return "%d HP" % state.player.hp
+	return "%d HP · Exit %s\nReach %s%s" % [state.player.hp,
+		"open" if state.turn >= state.exit.opens else "opens turn %d" % state.exit.opens,
+		cell(state.exit.pos), "" if state.turn >= state.exit.opens else " when open"]
+
+static func rejection_text(reason: String) -> String:
+	if reason == "threatened":
+		return "Cannot capture while you are in any announced enemy attack. Move to a safe cell first."
+	return reason
+
 static func event_text(event: Dictionary) -> String:
 	var who := actor(str(event.get("actor", "")))
 	var source := str(event.get("source", "")).to_upper()
@@ -30,6 +43,8 @@ static func event_text(event: Dictionary) -> String:
 		"move": return "%s moved to %s." % [who, cell(event.to)]
 		"capture": return "Acquired %s from %s; this attack canceled." % [event.kind, source]
 		"capture_failed":
+			if event.reason == "threatened":
+				return "Capture failed: backlash left you in an announced attack. The discharge still happened; no ability acquired. Slot ends empty."
 			return "Capture failed: %s %s. Slot ends empty." % [source, "died" if event.reason == "source_dead" else "moved out of reach"]
 		"release": return "Released %s toward %s." % [str(event.kind), cell(event.target)]
 		"backlash": return "Backlash · %s from %s discharges where you stand." % [str(event.kind).capitalize(), source]
@@ -38,7 +53,7 @@ static func event_text(event: Dictionary) -> String:
 		"displace": return "%s displaced to %s." % [who, cell(event.to)]
 		"death": return "%s fell." % who
 		"turn": return "Turn %d · AP and MP refreshed; fresh intentions." % event.number
-		"win": return "Escaped through the open exit."
+		"win": return "Victory. All foes defeated." if event.get("objective", "escape") == "defeat_all" else "Escaped through the open exit."
 		"loss": return "Caught. Your health reached zero."
 	return str(event.get("type", ""))
 
@@ -54,7 +69,7 @@ static func deadline(state: Dictionary) -> String:
 	return "Release before ending turn %d%s" % [due, " · Backlash when you End turn" if state.turn >= due else ""]
 
 static func stored_text(state: Dictionary) -> String:
-	if state.stored.is_empty(): return "Empty\nCapture a nearby announced ability. Release can happen this turn."
+	if state.stored.is_empty(): return "Empty\nCapture a nearby announced ability from a safe cell. Release can happen this turn."
 	var stored: Dictionary = state.stored
 	var ability: Dictionary = stored.ability
 	var effect := "Area centered on you" if ability.kind == "burst" else "You + the stored source-direction line"
@@ -71,7 +86,8 @@ static func command_summary(current: Dictionary, predicted: Dictionary, action: 
 	var outcomes: Array[String] = []
 	if predicted.status == "lost":
 		outcomes.append("This discharge kills you. No new ability is acquired." if kind == "capture" else "This command kills you.")
-	elif predicted.status == "won": outcomes.append("You escape.")
+	elif predicted.status == "won":
+		outcomes.append("Victory. All foes defeated." if predicted.get("objective", "escape") == "defeat_all" else "You escape.")
 	else:
 		for event in predicted.events:
 			if event.type == "capture_failed": outcomes.append(event_text(event))

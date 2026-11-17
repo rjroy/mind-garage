@@ -205,15 +205,7 @@ func _test_rehearsal_motion() -> void:
 			"surviving source keeps rehearsing after either capture without advancing combat")
 
 func _controlled_fixture() -> Dictionary:
-	var data := F.encounter([
-		F.enemy("A", [2, 1], F.ability("shove", 2, 3, 0, true), 19, [0, 1]),
-		F.enemy("B", [2, 3], F.ability("shove", 2, 3, 0, true), 17, [0, -1]),
-	], 3, 31)
-	data.width = 5
-	data.height = 5
-	data.player.pos = [2, 2]
-	data.exit = {"pos": [4, 4], "opens": 12}
-	return data
+	return F.two_pursuers()
 
 func _floor_click(cell: Array) -> void:
 	var point: Vector2 = game.board.get_global_transform() * game.board.cell_center(cell)
@@ -244,6 +236,15 @@ func _prepare_capture(id: String) -> void:
 func _test_controlled_slice() -> void:
 	for extent in [Vector2i(1024, 720), Vector2i(1600, 900)]:
 		await _stage_resize(extent)
+		# The original both-threats pose remains valuable for inspection and
+		# ownership, but is intentionally not a successful capture fixture.
+		await load_fixture(F.two_pursuers(true))
+		_check_default_slice()
+		await _inspect_roster()
+		press(game.action_buttons.capture)
+		await _roster_click("A")
+		check(game.confirm_button.disabled and game.prediction.is_empty(),
+			"overlap stress pose permits inspection, not capture while threatened")
 		for captured in ["A", "B"]:
 			await load_fixture(_controlled_fixture())
 			_check_default_slice()
@@ -271,8 +272,8 @@ func _test_controlled_slice() -> void:
 			_check_warning_sources()
 			_check_roster()
 			press(game.action_buttons.release)
-			await _floor_click([1, 2])
-			check(game.command == {"type": "release", "target": [1, 2]} and not game.confirm_button.disabled,
+			await _floor_click([1, 1])
+			check(game.command == {"type": "release", "target": [1, 1]} and not game.confirm_button.disabled,
 				"Alt-floor release selects the exact yawed cell, not a body/head in front of it")
 			check(not game.state.backlash_footprint.is_empty() and not game.board.effect_footprints().is_empty(),
 				"held backlash and exact command effects stay available alongside the remaining enemy region")
@@ -305,6 +306,7 @@ func _test_roster_hp_sync() -> void:
 	if not (await _roster_click("A")): return
 	check(game.command == {"type": "capture", "source": "A"}, "roster can acquire a real current source")
 	await commit()
+	await move([2, 2]) # Enter the attack line only after the safe acquisition.
 	var before_hp: int = _standee_entry("B").hp
 	press(game.action_buttons.release)
 	await _floor_click([2, 3])
@@ -333,6 +335,7 @@ func _test_roster_hp_sync() -> void:
 	press(game.action_buttons.capture)
 	if not (await _roster_click("A")): return
 	await commit()
+	await move([2, 2])
 	press(game.action_buttons.release)
 	await _floor_click([2, 3])
 	await commit()

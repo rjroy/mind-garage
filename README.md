@@ -8,43 +8,36 @@ The shared research question is: **Can AI originate a central game mechanic and 
 
 Human playtest feedback is part of that process. The question is not whether AI can build a game without human contact, or whether a clever prompt alone can establish that a design is novel and fun.
 
-## Current prototype: Borrowed Turns, revision 02
+## Current prototype: Borrowed Turns, active-opponent fight
 
-Steal an enemy's announced action, then turn it against the hunt. An ordinary person with a stolen artifact must escape a small, turn-based grid encounter.
+Steal an enemy's announced action, then turn it against the hunt. Normal play now opens a small, turn-based **defeat-all fight** against two active opponents in the accepted Stage presentation.
 
 ```bash
 godot --path games/borrowed-turns
 ```
 
-The live game now uses one shared baseline: independent action/movement points, unlimited free capture, action-cost release, and ability-specific backlash on replacement or expiry. There is no discard. End Turn is explicit; reaching zero points does not advance time. Invert has been removed from the live prototype; it is not part of the core mechanic. See the [play instructions](games/borrowed-turns/README.md) and [experiment record](.lore/work/experiments/001-hook-discovery/record.md).
+The shared baseline retains independent action/movement points, free capture, action-cost release, and ability-specific backlash on replacement or expiry. Capture now requires a position outside **every current announced enemy attack**. One opponent chases; the other seeks usable maximum attack range. End Turn resolves old attacks, opponent movement, then fresh aim and announcements. There is no discard, progression or unlock system. Reaching zero points does not advance time. See the [play instructions](games/borrowed-turns/README.md) and [active-opponent revision record](.lore/work/experiments/003-active-opponents/record.md).
 
-This is a mechanic prototype, not a finished roguelite or a validated progression system. Revision 02 passed independent functional checks and correctness, visual and engineering-quality reviews. Human enjoyment and replay evidence are still pending; completion alone does not demonstrate that capture creates worthwhile decisions.
+This is a mechanic prototype, not a finished roguelite or a validated progression system. The capture/release baseline was established in revision 02; the current fight adds mobile opponents and safe-position capture. Human enjoyment and replay evidence are still pending; completion alone does not demonstrate that capture creates worthwhile decisions. The [Curtain Call narrative direction](.lore/work/narrative/borrowed-turns/curtain-call-narrative-brief.md) supplies context, not an exhaustive mechanics specification.
+
+Explicit `--presentation=plain` and `--presentation=paper` comparisons remain available. The earlier escape encounter is retained with `--encounter=escape --presentation=paper`; it is not the default goal. Active-fight feasibility and technical verification do not establish that the fight is fun.
 
 The first six-variant prototype is preserved at source commit `fd8e91d`; it is not a parallel mode in the live game. Subsequent human feedback and the unlimited-capture/backlash direction are recorded in [design revision 02](.lore/work/experiments/001-hook-discovery/design-revision-02.md), with provisional [executable rules](.lore/work/experiments/001-hook-discovery/revision-02-executable-rules.md).
 
 The separate [revision-02 replay guide](.lore/work/experiments/001-hook-discovery/builds/revision-02/README.md) identifies checkpoint `009311b` and its recorded test results without replacing the first-build record. It predates the subsequent Invert removal; historical features are not current requirements. Generated archives and raw output are local, not required checkout files.
 
-### Current visual pilot
+### Accepted presentation baseline
 
-The [action-shadow experiment](.lore/work/experiments/002-shadow-paper/record.md) adds a reversible, one-ability paper presentation without changing the rules:
-
-```bash
-godot --path games/borrowed-turns -- --presentation=paper
-godot --path games/borrowed-turns -- --presentation=plain
-```
-
-The in-game presentation toggle also preserves the current encounter. This is a **limited ownership, legibility and motion pilot**, not a representative test of finished shadow-paper art appeal. Independent visual review found recognizable figures and gestures, but inadequate staging and construction to answer that broader question. No new finished assets were generated.
-
-`mind-garage-fy3` remains open for Ronald's reaction and the next visual decision. The later short-run/progression discussion, `mind-garage-7am`, remains blocked on it. Technical checks do not replace either decision.
-
-Following that review, Ronald approved three actual stage source images and authorized their integration into an optional theatre view:
+The [action-shadow experiment](.lore/work/experiments/002-shadow-paper/record.md) records the earlier primitive pilot, concept exploration, accepted stage/standees/Director and source-driven wavefronts. Ronald accepted the resulting visuals as sufficient not to detract from gameplay; `mind-garage-fy3` is closed. That is not a finished-art or enjoyment claim.
 
 ```bash
 godot --headless --editor --path games/borrowed-turns --import
 godot --path games/borrowed-turns -- --presentation=stage
 ```
 
-This view combines the approved backdrop and foreground with runtime-sized, perspective-projected paper cells. The grid, tactical marks and targeting share the same map; rules and source artwork are unchanged. Ronald accepted the stage and floor in game at checkpoint `dcbd13e`. The original `paper` default and `plain` view remain available. Existing figures and shove gestures are still provisional, not the proposed elaborate backdrop puppets or a lantern mechanic. See the [stage instructions](games/borrowed-turns/README.md#optional-theatre-stage). Acceptance of those remaining visual elements is separate.
+Stage is now the default; `paper` and `plain` remain comparisons. The accepted art and shared board projection are unchanged by the active-opponent revision. Runtime puppet textures ship in the game; necessary preparation artwork and recipes live under `assets-source/`. No local experiment history is needed to play. See the [stage instructions](games/borrowed-turns/README.md#theatre-stage).
+
+Current work `mind-garage-jkv` tests one fight with active opponents. Multi-fight runs and progression remain future discussion under `mind-garage-7am`, after the fight is worth playing.
 
 ## Shared foundations
 

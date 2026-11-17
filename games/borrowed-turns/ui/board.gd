@@ -78,10 +78,16 @@ func set_stage_mode(enabled: bool) -> void:
 	_sync_stage()
 	queue_redraw()
 
+func _visible_intentions() -> Array:
+	# The snapshot already contains next-turn plans while old events play.
+	# Only the shared controller decides when that fresh rehearsal is ready.
+	if shadow_frame.get("announcements_deferred", false): return []
+	return state.get("intentions", [])
+
 func announcement_marks() -> Array:
 	if not stage_mode or not theatre_mode or state.is_empty(): return []
 	var marks: Array = []
-	for intent in state.get("intentions", []):
+	for intent in _visible_intentions():
 		if intent.source not in ["A", "B"] or intent.kind != "shove": continue
 		for enemy in state.get("enemies", []):
 			if enemy.id != intent.source or enemy.get("hp", 0) <= 0: continue
@@ -150,6 +156,13 @@ func configure_standees(textures: Dictionary, assembly: Dictionary) -> bool:
 func show_transition(before: Dictionary) -> void:
 	_motion_before = before.duplicate(true) if theatre_mode else {}
 
+func _cue_event_end(cue: Dictionary) -> int:
+	var end: int = state.get("events", []).size()
+	for planned in shadow_frame.get("cues", []):
+		if planned.event_index > cue.get("event_index", -1):
+			end = mini(end, planned.event_index)
+	return end
+
 func _visual_actors() -> Array:
 	var actors: Dictionary = {}
 	if state.is_empty(): return []
@@ -165,10 +178,8 @@ func _visual_actors() -> Array:
 		for enemy in _motion_before.enemies:
 			positions[enemy.id] = enemy.pos
 			old[enemy.id] = enemy
-		var end := events.size()
+		var end := _cue_event_end(cue)
 		var start: int = cue.get("event_index", -1)
-		for planned in shadow_frame.get("cues", []):
-			if planned.event_index > start: end = mini(end, planned.event_index)
 		var progress: float = cue.get("progress", clampf((1.0 - accent) / 0.88, 0.0, 1.0))
 		var alive := positions.keys()
 		for i in range(events.size()):
@@ -474,7 +485,7 @@ func _uses_shadow_effects() -> bool:
 func effect_footprints() -> Array:
 	if _uses_shadow_effects():
 		var cue: Dictionary = shadow_frame.get("cue", {})
-		if cue.is_empty() or cue.type == "capture": return []
+		if cue.is_empty() or cue.type not in ["release", "backlash", "resolve"]: return []
 		return [{"type": cue.footprint_type, "actor": cue.source if cue.type == "resolve" else "player",
 			"stage": "enemy" if cue.type == "resolve" else cue.type, "cells": cue.cells.duplicate(true)}]
 	var effects: Array = preview.get("events", []) if not preview.is_empty() else last_events
@@ -615,18 +626,19 @@ func _draw() -> void:
 			draw_line(start, start + Vector2(rect.size.x, 0), P.GRID, 1)
 			if y < state.height: _text(start + Vector2(-22, cell_size / 2 + 5), str(y), P.SECONDARY)
 	for wall in state.walls: _tile(wall, 3, Color("837077") if stage_mode else P.WALL, true)
-	var exit_rect := _cell_rect(state.exit.pos).grow(-5)
-	var exit_color := Color("ffe1a0") if stage_mode else P.EXIT
-	_tile(state.exit.pos, 5, exit_color, false, 2)
-	_tile(state.exit.pos, 9, exit_color, false, 1)
-	_text(cell_center(state.exit.pos) + Vector2(-14, 4) if stage_mode else exit_rect.position + Vector2(3, exit_rect.size.y - 6), "EXIT", exit_color, 12)
+	if state.get("objective", "escape") == "escape" and state.has("exit"):
+		var exit_rect := _cell_rect(state.exit.pos).grow(-5)
+		var exit_color := Color("ffe1a0") if stage_mode else P.EXIT
+		_tile(state.exit.pos, 5, exit_color, false, 2)
+		_tile(state.exit.pos, 9, exit_color, false, 1)
+		_text(cell_center(state.exit.pos) + Vector2(-14, 4) if stage_mode else exit_rect.position + Vector2(3, exit_rect.size.y - 6), "EXIT", exit_color, 12)
 	var threat_counts := {}
 	var regions: Array = announcement_waves() if _uses_wavefronts() else []
 	var actor_rows := standee_layout()
 	var wave_sources: Array = []
 	for region in regions: wave_sources.append(region.source)
 	wavefront_overlay.draw_regions(self, regions)
-	for intent in state.get("intentions", []):
+	for intent in _visible_intentions():
 		if intent.source in wave_sources and intent.kind == "shove": continue
 		for cell in intent.cells:
 			var key := str(cell)
@@ -649,6 +661,10 @@ func _draw() -> void:
 	var footprints := effect_footprints()
 	var shadow_effects := _uses_shadow_effects()
 	if shadow_effects:
+		var active: Dictionary = shadow_frame.get("cue", {})
+		# Keep existing movement/death marks in their owning finite event
+		# segment, rather than flashing later slides during the first attack.
+		effects = state.get("events", []).slice(active.event_index, _cue_event_end(active)) if not active.is_empty() else []
 		for footprint in footprints: _draw_effect_footprint(footprint, true)
 	var footprint_index := 0
 	var effect_positions := {"player": state.player.pos}
@@ -671,7 +687,7 @@ func _draw() -> void:
 		# Source-marked warning tabs sit beside, rather than underneath, the tall
 		# silhouettes. Every model-authored cell/source remains represented.
 		var labels_per_cell := {}
-		for intent in state.intentions:
+		for intent in _visible_intentions():
 			if intent.source in wave_sources and intent.kind == "shove": continue
 			for cell in intent.cells:
 				var key := str(cell)

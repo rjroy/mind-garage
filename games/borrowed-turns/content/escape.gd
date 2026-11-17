@@ -1,6 +1,7 @@
 extends RefCounted
 ## Provisional R2 escape room. Not tuned evidence of balance or enjoyment.
 const DATA := {
+	"objective": "escape",
 	"width": 7,
 	"height": 7,
 	"walls": [[4, 1], [4, 5]],

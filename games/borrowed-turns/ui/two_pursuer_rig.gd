@@ -167,7 +167,8 @@ func present(description: Dictionary, rect: Rect2) -> void:
 		body.scale = Vector2.ONE * scale_factor
 		var capturing: bool = not transfer.is_empty() and transfer.occurrence.source == id
 		var acting: bool = cue.get("type", "") == "resolve" and cue.get("source", "") == id
-		body.visible = not occurrence.is_empty() or capturing or acting
+		var moving: bool = cue.get("type", "") == "move" and cue.get("actor", "") == id
+		body.visible = not occurrence.is_empty() or capturing or acting or moving
 		body.modulate = Color("f7d9a3") if row.get("inspected", false) else Color.WHITE
 		if capturing: body.modulate.a = 1.0 - smoothstep(0.02, 0.50, transfer.progress)
 		var anchor: Vector2 = body.position + HINGES[id] * scale_factor
@@ -176,7 +177,7 @@ func present(description: Dictionary, rect: Rect2) -> void:
 		var local_phase := fposmod(phase + (0.36 if id == "B" else 0.0), 1.0)
 		# During committed resolutions keep the next announcement quiet, rather
 		# than showing next-turn attacks on top of this turn's actual outcome.
-		if not occurrence.is_empty() and (not description.busy or cue.get("type", "") == "capture"):
+		if not occurrence.is_empty():
 			var press := sin(local_phase * TAU) if threatens else 0.0
 			var direction := 1.0 if id == "A" else -1.0
 			_pose(occurrence, "rehearsal" if threatens else "watchful", anchor + Vector2(press * direction * 4, 0) * scale_factor,
@@ -184,7 +185,7 @@ func present(description: Dictionary, rect: Rect2) -> void:
 			wanted.append(_key(occurrence))
 		if body.visible:
 			_labels.append({"at": body.position + Vector2(125, 4) * scale_factor,
-				"text": ("◇ A" if id == "A" else "○ B") + (" · watching" if not threatens and not acting and not capturing else "")})
+				"text": ("◇ A" if id == "A" else "○ B") + (" · watching" if not threatens and not acting and not capturing and not moving else "")})
 		if not description.busy and not occurrence.is_empty(): _prior_sources[id] = occurrence.duplicate(true)
 	if not transfer.is_empty():
 		var occurrence: Dictionary = transfer.occurrence
@@ -232,6 +233,9 @@ func present(description: Dictionary, rect: Rect2) -> void:
 		if not target_names.is_empty(): caption += " → " + ", ".join(target_names)
 		else: caption += " · no actor hit"
 		_labels.append({"at": rect.position + rect.size * Vector2(0.22, 0.505), "text": caption, "floor": true})
+	elif cue.get("type", "") == "move":
+		_labels.append({"at": rect.position + rect.size * Vector2(0.22, 0.505),
+			"text": "%s repositions" % cue.actor, "floor": true})
 	else:
 		_labels.append({"at": rect.position + rect.size * Vector2(0.22, 0.505),
 			"text": "Rehearsal · if you End turn" if any_threat else "Watching · no current threat to you", "floor": true})

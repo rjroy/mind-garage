@@ -23,6 +23,7 @@ extends SceneTree
 const Encounter = preload("res://model/encounter.gd")
 const Shadow = preload("res://ui/shadow_presentation.gd")
 const F = preload("res://tests/shadow_rendering_fixtures.gd")
+const MovementFixture = preload("res://ui/smoke_fixtures.gd")
 const RENDERER := "res://ui/shadow_renderer.gd"
 const BOARD := "res://ui/board.gd"
 var renderer_script: Script
@@ -65,7 +66,9 @@ func _setup() -> bool:
 
 func game(fixture: Dictionary):
 	var g = Encounter.new()
-	g.configure(fixture, "R2")
+	var isolated := fixture.duplicate(true)
+	isolated.objective = "escape"
+	g.configure(isolated, "R2")
 	return g
 
 func commit(g, p, command: Dictionary) -> Dictionary:
@@ -79,10 +82,21 @@ func commit(g, p, command: Dictionary) -> Dictionary:
 	return after
 
 func deadline(later_lethal: bool = false) -> Dictionary:
-	var g = game(F.deadline(later_lethal))
+	# Acquire from the safe flank before stepping into the later bolt line.
+	# The deadline/backlash/friendly-fire sequence itself is unchanged.
+	var fixture := F.deadline(later_lethal)
+	fixture.player.pos = [1, 3]
+	fixture.enemies[0].pos = [1, 4]
+	# Re-aiming this bystander must not push the player out of the killer's
+	# later line. It remains the real backlash victim, not a second attacker.
+	fixture.enemies[1].kind = "bolt"
+	fixture.enemies[1].ability = {"kind": "bolt", "damage": 0, "range": 3, "radius": 0, "push": false}
+	var g = game(fixture)
 	var p = Shadow.new()
 	p.reset(g.snapshot(), 1)
 	if commit(g, p, {"type": "capture", "source": "held"}).is_empty(): return {}
+	p.advance(60.0)
+	if commit(g, p, {"type": "move", "to": [2, 3]}).is_empty(): return {}
 	p.advance(60.0)
 	if commit(g, p, {"type": "end_turn"}).is_empty(): return {}
 	p.advance(60.0)
@@ -345,6 +359,61 @@ func test_mixed_enemy_resolution() -> void:
 			"C03 actual mixed fixture has distinct ray/area geometry in requested source order: " + str(order))
 		collect_mixed_feedback(g, p, after, "mixed enemy order " + str(order))
 
+func actor_grid(board, id: String) -> Vector2:
+	for row in board._visual_actors():
+		if row.actor == id: return row.grid - Vector2(0.5, 0.5)
+	return Vector2(INF, INF)
+
+func test_moves_do_not_leak_into_ability_motion() -> void:
+	var transition := MovementFixture.movement_transition()
+	var p = Shadow.new()
+	p.reset(transition.before, 51)
+	check(p.observe(transition.before, {"type": "end_turn"}, transition.after, 51),
+		"board timeline receives test-owned old attacks, displacement and voluntary moves")
+	var board = board_script.new()
+	board.size = Vector2(1024, 650)
+	board.theatre_mode = true
+	board.set_stage_mode(true)
+	board.set_view(transition.after, {}, [], [], "")
+	board.show_transition(transition.before)
+	var seen: Array = []
+	var sliding: Array = []
+	for _step in range(14400):
+		var frame: Dictionary = p.frame()
+		board.set_presentation(true, frame)
+		if not frame.busy: break
+		var cue: Dictionary = frame.cue
+		var index: int = cue.get("event_index", -1)
+		if index not in seen:
+			seen.append(index)
+			check(board.announcement_marks().is_empty() and board.announcement_waves().is_empty(),
+				"board does not draw future next-turn warnings during old effects or slides")
+		var a := actor_grid(board, "A")
+		var b := actor_grid(board, "B")
+		if index in [0, 3]:
+			check(a == Vector2(3, 1) and is_equal_approx(b.x, 3.0),
+				"future voluntary moves cannot run inside preceding ability feedback")
+		if cue.get("type", "") == "move":
+			check(drawn(board, "active slide").is_empty(), "a voluntary slide does not invent a ray/area hit footprint")
+			var progress: float = cue.get("progress", 0.0)
+			if progress > 0.25 and progress < 0.75:
+				var id: String = cue.get("actor", "")
+				if id not in sliding:
+					sliding.append(id)
+					if id == "A":
+						check(a.x > 2.0 and a.x < 3.0 and is_equal_approx(a.y, 1.0)
+							and b == Vector2(3, 3), "A slides on its own event; B waits after its ability displacement")
+					elif id == "B":
+						check(a == Vector2(2, 1) and b.x > 2.0 and b.x < 3.0
+							and is_equal_approx(b.y, 3.0), "B slides only after A has reached its committed destination")
+		p.advance(1.0 / 120.0)
+	check(seen == [0, 3, 5, 6] and sliding == ["A", "B"], "actual board interpolation exercises both distinct finite slides")
+	board.set_presentation(true, p.frame())
+	check(actor_grid(board, "A") == Vector2(2, 1) and actor_grid(board, "B") == Vector2(2, 3),
+		"settled figures end at exact authoritative cells without changing the model")
+	check(board.announcement_marks().size() == 1, "settled board exposes the fresh shove announcement, not old resolved cells")
+	board.free()
+
 func _run() -> void:
 	if not _setup():
 		quit(2)
@@ -353,5 +422,6 @@ func _run() -> void:
 	test_active_cue_footprints()
 	test_bolt_backlash_before_shove_capture()
 	test_mixed_enemy_resolution()
+	test_moves_do_not_leak_into_ability_motion()
 	print("Shadow rendering regressions: %d checks, %d failures. Drawing decisions only; no visual-appeal or physical-input acceptance." % [checks, failures.size()])
 	quit(0 if failures.is_empty() else 1)

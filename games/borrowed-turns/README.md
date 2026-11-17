@@ -1,10 +1,10 @@
 # Borrowed Turns
 
-One small turn-based escape encounter built around stealing announced enemy abilities. This is revision 02's coherent shared baseline, following Ronald's rules revision. It is not a new six-way comparison or evidence of enjoyment. Mind Garage names the research effort, not this game.
+One small turn-based fight built around stealing announced enemy abilities. The current bounded revision adds two active opponents to the shared capture/release rules. It is not a run, unlock system, new six-way comparison or evidence of enjoyment. Mind Garage names the research effort, not this game.
 
 ## Run
 
-Requires the installed Godot 4.7.2 executable. No packages, external services, downloaded fonts, telemetry or persistent saves. The optional stage uses three approved source images.
+Requires the installed Godot 4.7.2 executable. No packages, external services, downloaded fonts, telemetry or persistent saves. The Stage and source actors ship with the game.
 
 From the repository root:
 
@@ -15,25 +15,26 @@ godot --path games/borrowed-turns
 godot --path games/borrowed-turns -- --presentation=plain
 godot --path games/borrowed-turns -- --presentation=paper
 godot --path games/borrowed-turns -- --presentation=stage
+godot --path games/borrowed-turns -- --encounter=escape --presentation=paper
 ```
 
-The normal game defaults to the original escape encounter, identified internally as `R2`. The optional **Two pursuers** encounter uses the same rules/model for a playable visual experiment. The original V1–V6 chooser, variant launch modes, discard and wait are removed. The original build at `fd8e91d` and its archive/evidence remain historical records; the working game does not embed a parallel legacy engine.
+Normal play opens **Two pursuers** in **Stage** view: defeat both opponents. A chases the player; B seeks a usable firing position at maximum range. The player starts at the left edge midpoint and opponents at the opposite corners. The explicit **escape** encounter remains available in the encounter selector or command above. Both use the shared model. The original V1–V6 chooser, variant launch modes, discard and wait are removed. The original build at `fd8e91d` remains historical, not a parallel legacy engine.
 
 The former Invert preview is not part of the current core rules; the retired `--invert` option is rejected. There is no progression gate.
 
-The default candidate view is **paper**: a reversible one-shove presentation pilot, not accepted production art. **Paper pilot** switches between that view and the plain renderer. **Stage view** opens the optional theatre; its view selector returns to either baseline. Switching does not reset the encounter, spend points, change a selected command or replay history. It cancels only in-flight visual feedback and restores settled ownership facts. The immutable comparison baseline remains `ba3ab7a`; all views use the same model and selected fixture. Unknown presentation or encounter values are rejected.
+The default view is **Stage**. Its selector also offers **plain** and **paper** comparisons. Switching does not reset the encounter, spend points, change a selected command or replay history. It cancels only in-flight visual feedback and restores settled ownership facts. All views use the same model and selected fixture. Unknown presentation or encounter values are rejected.
 
 Requested window: 1280 × 800; minimum 1024 × 720. Native Controls follow actual viewport dimensions without globally shrinking fonts. A tiling compositor may refuse requested native dimensions. Phone/portrait/gamepad support is out of scope.
 
 ## Turn and controls
 
-Reach the exit when it is open. Killing every pursuer is not required.
+In the default fight, defeat all foes. The goal and number remaining stay visible. There is no exit, progression or unlock condition. In the explicit escape comparison, reach the exit when it is open; killing all foes is not required there.
 
 - **AP** means action points. Release uses 1 AP and no MP.
 - **MP** means movement points. A confirmed one-cell cardinal move uses 1 MP and no AP.
-- **Capture** is free, including replacement. It can interleave with movement/releases; no arbitrary per-turn cap applies. Each currently announced occurrence can be captured once. Capturing cancels that occurrence, not the source's future announcements.
+- **Capture** is free, including replacement, but is illegal while you occupy **any current enemy announced attack**, not only the chosen source's. Move to a safe adjacent position first. It can interleave with movement/releases; no arbitrary per-turn cap applies. Each currently announced occurrence can be captured once. Capturing cancels that occurrence, not the source's future announcements.
 - A newly captured ability can be released this turn, within that ability's own range/shape.
-- **End turn** explicitly resolves due backlash and surviving uncanceled enemy plans, then refreshes AP/MP and announcements. Budgets reaching zero never auto-end the turn. Free capture can still be available at zero AP and MP.
+- **End turn** resolves due backlash, then surviving old attacks in source order, then living opponents' movement in source order. Opponents aim and announce again before the next player turn. Their aim stays fixed during your turn, though displacing a source translates its footprint. The initial movement budget is one cardinal step. Budgets reaching zero never auto-end the turn. Free capture can still be available at zero AP and MP when your position is safe.
 
 Choose **Move**, **Capture**, **Release** or **End turn**, then choose a source/target if needed. Inspect the predicted board overlay and summary; **Preview** lists exact ordered effects in the right rail, or an upper-stage sheet in stage view. A separate **Confirm** commits. **Cancel** or right click backs out without changing the model. End turn also previews and requires confirmation, even if no points remain. **Recent events** contains committed events only and remains one tab away.
 
@@ -45,7 +46,7 @@ The single stored ability retains its source identity/direction, range, damage, 
 
 Capturing while holding an ability immediately discharges the old one at the player's position before attempting acquisition. Burst backlash centers the real area on the player. Line backlash hits the player and its stored direction. Damage and enemy displacement come from the held ability, not a generic fixed penalty. Backlash may harm pursuers and can be deliberate, but it always risks the player; there is no discard route.
 
-Inspect the exact replacement preview. It may acquire the selected source, kill the player without acquiring anything, or discharge successfully but fail acquisition because the selected source died or moved out of reach. **Capture failed** is that legal partial outcome, not a rolled-back or invalid command. The summary exposes it before confirmation; a legal lethal choice remains confirmable.
+Inspect the exact replacement preview. It may acquire the selected source, kill the player without acquiring anything, or discharge successfully but fail acquisition because the selected source died, moved out of reach, or the discharge left you threatened by another current attack. **Capture failed** is that legal partial outcome: the backlash happened and the slot ends empty. It is not a rollback or an ordinary rejected capture. The summary exposes it before confirmation; a legal lethal choice remains confirmable.
 
 ### Reading the board
 
@@ -55,7 +56,7 @@ Inspect the exact replacement preview. It may acquire the selected source, kill 
 - Teal outlines/dots: legal candidates. Solid routes, outlined effect cells and hollow pawn positions: the selected command's exact prediction. Cross marks show predicted deaths. The live board changes only after confirmation.
 - Cell inspection names overlapping enemy sources and held backlash. The right rail shows ability range/shape/strength and complete current intentions, with scrolling where needed. Complete Preview/history lines also scroll; they are not hidden in tooltips.
 
-Restart restores this fixture, including fresh budgets, empty storage and history. Win/failure leaves the final board/history visible and offers **Replay encounter**, with no confirmation needed for a finished run.
+Restart restores this fixture, including fresh budgets, empty storage and history. Win/failure leaves the final board/history visible and offers **Replay encounter**, with no confirmation needed for a finished fight.
 
 ## One-shove shadow-paper pilot
 
@@ -65,59 +66,60 @@ Capture removes only that turn's announced gesture. A source that can announce n
 
 All finite shadow cues are event-driven and complete independently of persistent idle/held loops. Gameplay input waits for finite feedback, not for an arbitrary scene sleep or an endlessly looping animation. Restart and view changes cancel old visual work. The model commits once on confirmation; animation never decides gameplay results. Backlash/release/transfer duration is part of this bundled presentation experiment, not evidence isolating one visual cause.
 
-FY3 remains **open pending Ronald's visual reaction**, and the next mechanics step remains blocked. Passing technical checks or an agent's visual review is not final style acceptance.
+The earlier visual pilot does not establish enjoyment. The current active-opponent revision is recorded separately in [experiment 003](../../.lore/work/experiments/003-active-opponents/record.md); one complete fight is the next human checkpoint.
 
-## Optional theatre stage
+## Theatre stage
 
 The approved backdrop, paper floor and transparent foreground are composed in Godot 2D without changing their source pixels. The theatre receives the main viewport width rather than the old board column. Status and action strips remain visible; **Details** explicitly opens the upper-screen sheet, choosing Preview when a command is prepared, otherwise Plans. Selecting a command no longer automatically covers the performers. Long ordered previews, plans and history scroll within the sheet, not over the playable floor.
 
 The grid follows the model's runtime width and height, not an image's painted cell count. Stable crops, quarter-turns, subtle color variation and seams make cells read as separate paper pieces. The floor shader, board marks, actor feet and mouse targeting share one perspective map. This slice does not add a player-facing grid-size setting. On the dark floor, threats use light coral and legal choices use pale mint; their meaning is unchanged.
 
-The original encounter retains its provisional figures/shove feedback. The two-pursuer Stage profile below uses the approved standee candidates and temporary backdrop puppets. Neither introduces a lantern mechanic. Source-art approval does not establish in-game visual acceptance. Minimum-size legibility, overlap and interaction still require Ronald's review.
+The original encounter retains its provisional figures/shove feedback. The two-pursuer Stage profile below uses the approved standee candidates and packaged provisional backdrop puppets. Neither introduces a lantern mechanic. Ronald accepted the preceding visual baseline as sufficient for gameplay; the new moving fight still needs live play feedback.
 
-### Playable two-pursuer visual slice
+### Active two-pursuer fight
 
 ```bash
 godot --path games/borrowed-turns -- \
   --presentation=stage --encounter=two-pursuers
 ```
 
-The visible encounter selector also opens **Two pursuers** from normal play. Changing encounters explicitly confirms a new run; Cancel keeps the existing one. Restart restores the selected encounter. View changes preserve its state, selected command and history. Omitting `--encounter` still opens the original encounter; omitting `--presentation` still selects paper.
+The visible encounter selector retains both **Two pursuers** and **escape**. Changing encounters explicitly confirms a new fight; Cancel keeps the existing one. Restart restores the selected encounter. View changes preserve its state, selected command and history. Omitting both launch options opens the active fight in Stage.
 
 The five puppet textures ship in `res://assets/puppets/two-pursuers`; import them as described above after a fresh checkout. Their source and portable extraction recipes are documented in [`assets-source/borrowed-turns/two-pursuers`](../../assets-source/borrowed-turns/two-pursuers/README.md). An optional `--puppet-pack=<directory>` override accepts native RGBA `a-body.png`, `a-hands.png`, `b-body.png`, `b-hands.png` (290×145) and `p-lantern.png` (145×145). Missing or invalid material fails clearly on direct launch; a chooser failure keeps the existing run and reports the problem. No substitute art is used.
 
-The 5×5, wall-free fixture deliberately starts A behind the player and B in front in the same logical column. Both announce existing shoves. The Stage ground plane now yaws about 30 degrees: that column appears staggered, while the accepted standee sizes, source images and native foot anchors remain unchanged. Small **P / A / B** source markers stay at the true actor feet, above overlapping art. Names and current HP appear in an always-visible roster to the right of the grid, below the Director. Click a roster row, visible figure pixels or a foot marker to select the same actor; transparent image padding clicks through. Roster slots stay fixed as figures move, and dead sources lose their row. Hover/focus a rear source to reduce front-piece opacity. With board focus, **[ / ]** cycles figures and Enter selects; arrows still inspect floor cells. **Alt-click** explicitly selects floor through figures. A legal floor target also takes priority when the overlapping actor is not a legal target for the chosen operation.
+The wall-free fight starts the player at the edge midpoint opposite the two corner opponents. Both use existing shoves. The Stage ground plane yaws about 30 degrees; accepted standee sizes, source images and native foot anchors are unchanged. Small **P / A / B** source markers stay at the true actor feet, above overlapping art. Names and current HP appear in an always-visible roster to the right of the grid, below the Director. Click a roster row, visible figure pixels or a foot marker to select the same actor; transparent image padding clicks through. Roster slots stay fixed as figures move, and dead sources lose their row. Hover/focus a rear source to reduce front-piece opacity. With board focus, **[ / ]** cycles figures and Enter selects; arrows still inspect floor cells. **Alt-click** explicitly selects floor through figures. A legal floor target also takes priority when the overlapping actor is not a legal target for the chosen operation.
 
 The upper theatre is not a map projection: A stays left, B right, player central. Only currently player-threatening announcements press forward; others stay watchful. Capture either source on the actual board: its current performance departs into a mint-tethered held motif beside/above the lantern handle, while the other source continues. B's held hands turn outward rather than continue attacking the player. Source ID plus turn distinguishes an old held action from a fresh announcement. No damage occurs during rehearsal or preview.
 
 Confirmed release, backlash and enemy actions follow the shared controller's actual ordered event slices. Player reaction requires recorded player damage/displacement, including zero-damage pushes; enemy-only actions never invent a player hit. Map motion replays recorded movement/displacement and settles at the exact committed state. The ordinary Move/Capture/Release/End turn controls, deadlines, replacement failure, escape/failure and replay remain usable beyond the first exchange. In particular, A-to-B replacement can push B out of capture reach: that real partial failure is not forced into a transfer.
 
+Voluntary enemy moves have their own finite slide stages after the old attacks. Ability displacement stays inside its owning attack. Input stays locked until this shared sequence finishes, then fresh next-turn warnings and Director rehearsal appear together. A same-turn capture still leaves the other source's current warning active. Restart and view changes cancel old-generation presentation without replaying combat. Watching waves never advances the model.
+
 **Composition tradeoff:** taller standees overlap more depth rows. The playable grid begins lower, with an extended ungridded floor apron retaining the stage seam; this separates faces from the performance without moving logical actors apart. Face/lantern identity, rear-source access and source tabs need actual human play review at 1024×720 and normal size. Temporary puppets remain lower-resolution concept cutouts, not a finished matching cast or a general crowd director.
 
 ### Angled board and wavefront overlays
 
-Ronald accepted the Director images and standee sizes, then selected the contour/wavefront concept as a starting direction. The normal **Stage / Two pursuers** entry now opens that candidate immediately, without a hidden appearance choice. The earlier ribbon/stamp controls and runtime hand decorations are retired; checkpoint `38d7e3e` preserves that experiment for historical comparison. Source artwork, mechanics and the original escape/plain/paper baselines are unchanged.
+Ronald accepted the Director images and standee sizes, then selected source-driven moving curves for the floor warnings. The normal **Stage / Two pursuers** entry opens that presentation without a hidden appearance choice. The earlier ribbon/stamp controls and runtime hand decorations are retired; checkpoint `38d7e3e` preserves that experiment for historical comparison. Source artwork and projection are unchanged; the active-opponent rules above apply across all views.
 
 Current enemy warnings cover every affected tile edge to edge, beneath the standees. Curved fronts repeatedly travel from the attacker's position along its actual attack direction to the end of that footprint. They do not point at or track the player. **Cool A/diamond** and **warm B/circle**, matching the foot markers and roster, identify the sources. Each announcement has its own moving fronts, including where the affected regions overlap. These exact regions come from model-authored cells, not a convex hull, an extra source square or an invented push destination. The figures remain upright; the floor material, grid, regions, motion, feet, depth sorting and picking share one ground-plane homography.
 
 Capture removes only that source's current region. A fresh announcement may return while an older occurrence is held. Double rust borders still mean held backlash here; mint marks still show legal choices and exact command predictions, not additional enemy wavefronts. Costs, deadline, consequence summary, Confirm/Cancel and explicit Details remain available.
 
-The ungridded apron retains the accepted horizontal theatre seam while sampling the yawed plane. Angle reduces alignment, not every possible overlap; rear-source access still matters. The concept's different character designs were not adopted. This is a playable candidate, not a claim of human legibility or visual acceptance.
+The ungridded apron retains the accepted horizontal theatre seam while sampling the yawed plane. Angle reduces alignment, not every possible overlap; rear-source access still matters. The concept's different character designs were not adopted. This iteration preserves the accepted visual baseline; moving opponents and tactical clarity still need human play feedback.
 
-The roster replaces the previous large HP/source plates without shrinking the board or actors. It uses the same confirmed actor data for drawing and selection; preview damage does not update its HP before confirmation. The earlier static arrowhead and visibility-placement experiments failed the visual objective and are retired. The moving curves use the existing Director/paper rehearsal phase, not a new game clock: watching them never spends points, damages actors or advances a turn. Their source connection and area readability still require human review in motion, especially B while A is held.
+The roster replaces the previous large HP/source plates without shrinking the board or actors. It uses the same confirmed actor data for drawing and selection; preview damage does not update its HP before confirmation. The earlier static arrowhead and visibility-placement experiments failed the visual objective and are retired. The moving curves use the existing rehearsal clock: their cycle is 2.7 seconds while the Director retains its 1.8-second loop. Watching them never spends points, damages actors or advances a turn.
 
-The focused scene runner reuses the existing controls. Its behavioral assertions use controlled fixtures; optional graphical evidence then uses the actual two-pursuer encounter:
+The focused scene runners reuse real controls with controlled fixtures:
 
 ```bash
 godot --headless --path games/borrowed-turns --script res://tests/board_warning_run.gd
 godot --headless --path games/borrowed-turns --script res://ui/board_comparison_smoke.gd
-godot --path games/borrowed-turns --script res://ui/board_comparison_smoke.gd -- \
-  --capture-dir="$PWD/.lore/local/experiments/002-shadow-paper/source-wave-motion/author/v1"
+godot --headless --path games/borrowed-turns --script res://ui/smoke.gd -- --focus=active-opponents
 ```
 
-The shipped puppet pack is used by default. Captures include actual initial, A-held, B-held and release-preview states at both 1024×720 and 1600×900. Only scene processing is paused during readback, after normal settlement. Use a graphical renderer and a fresh directory under persistent, gitignored `.lore/local/`; this runner rejects other capture locations. These are injected-control author/test evidence, not physical input, human legibility judgments or independent proof of enjoyment.
+The shipped puppet pack is used by default. The current revision uses headless verification and a live human fight, not new screenshots or recordings. Older optional capture paths predate the active starting positions and are not this revision's verification gate. These injected-control checks are not physical input, human legibility judgments or independent proof of enjoyment.
 
-For a live motion comparison, use the Stage / Two pursuers launch command above. Watch both sources, then choose Capture, click A's roster/marker/body and Confirm: only A's current tile warning and traveling fronts disappear. Restart and repeat with B. A selected capture preview does not remove warnings. The matching initial/held stills establish composition, but cannot establish readable motion. Any recording should begin after startup is ready and preserve actual elapsed timing, rather than assigning a fixed FPS to slow readbacks.
+For the human checkpoint, use the normal launch command and play one complete fight. Move into safe capture reach before choosing a roster row, marker or body and confirming. Only that source's current warning disappears; a capture preview does not remove it. Report whether chasing, range keeping and safe-position capture create worthwhile choices. Mechanical feasibility alone does not answer that question.
 
 Focused checks (the real-scene checks use the shipped pack):
 

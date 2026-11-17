@@ -3,6 +3,7 @@ extends SceneTree
 
 const Encounter = preload("res://model/encounter.gd")
 const Controller = preload("res://ui/shadow_presentation.gd")
+const MovementFixture = preload("res://ui/smoke_fixtures.gd")
 const COMPONENT := "res://ui/two_pursuer_presentation.gd"
 const IDS := ["A", "B"]
 var presenter_script: Script
@@ -36,21 +37,21 @@ func setup() -> bool:
 	printerr("SETUP REQUIRED: compose(snapshot, frame, generation, source_ids, inspected_source)")
 	return false
 
-func fixture() -> Dictionary:
+func fixture(safe_capture: bool = false) -> Dictionary:
 	var ability := {"kind": "shove", "range": 2, "damage": 1, "radius": 0, "push": true}
 	return {
-		"width": 5, "height": 5, "walls": [],
+		"objective": "escape", "width": 5, "height": 5, "walls": [],
 		"player": {"pos": [2, 2], "hp": 8}, "exit": {"pos": [4, 4], "opens": 3},
 		"rules": {"actions": 2, "movement": 2, "capture_range": 1},
 		"enemies": [
-			{"id": "A", "pos": [2, 1], "dir": [0, 1], "hp": 5, "kind": "shove", "ability": ability.duplicate(true)},
-			{"id": "B", "pos": [2, 3], "dir": [0, -1], "hp": 5, "kind": "shove", "ability": ability.duplicate(true)},
+			{"id": "A", "pos": [1, 2] if safe_capture else [2, 1], "dir": [0, 1], "hp": 5, "kind": "shove", "ability": ability.duplicate(true)},
+			{"id": "B", "pos": [2, 3], "dir": [1, 0] if safe_capture else [0, -1], "hp": 5, "kind": "shove", "ability": ability.duplicate(true)},
 		],
 	}
 
-func game():
+func game(safe_capture: bool = false):
 	var model = Encounter.new()
-	model.configure(fixture(), "R2")
+	model.configure(fixture(safe_capture), "R2")
 	return model
 
 func occurrence(source: String, turn: int) -> Dictionary:
@@ -132,7 +133,8 @@ func test_threats_and_inspection() -> void:
 	check(presenter.compose(state, frame, 4, IDS, "B") == saved, "returned nested facts are detached")
 	var assessed: Dictionary = model.assess({"type": "capture", "source": "A"})
 	desc = compose(presenter, state, frame, "A")
-	check(assessed.get("legal", false) and desc.get("transfer", {}).is_empty(), "capture prediction without commit cannot create transfer")
+	check(not assessed.get("legal", true) and desc.get("transfer", {}).is_empty(),
+		"overlapping current threats forbid capture; inspection cannot create a transfer")
 	var moved := commit(model, controller, {"type": "move", "to": [1, 2]})
 	if moved.is_empty(): return
 	desc = compose(presenter, moved, controller.frame(), "A")
@@ -145,7 +147,7 @@ func test_threats_and_inspection() -> void:
 func test_capture_and_fresh() -> void:
 	for captured in IDS:
 		var other: String = "B" if captured == "A" else "A"
-		var model = game()
+		var model = game(true)
 		var controller = Controller.new()
 		controller.reset(model.snapshot(), 4)
 		var presenter = presenter_script.new()
@@ -155,7 +157,8 @@ func test_capture_and_fresh() -> void:
 		var desc := compose(presenter, after, frame)
 		check(source(desc, captured).get("occurrence", {}).is_empty(), captured + " captured occurrence stops")
 		check(source(desc, other).get("occurrence", {}) == occurrence(other, after.turn), other + " remains announced")
-		check(source(desc, other).get("threatens_player", false), other + " still really threatens player")
+		check(not source(desc, other).get("threatens_player", true),
+			other + " retains its real announcement without inventing a player hit on the safe flank")
 		check(desc.get("transfer", {}).get("occurrence", {}) == occurrence(captured, after.turn), captured + " actual acquired occurrence transfers")
 		check(desc.get("held_occurrence", {}).is_empty(), "active transfer suppresses duplicate held occurrence")
 		cue_check(desc, frame, after, "capture", captured)
@@ -180,7 +183,7 @@ func test_capture_and_fresh() -> void:
 		check(desc.get("held_occurrence", {}) == occurrence(captured, after.turn), "fresh source and old held have different turn identity")
 
 func test_release_and_replacement() -> void:
-	var model = game()
+	var model = game(true)
 	var controller = Controller.new()
 	controller.reset(model.snapshot(), 4)
 	var presenter = presenter_script.new()
@@ -194,7 +197,7 @@ func test_release_and_replacement() -> void:
 	check(desc.get("held_occurrence", {}).is_empty(), "released ability is no longer held")
 	# A's backlash would otherwise push B out of capture reach. Block that
 	# displacement only in the successful replacement fixture.
-	var blocked_fixture := fixture()
+	var blocked_fixture := fixture(true)
 	blocked_fixture.walls = [[2, 4]]
 	model = Encounter.new()
 	model.configure(blocked_fixture, "R2")
@@ -214,7 +217,7 @@ func test_release_and_replacement() -> void:
 	cue_check(desc, frame, replaced, "capture", "B")
 	check(desc.get("transfer", {}).get("occurrence", {}) == occurrence("B", replaced.turn), "actual replacement transfers B, not old A")
 	# With the original wall-free board B survives, but is pushed out of reach.
-	model = game()
+	model = game(true)
 	controller = Controller.new()
 	controller.reset(model.snapshot(), 4)
 	if commit(model, controller, {"type": "capture", "source": "A"}).is_empty(): return
@@ -233,7 +236,7 @@ func test_release_and_replacement() -> void:
 	controller.advance(60.0)
 	desc = compose(presenter, pushed, controller.frame())
 	check(desc.get("transfer", {}).is_empty() and desc.get("held_occurrence", {}).is_empty(), "out-of-reach replacement cannot invent B transfer or ownership")
-	var failed_fixture := fixture()
+	var failed_fixture := fixture(true)
 	failed_fixture.enemies[1].hp = 1
 	model = Encounter.new()
 	model.configure(failed_fixture, "R2")
@@ -253,6 +256,33 @@ func test_release_and_replacement() -> void:
 	desc = compose(presenter, failed, controller.frame())
 	check(desc.get("transfer", {}).is_empty() and desc.get("held_occurrence", {}).is_empty(), "replacement killing B does not create a held or transferred B occurrence")
 
+func test_movement_is_not_an_attack_or_fresh_rehearsal() -> void:
+	var transition := MovementFixture.movement_transition()
+	var controller = Controller.new()
+	controller.reset(transition.before, 4)
+	check(controller.observe(transition.before, {"type": "end_turn"}, transition.after, 4), "presenter receives shared ordered movement controller")
+	var presenter = presenter_script.new()
+	var moves: Array = []
+	for _step in range(14400):
+		var frame: Dictionary = controller.frame()
+		if not frame.busy: break
+		var desc := compose(presenter, transition.after, frame)
+		check(source(desc, "A").get("occurrence", {}).is_empty(), "Director does not rehearse a fresh next-turn shove during prior attacks/slides")
+		var cue: Dictionary = frame.cue
+		if cue.get("type", "") == "move" and cue.get("actor", "") not in moves:
+			moves.append(cue.actor)
+			var actual: Dictionary = desc.get("current_cue", {})
+			check(actual.get("type", "") == "move" and actual.get("actor", "") == cue.actor
+				and actual.get("event_index", -1) == cue.event_index
+				and actual.get("from", []) == cue.from and actual.get("to", []) == cue.to,
+				"Director projection distinguishes the actual moving actor and event from a shove")
+			check(desc.get("transfer", {}).is_empty(), "moving an opponent cannot fabricate a capture handoff")
+		controller.advance(1.0 / 120.0)
+	check(moves == ["A", "B"], "presenter receives both independent voluntary move stages")
+	var settled := compose(presenter, transition.after, controller.frame())
+	check(source(settled, "A").get("occurrence", {}).get("turn", -1) == transition.after.turn,
+		"fresh Director rehearsal begins only when the common finite sequence settles")
+
 func _run() -> void:
 	if not setup():
 		quit(2)
@@ -260,5 +290,6 @@ func _run() -> void:
 	test_threats_and_inspection()
 	test_capture_and_fresh()
 	test_release_and_replacement()
+	test_movement_is_not_an_attack_or_fresh_rehearsal()
 	print("Two pursuer presentation: %d checks, %d failures. Controlled facts; no visual acceptance." % [checks, failures.size()])
 	quit(1 if not failures.is_empty() else 0)

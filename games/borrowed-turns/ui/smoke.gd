@@ -187,7 +187,7 @@ func _test_deadline() -> void:
 func _test_ability_ranges() -> void:
 	for skill in [F.ability("bolt", 1, 4), F.ability("shove", 1, 2, 0, true), F.ability("burst", 2, 2, 1)]:
 		await load_fixture(F.encounter([
-			F.enemy("source", [1, 4], skill),
+			F.enemy("source", [1, 4], skill, 12, [1, 0]),
 			F.enemy("victim", [3, 2], F.ability("bolt")),
 		]))
 		await capture([1, 4])
@@ -437,7 +437,7 @@ func _test_stage_integration() -> void:
 	for viewport_size in [Vector2i(1024, 720), Vector2i(1600, 900)]:
 		await _stage_resize(viewport_size)
 		for dimensions in [Vector2i(4, 3), Vector2i(9, 5)]:
-			var data := F.encounter([F.enemy("a", [2, 1], F.ability("shove", 1, 3, 0, true), 12, [-1, 0])])
+			var data := F.encounter([F.enemy("a", [2, 1], F.ability("shove", 1, 3, 0, true), 12, [0, -1])])
 			data.width = dimensions.x
 			data.height = dimensions.y
 			data.player.pos = [1, 1]
@@ -583,20 +583,36 @@ func _test_two_pursuers_startup() -> void:
 	_check_default_puppet_pack()
 	check(game.encounter_id == "two-pursuers" and game.presentation_mode == "stage",
 		"actual command-line encounter and presentation select the normal playable scene")
-	check(game.state.width == 5 and game.state.height == 5 and game.state.player.pos == [2, 2],
-		"command-line entry starts the agreed board instead of the old motion-study fixture")
+	check(game.state.get("objective", "") == "defeat_all", "normal fight objective is explicitly defeat all opponents")
+	var player: Array = game.state.player.pos
+	check(player == [0, int(game.state.height / 2.0)], "actual fight starts at the left edge midpoint")
+	var corners: Array = []
+	var patterns: Array = []
+	for enemy in game.state.enemies:
+		corners.append(enemy.pos)
+		patterns.append(enemy.get("movement_pattern", ""))
+	check(corners.size() == 2 and [game.state.width - 1, 0] in corners
+		and [game.state.width - 1, game.state.height - 1] in corners,
+		"actual opponents start at the opposite edge's two corners")
+	check("chase_player" in patterns and "keep_max_range" in patterns,
+		"default fight exposes both requested active opponent roles")
 	var picker: OptionButton = game.encounter_picker
 	check(picker.get_selected_metadata() == "two-pursuers", "visible chooser reflects the command-line encounter")
-	var sources: Array = []
-	for intent in game.state.intentions:
-		if game.state.player.pos in intent.cells: sources.append(intent.source)
-	check(sources.size() == 2 and "A" in sources and "B" in sources,
-		"command-line entry exposes both actual threats")
+	check(not game.objective.text.to_lower().contains("exit"), "default visible objective is combat, not bypassing enemies")
 	check(game.board.standee_layout().size() == 3, "command-line entry loads all three approved standee actors")
 
 func _test_two_pursuers_integration() -> void:
+	check(game.encounter_id == "two-pursuers" and game.presentation_mode == "stage",
+		"normal entry opens the active fight and accepted Stage without buried choices")
+	if game.encounter_id == "two-pursuers":
+		_test_two_pursuers_startup()
+		await _choose_encounter_ui("escape")
+		if game.encounter_dialog.visible:
+			game.encounter_dialog.confirmed.emit()
+			game.encounter_dialog.hide()
+		await process_frame
 	check(game.encounter_id == "escape" and game.fixture == Production.DATA,
-		"default encounter remains the existing source fixture")
+		"explicit escape comparison retains its authored source fixture")
 	game.set_presentation_mode("stage")
 	await _stage_resize(Vector2i(1024, 720))
 	var original: Dictionary = game.model.snapshot()
@@ -616,17 +632,21 @@ func _test_two_pursuers_integration() -> void:
 	check(game.encounter_id == "two-pursuers", "confirmed chooser starts the real playable two-pursuer encounter")
 	_check_default_puppet_pack()
 	if game.encounter_id != "two-pursuers": return
+	_test_two_pursuers_startup()
+	# Capture/body/roster geometry below uses a test-owned safe flank, not
+	# mutable production start positions or an illegal crossfire acquisition.
+	await load_fixture(F.two_pursuers())
 	var initial: Dictionary = game.state.duplicate(true)
-	check(initial.width == 5 and initial.height == 5 and initial.player.pos == [2, 2],
-		"selected encounter opens the agreed five-by-five central-player stress case")
+	check(initial.width == 5 and initial.height == 5 and initial.player.pos == [1, 2],
+		"controlled depth fixture starts capture from a safe flank")
 	var cells := {}
 	for enemy in initial.enemies: cells[enemy.id] = enemy.pos
 	check(cells == {"A": [2, 1], "B": [2, 3]}, "both pursuers remain in the deliberately overlapping depth column")
 	var threats: Array = []
 	for intent in initial.intentions:
-		if initial.player.pos in intent.cells: threats.append(intent.source)
+		if [2, 2] in intent.cells: threats.append(intent.source)
 	check(threats.size() == 2 and "A" in threats and "B" in threats,
-		"both real model announcements initially threaten the player")
+		"controlled footprints overlap independently away from the safe player cell")
 	var source_paths := {"player": "player.png", "A": "enemy-a.png", "B": "enemy-b.png"}
 	for viewport_size in [Vector2i(1024, 720), Vector2i(1600, 900)]:
 		await _stage_resize(viewport_size)
@@ -712,12 +732,17 @@ func _test_two_pursuers_integration() -> void:
 				and game.shadow.frame().held.is_empty() and not game.resolving,
 				"Restart restores this selected encounter and clears stale held/performance work")
 	# A selected rear source can be reached without clicking an obscured body.
-	game.board.cursor = [2, 3]
+	var ordered: Array = game.board.standee_layout()
+	var target_index := -1
+	for i in range(ordered.size()):
+		if ordered[i].actor == "A": target_index = i
+	check(target_index >= 0, "controlled keyboard fixture contains A")
+	if target_index >= 0: game.board.cursor = ordered[posmod(target_index - 1, ordered.size())].cell.duplicate()
 	var cycle := InputEventKey.new()
 	cycle.keycode = KEY_BRACKETRIGHT
 	cycle.pressed = true
 	game.board.gui_input.emit(cycle)
-	check(game.board.cursor == [2, 1], "real bracket-key source cycling reaches the rear actor without a body click")
+	check(game.board.cursor == _standee_entry("A").get("cell", []), "real bracket-key source cycling reaches A without a body click")
 	var enter := InputEventKey.new()
 	enter.keycode = KEY_ENTER
 	enter.pressed = true
@@ -752,6 +777,164 @@ func _test_two_pursuers_integration() -> void:
 		"original content remains available unchanged through the real chooser")
 	game.set_presentation_mode("paper")
 
+func _test_active_opponents() -> void:
+	check(game.encounter_id == "two-pursuers" and game.presentation_mode == "stage",
+		"normal entry is the active Stage fight, not the retained escape comparison")
+	if game.encounter_id != "two-pursuers":
+		await _choose_encounter_ui("two-pursuers")
+		if game.encounter_dialog.visible:
+			game.encounter_dialog.confirmed.emit()
+			game.encounter_dialog.hide()
+		await process_frame
+	game.set_presentation_mode("stage")
+	_test_two_pursuers_startup()
+	# Formatter inputs are explicit authored facts. Missing exit is not the
+	# rule selector, and an irreversible failed replacement is not rejection.
+	var victory := P.event_text({"type": "win", "objective": "defeat_all"}).to_lower()
+	check(not victory.contains("escape") and (victory.contains("victory") or victory.contains("defeat")),
+		"defeat-all win event history reports combat victory, never escape")
+	check(P.event_text({"type": "win", "objective": "escape"}).to_lower().contains("escape"),
+		"retained explicit escape history keeps its meaning")
+	var failed := P.event_text({"type": "capture_failed", "source": "A", "reason": "threatened"}).to_lower()
+	check((failed.contains("threat") or failed.contains("attack")) and not failed.contains("out of reach"),
+		"post-backlash threatened acquisition failure is not mislabeled as range failure")
+	var blocked := F.encounter([
+		F.enemy("A", [2, 3], F.ability("shove", 1, 2, 0, true), 12, [1, 0]),
+		F.enemy("B", [1, 5], F.ability("bolt", 1, 4), 13, [0, -1]),
+	], 3, 39, 2)
+	blocked.objective = "defeat_all"
+	await load_fixture(blocked)
+	var before: Dictionary = game.model.snapshot()
+	var history_before: Array = game.history_lines.duplicate()
+	select("capture", [2, 3])
+	check(game.confirm_button.disabled and game.prediction.is_empty() and game.candidates.is_empty(),
+		"any other source's current threat blocks capture, not only the selected source's footprint")
+	var reason: String = game.consequence.text.to_lower()
+	check((reason.contains("threat") or reason.contains("attack") or reason.contains("announced"))
+		and game.consequence.is_visible_in_tree(), "capture restriction is explained in persistent visible consequence text")
+	game._confirm()
+	check(game.model.snapshot() == before and game.history_lines == history_before,
+		"blocked capture confirmation is atomic: no backlash, acquisition, history or budget mutation")
+	await settle()
+
+	var fight := F.active_fight()
+	await load_fixture(fight)
+	var objective_text: String = game.objective.text.to_lower()
+	var objective_ready: bool = not objective_text.contains("exit") \
+		and (objective_text.contains("defeat") or objective_text.contains("foe") or objective_text.contains("opponent"))
+	check(objective_ready, "active fight persistently explains its defeat-all objective, not exit timing")
+	check(not game.state.has("exit") and game.board.state.get("objective", "") == "defeat_all",
+		"real fight can load/refresh/draw without a fake exit field")
+	var initial: Dictionary = game.model.snapshot()
+	var initial_history: Array = game.history_lines.duplicate()
+	select("end_turn")
+	var assessed: Dictionary = game.model.assess({"type": "end_turn"})
+	check(game.prediction == assessed.get("preview", {}) and preview_matches(),
+		"UI preview is exactly the model's old-resolution-plus-movement prediction, not another planner")
+	check(game.model.snapshot() == initial and game.history_lines == initial_history,
+		"previewing aimed attacks and movement never advances the fight")
+	var movement: Array = []
+	for event in game.prediction.get("events", []):
+		if event.type == "move" and event.actor != "player":
+			movement.append(event)
+			check(game.preview_details.text.contains(P.event_text(event)), "exact ordered preview includes the actual moving actor and destination")
+	check(not movement.is_empty(), "controlled mobile fight has real previewed enemy movement")
+	var expected: Dictionary = game.prediction.duplicate(true)
+	press(game.confirm_button)
+	check(game.resolving and game.model.snapshot() == expected, "confirmation commits once, then finite feedback owns input lock")
+	var committed_history: Array = game.history_lines.duplicate()
+	var saw_slide := false
+	var announced_early := false
+	var deadline := Time.get_ticks_msec() + 10000
+	while game.resolving and Time.get_ticks_msec() < deadline:
+		var frame: Dictionary = game.shadow.frame()
+		if frame.busy:
+			announced_early = announced_early or not frame.announcements.is_empty() \
+				or not game.board.announcement_waves().is_empty()
+		if frame.cue.get("type", "") == "move":
+			saw_slide = true
+			var index: int = frame.cue.get("event_index", -1)
+			check(index >= 0 and index < expected.events.size() and expected.events[index].type == "move",
+				"finite slide references the actual committed move event")
+			game._confirm()
+			game._select_cell([0, 0])
+			check(game.model.snapshot() == expected and game.history_lines == committed_history,
+				"input stays locked during slides and cannot replay or partially commit a command")
+		await process_frame
+	check(not game.resolving and saw_slide and not announced_early,
+		"old effects and separate slides finish before fresh next-turn warnings/rehearsal begin")
+	check(game.state == expected and game.model.snapshot() == expected, "movement completion settles to the exact model snapshot")
+	for enemy in expected.enemies:
+		var row := _standee_entry(enemy.id)
+		check(row.get("cell", []) == enemy.pos and row.get("foot", Vector2(INF, INF)).distance_to(game.board.cell_center(enemy.pos)) < 0.01,
+			"settled accepted standee is anchored at its authoritative moved cell")
+	# Cancellation uses the same generation/reset path, not a movement clock.
+	select("end_turn")
+	press(game.confirm_button)
+	var after: Dictionary = game.model.snapshot()
+	var generation: int = game.generation
+	game.set_presentation_mode("plain")
+	check(game.generation > generation and not game.resolving and not game.shadow.frame().busy
+		and game.model.snapshot() == after, "view change cancels finite slides while keeping committed movement")
+	game.set_presentation_mode("stage")
+	select("end_turn")
+	press(game.confirm_button)
+	generation = game.generation
+	game._apply_restart()
+	await process_frame
+	check(game.generation > generation and game.model.snapshot() == initial and not game.shadow.frame().busy
+		and game.history_lines.size() == 1, "restart cancels old-generation slides and restores the selected fight")
+
+	var winning := F.encounter([
+		F.enemy("A", [1, 4], F.ability("shove", 3, 3), 2, [1, 0]),
+		F.enemy("B", [2, 3], F.ability("shove", 1, 2), 2, [1, 0]),
+	], 3, 39)
+	winning.objective = "defeat_all"
+	winning.erase("exit")
+	await load_fixture(winning)
+	await capture([1, 4])
+	select("release", [2, 3])
+	await commit()
+	check(game.state.status == "playing" and game.state.enemies.size() == 1,
+		"defeating only one opponent does not complete the fight")
+	select("end_turn")
+	await commit()
+	var threatened_state: Dictionary = game.model.snapshot()
+	var threatened_history: Array = game.history_lines.duplicate()
+	select("capture", [1, 4])
+	check(game.confirm_button.disabled and game.prediction.is_empty()
+		and game.model.snapshot() == threatened_state and game.history_lines == threatened_history,
+		"fresh upward attack blocks reacquisition before repositioning, without changing state/history")
+	press(game.cancel_button)
+	var flank_path := [[2, 3], [2, 4]]
+	var usable_path: bool = game.state.movement_points >= flank_path.size()
+	for cell in flank_path:
+		usable_path = usable_path and cell[0] >= 0 and cell[0] < game.state.width \
+			and cell[1] >= 0 and cell[1] < game.state.height and cell not in game.state.walls
+		for enemy in game.state.enemies:
+			if enemy.pos == cell: usable_path = false
+	check(usable_path, "controlled victory fixture has enough MP and two free in-bounds flank cells")
+	if not usable_path: return
+	for cell in flank_path: await move(cell)
+	var safe_flank := true
+	for intent in game.state.intentions:
+		if game.state.player.pos in intent.cells: safe_flank = false
+	check(safe_flank and game.state.player.pos == [2, 4] and game.state.intentions == threatened_state.intentions
+		and game.model.assess({"type": "capture", "source": "A"}).get("legal", false),
+		"real movement reaches a safe adjacent flank while the old attack aim remains locked")
+	await capture([1, 4])
+	select("release", [1, 4])
+	check(game.prediction.get("status", "") == "won" and not game.consequence.text.to_lower().contains("escape"),
+		"last-foe defeat previews victory using the explicit combat objective")
+	await commit()
+	check(game.state.status == "won" and game.result.is_visible_in_tree()
+		and not game.result.text.to_lower().contains("escape") and game.action_buttons.capture.disabled,
+		"terminal fight retains board/history with combat victory, not an exit result")
+	check(not game.history.text.to_lower().contains("escaped"), "committed fight history never invents an escape")
+	press(game.restart_button)
+	check(game.state.status == "playing" and game.state.enemies.size() == 2 and not game.restart_dialog.visible,
+		"terminal replay restarts the fight without progression, unlocks or an unnecessary confirmation")
+
 func _run() -> void:
 	game = load("res://scenes/encounter.tscn").instantiate()
 	if capture_dir.is_empty(): root.add_child(game)
@@ -767,6 +950,13 @@ func _run() -> void:
 	await process_frame
 	check(game.state.variant == "R2" and game.state.status == "playing", "one R2 baseline opens immediately")
 	check(game.action_buttons.keys() == ["move", "capture", "release", "end_turn"], "only the four revised operations exist")
+	if OS.get_cmdline_user_args().has("--focus=active-opponents"):
+		await _test_active_opponents()
+		print("Active opponents UI: %d checks, %d failures. Controlled joins, not enjoyment or visual acceptance." % [checks, failures])
+		game.queue_free()
+		await process_frame
+		quit(1 if failures else 0)
+		return
 	if OS.get_cmdline_user_args().has("--focus=no-invert"):
 		await _test_normal_shove()
 		print("R2 UI smoke: %d checks, %d failures. Injected GUI events, not physical OS input." % [checks, failures])

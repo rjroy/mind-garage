@@ -3,6 +3,7 @@ extends SceneTree
 
 const Encounter = preload("res://model/encounter.gd")
 const F = preload("res://tests/shadow_fixtures.gd")
+const MovementFixture = preload("res://ui/smoke_fixtures.gd")
 const COMPONENT := "res://ui/shadow_presentation.gd"
 var controller_script: Script
 var checks := 0
@@ -63,7 +64,9 @@ func view(p, label: String) -> Dictionary:
 
 func game(fixture: Dictionary):
 	var g = Encounter.new()
-	g.configure(fixture, "R2")
+	var isolated := fixture.duplicate(true)
+	isolated.objective = "escape"
+	g.configure(isolated, "R2")
 	return g
 
 func controller(snapshot: Dictionary, generation: int = 1):
@@ -310,6 +313,58 @@ func test_detachment_and_time() -> void:
 	action["source"] = "caller-edit"
 	check(isolated.frame() == protected and other.snapshot() == model_copy, "observe owns copies of historical anchors, events, held data and command")
 
+func test_ordered_enemy_moves_and_reannouncement() -> void:
+	var transition := MovementFixture.movement_transition()
+	var before: Dictionary = transition.before
+	var after: Dictionary = transition.after
+	var saved := transition.duplicate(true)
+	var p = controller(before, 31)
+	check(p.observe(before, {"type": "end_turn"}, after, 31), "controlled ordered movement transition is accepted")
+	var frame := view(p, "active enemy timeline")
+	check(cue_types(frame) == ["resolve", "resolve", "move", "move"],
+		"voluntary enemy movement has separate finite stages after old attacks, not inside an ability")
+	var moves: Array = []
+	for cue in frame.cues:
+		if cue.get("type", "") == "move": moves.append(cue)
+	check(moves.size() == 2, "each authored enemy move has exactly one finite cue")
+	for i in range(moves.size()):
+		var event: Dictionary = after.events[5 + i]
+		check(moves[i].get("actor", "") == event.actor and moves[i].get("event_index", -1) == 5 + i
+			and moves[i].get("from", []) == event.from and moves[i].get("to", []) == event.to,
+			"movement cue owns the event's actor, endpoints and event index")
+	check(frame.cues.size() < 2 or frame.cues[1].get("from", []) == [3, 3],
+		"later attack anchors reflect preceding ability displacement, not later voluntary movement")
+	var observed: Array = []
+	var moving := false
+	for _step in range(14400):
+		frame = view(p, "finite move progression")
+		if not frame.busy: break
+		check(frame.announcements.is_empty(), "fresh next-turn announcements stay quiet throughout old attacks and movement")
+		var cue: Dictionary = frame.cue
+		var identity: int = cue.get("event_index", -1)
+		if identity not in observed: observed.append(identity)
+		if cue.get("type", "") == "move" and cue.get("progress", 0.0) > 0.0:
+			moving = true
+			var reference: Dictionary = p.frame().duplicate(true)
+			cue["from"] = [99, 99]
+			check(p.frame() == reference, "active movement cue readback is detached")
+		p.advance(1.0 / 120.0)
+	check(observed == [0, 3, 5, 6] and moving, "ordered controller actually visits both moving stages with progressing time")
+	frame = view(p, "settled new announcements")
+	check(not frame.busy and find_source(frame.announcements, "A").get("turn", -1) == after.turn,
+		"settlement exposes the fresh next-turn announcement, without replay or another clock")
+	check(transition == saved, "movement presentation never mutates supplied model-owned facts")
+	# Cancellation must discard both finite slides and their deferred warnings.
+	p.reset(before, 32)
+	check(not p.observe(before, {"type": "end_turn"}, after, 31), "old-generation movement cannot restart after cancellation")
+	check(p.frame().announcements == controller(before, 32).frame().announcements and not p.frame().busy,
+		"reset restores this snapshot's settled intentions, not deferred future announcements")
+	check(p.observe(before, {"type": "end_turn"}, after, 32), "new generation can accept its own move sequence")
+	p.advance(0.05)
+	p.reset(after, 33)
+	check(not p.frame().busy and find_source(p.frame().announcements, "A").get("turn", -1) == after.turn,
+		"view/reset cancellation restores committed movement and fresh intentions as settled facts")
+
 func _run() -> void:
 	if not _setup():
 		quit(2)
@@ -319,5 +374,6 @@ func _run() -> void:
 	test_replacement_outcomes()
 	test_source_death_and_stale_events()
 	test_detachment_and_time()
+	test_ordered_enemy_moves_and_reannouncement()
 	print("Shadow presentation behavior: %d checks, %d failures. Controller only; no visual or runtime-style acceptance." % [checks, failures.size()])
 	quit(1 if not failures.is_empty() else 0)

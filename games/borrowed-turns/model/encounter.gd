@@ -12,6 +12,7 @@ func configure(fixture: Dictionary, variant: String) -> void:
 
 func reset() -> void:
 	_state = _fixture.duplicate(true)
+	_state["objective"] = _fixture.get("objective", "defeat_all")
 	_state.merge({
 		"turn": 1, "status": "playing", "variant": "R2",
 		"action_points": _fixture.rules.actions,
@@ -113,6 +114,13 @@ func _enemy_footprint(enemy: Dictionary) -> Array:
 	return cells
 
 
+func _threatened() -> bool:
+	for enemy in _state.enemies:
+		if not _state.cancelled.has(enemy.id) and _enemy_footprint(enemy).has(_state.player.pos):
+			return true
+	return false
+
+
 func _held_footprint() -> Dictionary:
 	if _state.stored.is_empty():
 		return {}
@@ -163,6 +171,8 @@ func _rejection(action: Dictionary) -> String:
 				return "That enemy has no available announcement."
 			if _distance(_state.player.pos, source.pos) > _state.rules.capture_range:
 				return "Source is outside capture reach."
+			if _threatened():
+				return "threatened"
 		"release":
 			return _release_rejection(action)
 		"end_turn":
@@ -206,7 +216,7 @@ func _apply(action: Dictionary) -> void:
 			if not _state.stored.is_empty() and _state.turn >= _state.stored.deadline_turn:
 				_backlash()
 	if _state.status == "playing":
-		_check_escape()
+		_check_objective()
 	if action.type == "end_turn" and _state.status == "playing":
 		_end_turn()
 	_refresh_footprints()
@@ -223,6 +233,9 @@ func _capture(id: String) -> void:
 		return
 	if _distance(_state.player.pos, source.pos) > _state.rules.capture_range:
 		_event("capture_failed", {"source": id, "reason": "out_of_reach"})
+		return
+	if _threatened():
+		_event("capture_failed", {"source": id, "reason": "threatened"})
 		return
 	_state.stored = {
 		"source": id, "ability": source.ability.duplicate(true), "dir": source.dir.duplicate(),
@@ -269,18 +282,82 @@ func _end_turn() -> void:
 		_resolve_ability(id, ability, _enemy_footprint(enemy), center, false)
 	if _state.status != "playing":
 		return
+	_check_objective()
+	if _state.status != "playing":
+		return
+	for enemy in _state.enemies:
+		_move_enemy(enemy)
+	for enemy in _state.enemies:
+		enemy.dir = _aim(enemy.pos)
 	_state.turn += 1
 	_state.action_points = _state.rules.actions
 	_state.movement_points = _state.rules.movement
 	_state.cancelled = []
 	_event("turn", {"number": _state.turn})
-	_check_escape()
+	_check_objective()
 
 
-func _check_escape() -> void:
-	if _state.player.pos == _state.exit.pos and _state.turn >= _state.exit.opens:
+func _check_objective() -> void:
+	var won := false
+	if _state.objective == "defeat_all":
+		won = _state.enemies.is_empty()
+	elif _state.objective == "escape" and _state.has("exit"):
+		won = _state.player.pos == _state.exit.pos and _state.turn >= _state.exit.opens
+	if won:
 		_state.status = "won"
-		_event("win")
+		_event("win", {"objective": _state.objective})
+
+
+func _aim(origin: Array) -> Array:
+	var dx: int = _state.player.pos[0] - origin[0]
+	var dy: int = _state.player.pos[1] - origin[1]
+	return [signi(dx), 0] if absi(dx) >= absi(dy) else [0, signi(dy)]
+
+
+func _move_enemy(enemy: Dictionary) -> void:
+	var pattern: String = enemy.get("movement_pattern", "")
+	if pattern != "chase_player" and pattern != "keep_max_range":
+		return
+	var budget: int = maxi(0, enemy.get("movement_budget", 1))
+	if budget == 0:
+		return
+	# Breadth-first traversal fixes both shortest paths and tie order. Occupancy is
+	# evaluated anew for each enemy, after all earlier movers have settled.
+	var start: Array = enemy.pos.duplicate()
+	var queue: Array = [{"pos": start, "path": []}]
+	var visited := [start]
+	var best_path: Array = []
+	var best_range := -1
+	var index := 0
+	while index < queue.size():
+		var entry: Dictionary = queue[index]
+		index += 1
+		var pos: Array = entry.pos
+		if pattern == "chase_player":
+			if _distance(pos, _state.player.pos) == 1:
+				best_path = entry.path
+				break
+		else:
+			var candidate: Dictionary = enemy.duplicate(true)
+			candidate.pos = pos
+			candidate.dir = _aim(pos)
+			if _enemy_footprint(candidate).has(_state.player.pos):
+				var distance := _distance(pos, _state.player.pos)
+				if distance > best_range:
+					best_range = distance
+					best_path = entry.path
+		for direction in [[-1, 0], [0, -1], [0, 1], [1, 0]]:
+			var next := _add(pos, direction)
+			if visited.has(next) or not _walkable(next) or not _occupant(next).is_empty():
+				continue
+			visited.append(next)
+			var path: Array = entry.path.duplicate()
+			path.append(next)
+			queue.append({"pos": next, "path": path})
+	for step in range(mini(budget, best_path.size())):
+		var previous: Array = enemy.pos.duplicate()
+		enemy.pos = best_path[step].duplicate()
+		_event("move", {"actor": enemy.id, "from": previous, "to": enemy.pos.duplicate()})
 
 
 func _targets(actor_id: String, cells: Array, is_area: bool, backlash: bool) -> Array:

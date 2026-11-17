@@ -12,8 +12,8 @@ const TwoSourcePresentation = preload("res://ui/two_pursuer_presentation.gd")
 const TwoSourceRig = preload("res://ui/two_pursuer_rig.gd")
 var model = Encounter.new()
 var shadow = Shadow.new()
-var presentation_mode := "paper"
-var encounter_id := "escape"
+var presentation_mode := "stage"
+var encounter_id := "two-pursuers"
 var encounter_picker: OptionButton
 var encounter_dialog: ConfirmationDialog
 var _pending_encounter := ""
@@ -111,11 +111,12 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	if state.is_empty(): return
 	shadow.advance(delta)
-	if presentation_mode != "plain": board.set_presentation(true, shadow.frame())
+	if presentation_mode != "plain" or resolving:
+		board.set_presentation(presentation_mode != "plain", shadow.frame())
 	_present_theatre()
 	if resolving:
 		baseline_feedback_left = maxf(0, baseline_feedback_left - delta)
-		if baseline_feedback_left <= 0 and (presentation_mode == "plain" or not shadow.frame().busy):
+		if baseline_feedback_left <= 0 and not shadow.frame().busy:
 			resolving = false
 			_refresh()
 			board.grab_focus()
@@ -281,7 +282,7 @@ func _build_interface() -> void:
 	objective = _label(header, "", 16, true)
 	phase = _label(header)
 	restart_button = _button(header, "Restart", func(): _request_restart())
-	_label(page, "They want the artifact back. Reach the exit.", 16)
+	_label(page, "They want the artifact back. Complete the goal shown above.", 16)
 	var economy := _box(page, false)
 	budgets = _label(economy, "", 16, true)
 	budgets.custom_minimum_size.y = 44
@@ -378,6 +379,7 @@ func _build_interface() -> void:
 	help_dialog.title = "Controls and the capture bargain"
 	help_dialog.dialog_text = "Move and act in any order. AP (action points) and MP (movement points) are independent.\nCapture is free and unlimited across legal sources, even at zero AP/MP.\nRelease uses 1 AP and can happen on the capture turn.\nReplace a held ability or end its deadline turn: it discharges where you stand.\nEnemy plans resolve only when you End turn. There is no automatic turn ending.\n\nChoose an operation, choose its target, inspect, then Confirm.\nM: Move, C: Capture, L: Release, E: prepare End turn.\nTab / Shift+Tab: controls. Arrows on board: inspect.\nEnter selects a cell; a separate Enter confirms. Esc / right click: cancel.\nCtrl+R: restart. Nothing advances during inspection or preview.\n\nY: you; squares: pursuers; EXIT: escape.\nRust hatches/dashed routes: enemy intentions. Double rust border: held backlash here.\nTeal outlines: legal choices. Solid arrows/hollow pawns: exact command preview.\nPreview lists ordered effects; Recent events contains only confirmed commands."
 	help_dialog.dialog_text += "\n\nStage: click figure or foot marker; [ / ] cycles figures.\nAlt-click targets floor through figures. Details opens exact effects.\nTheatre positions identify actors, not compass directions; rehearsal does not advance time."
+	help_dialog.dialog_text += "\n\nThe active fight ends when all foes are defeated. A pursues you; B seeks usable maximum attack range. End turn resolves old attacks, then opponent movement, then new aim.\nCapture is unavailable while you stand in any announced enemy attack. Move to safety first. The explicit escape comparison keeps its exit objective."
 	help_dialog.dialog_text += "\nTwo pursuers: cool A/diamond and warm B/circle wavefronts show current threats."
 	add_child(help_dialog)
 	_build_stage_shell()
@@ -537,7 +539,9 @@ func _start_encounter() -> void:
 	board.clear_pulse()
 	_configure_theatre()
 	board.cursor = state.player.pos.duplicate()
-	history_lines = ["Turn 1 · %s\nReach the exit. Capture is free; End turn when ready." % ("Two pursuers" if encounter_id == "two-pursuers" else "Revised baseline")]
+	var goal := "Defeat all foes." if state.get("objective", "escape") == "defeat_all" else "Reach the exit."
+	history_lines = ["Turn 1 · %s\n%s Capture is free from a safe cell; End turn when ready." % [
+		"Two pursuers" if encounter_id == "two-pursuers" else "Revised baseline", goal]]
 	history.text = "\n".join(history_lines)
 	new_events.visible = false
 	_clear_selection()
@@ -569,9 +573,10 @@ func _clear_selection() -> void:
 	if _stage_sheet: _stage_sheet.visible = false
 
 func _refresh() -> void:
-	objective.text = "%d HP · Exit %s\nReach %s%s" % [state.player.hp, "open" if state.turn >= state.exit.opens else "opens turn %d" % state.exit.opens, P.cell(state.exit.pos), "" if state.turn >= state.exit.opens else " when open"]
+	objective.text = P.objective_text(state)
 	var terminal: bool = state.status != "playing"
-	phase.text = "Turn %d\n%s" % [state.turn, "Escaped" if state.status == "won" else ("Caught" if terminal else ("Resolving" if resolving else "Your turn"))]
+	var victory := "Victory" if state.get("objective", "escape") == "defeat_all" else "Escaped"
+	phase.text = "Turn %d\n%s" % [state.turn, victory if state.status == "won" else ("Caught" if terminal else ("Resolving" if resolving else "Your turn"))]
 	budgets.text = "AP %d / %d · MP %d / %d · Capture: free · Reach %d\n%s" % [state.action_points, state.rules.actions, state.movement_points, state.rules.movement, state.rules.capture_range, P.deadline(state)]
 	stage_held_details.text = P.stored_text(state)
 	stored.text = P.stored_text(state)
@@ -596,7 +601,8 @@ func _refresh() -> void:
 	action_buttons.release.disabled = terminal or resolving or state.action_points == 0 or state.stored.is_empty()
 	cancel_button.disabled = mode == "inspect" or resolving
 	result.visible = terminal
-	result.text = "Escaped · The exit is yours." if state.status == "won" else "Caught · Your health reached zero. Inspect the recent events."
+	result.text = ("Victory · All foes defeated." if state.get("objective", "escape") == "defeat_all"
+		else "Escaped · The exit is yours.") if state.status == "won" else "Caught · Your health reached zero. Inspect the recent events."
 	instruction.visible = not terminal
 	consequence.visible = not terminal
 	confirmation_row.visible = not terminal
@@ -617,29 +623,36 @@ func _refresh() -> void:
 	_update_board()
 	if presentation_mode == "stage": _layout_stage()
 
+func _visible_intentions() -> Array:
+	return [] if shadow.frame().get("announcements_deferred", false) else state.intentions
+
 func _refresh_intentions() -> void:
 	for child in intention_list.get_children():
 		intention_list.remove_child(child)
 		child.queue_free()
-	for intent in state.intentions:
+	for intent in _visible_intentions():
 		for enemy in state.enemies:
 			if enemy.id != intent.source: continue
 			var row := _button(intention_list, "%s · %s" % [str(enemy.id).to_upper(), P.ability_text(enemy.ability)], _select_cell.bind(enemy.pos))
 			row.alignment = HORIZONTAL_ALIGNMENT_LEFT
 			row.disabled = resolving
-	if state.intentions.is_empty(): _label(intention_list, "No active enemy plans.")
+	if shadow.frame().get("announcements_deferred", false):
+		_label(intention_list, "Resolving attacks and movement.")
+	elif state.intentions.is_empty(): _label(intention_list, "No active enemy plans.")
 
 func _inspect_cell(cell: Array) -> void:
 	var occupants: Array[String] = []
 	if state.player.pos == cell: occupants.append("You · %d HP" % state.player.hp)
 	for enemy in state.enemies:
 		if enemy.pos == cell: occupants.append("%s · %d HP" % [str(enemy.id).to_upper(), enemy.hp])
-	if state.exit.pos == cell: occupants.append("Exit")
+	if state.get("objective", "escape") == "escape" and state.has("exit") and state.exit.pos == cell: occupants.append("Exit")
 	var threats: Array[String] = []
-	for intent in state.intentions:
+	for intent in _visible_intentions():
 		if cell in intent.cells: threats.append(str(intent.source).to_upper())
 	if not state.backlash_footprint.is_empty() and cell in state.backlash_footprint.cells: threats.append("held backlash")
-	inspection.text = "%s · %s · %s" % [P.cell(cell), ", ".join(occupants) if not occupants.is_empty() else "Empty", "Threats: " + ", ".join(threats) if not threats.is_empty() else "No announced threat"]
+	var threat_text := "Threats: " + ", ".join(threats) if not threats.is_empty() else "No announced threat"
+	if shadow.frame().get("announcements_deferred", false): threat_text = "Resolving attacks and movement."
+	inspection.text = "%s · %s · %s" % [P.cell(cell), ", ".join(occupants) if not occupants.is_empty() else "Empty", threat_text]
 
 func _update_board() -> void:
 	board.set_view(state, prediction, candidates, selected, source)
@@ -654,7 +667,7 @@ func _choose_action(action: String) -> void:
 	mode = action
 	match mode:
 		"move": instruction.text = "Move: choose a legal cell. Uses 1 MP, not AP."
-		"capture": instruction.text = "Capture: choose a source. Free, including replacement."
+		"capture": instruction.text = "Capture: choose a nearby source from a safe cell. Free, including replacement."
 		"release": instruction.text = "Release: choose a target within the held ability's range. Uses 1 AP."
 		"end_turn":
 			instruction.text = "End turn: inspect backlash and enemy effects before confirming."
@@ -663,7 +676,7 @@ func _choose_action(action: String) -> void:
 	if mode == "capture" and not state.stored.is_empty(): instruction.text = "Capture replaces %s. Inspect its discharge before confirming." % state.stored.ability.kind
 	if presentation_mode == "stage" and encounter_id == "two-pursuers":
 		if mode == "capture":
-			instruction.text = "Capture: choose a figure or foot marker. [ / ] cycles sources."
+			instruction.text = "Capture from a safe cell: choose a figure, marker or roster. [ / ] cycles sources."
 			if not state.stored.is_empty(): instruction.text += " Replaces held action."
 		elif mode in ["move", "release"]:
 			instruction.text += " Alt-click targets floor through figures."
@@ -718,7 +731,7 @@ func _assess_command(focus_confirmation: bool = true) -> void:
 	prediction = assessment.preview
 	confirm_button.disabled = not assessment.legal
 	confirm_button.text = "Confirm %s" % ("end turn" if command.type == "end_turn" else str(command.type))
-	consequence.text = P.command_summary(state, prediction, command) if assessment.legal else assessment.reason
+	consequence.text = P.command_summary(state, prediction, command) if assessment.legal else P.rejection_text(assessment.reason)
 	var danger: bool = assessment.legal and (prediction.player.hp < state.player.hp or prediction.status == "lost")
 	consequence.add_theme_color_override("font_color", P.DANGER if danger or not assessment.legal else P.BORROWED)
 	if assessment.legal:

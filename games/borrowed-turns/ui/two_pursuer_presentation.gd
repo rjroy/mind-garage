@@ -20,6 +20,9 @@ func _event_matches(events: Array, cue: Dictionary) -> bool:
 	var cue_type: String = cue.get("type", "")
 	var event_type: String = event.get("type", "")
 	var source: String = cue.get("source", "")
+	if cue_type == "move":
+		return event_type == "move" and event.get("actor", "") == cue.get("actor", "") \
+			and event.get("from", []) == cue.get("from", []) and event.get("to", []) == cue.get("to", [])
 	if cue_type == "resolve":
 		return event_type in ["ray", "area"] and event.get("actor", "") == source \
 			and event.get("kind", "") == cue.get("kind", "")
@@ -51,7 +54,8 @@ func _current_cue(events: Array, frame: Dictionary) -> Dictionary:
 	if cue.is_empty() or not _event_matches(events, cue):
 		return {}
 	var result := cue.duplicate(true)
-	result["actor"] = "player" if cue.type in ["release", "backlash"] else cue.source
+	if cue.type != "move":
+		result["actor"] = "player" if cue.type in ["release", "backlash"] else cue.source
 	var end := events.size()
 	for planned in frame.get("cues", []):
 		var next: int = planned.get("event_index", -1)
@@ -89,4 +93,5 @@ func compose(snapshot: Dictionary, frame: Dictionary, expected_generation: int, 
 		"held_occurrence": {} if pending else held, "transfer": transfer,
 		"current_cue": _current_cue(events, frame),
 		"busy": frame.get("busy", false), "loop_phase": frame.get("loop_phase", 0.0),
+		"announcements_deferred": frame.get("announcements_deferred", false),
 	}

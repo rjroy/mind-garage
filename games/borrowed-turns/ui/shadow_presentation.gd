@@ -1,7 +1,7 @@
 extends RefCounted
 ## Deterministic presentation projection. Never calls a model or computes game effects.
 
-const DURATIONS := {"capture": 0.60, "release": 0.44, "backlash": 0.52, "resolve": 0.38}
+const DURATIONS := {"capture": 0.60, "release": 0.44, "backlash": 0.52, "resolve": 0.38, "move": 0.26}
 const TACTICAL_DURATION := 0.18
 var _generation := -1
 var _announcements: Array = []
@@ -10,6 +10,7 @@ var _cues: Array = []
 var _index := 0
 var _elapsed := 0.0
 var _loop_cycles := 0.0
+var _new_turn := false
 
 func reset(snapshot: Dictionary, generation: int) -> void:
 	if generation < _generation: return
@@ -19,10 +20,12 @@ func reset(snapshot: Dictionary, generation: int) -> void:
 	_index = 0
 	_elapsed = 0.0
 	_loop_cycles = 0.0
+	_new_turn = false
 
 func observe(before: Dictionary, command: Dictionary, after: Dictionary, generation: int) -> bool:
 	if generation != _generation or before == after: return false
 	_set_facts(after)
+	_new_turn = after.turn != before.turn
 	_cues = []
 	_index = 0
 	_elapsed = 0.0
@@ -33,7 +36,13 @@ func observe(before: Dictionary, command: Dictionary, after: Dictionary, generat
 	for i in range(events.size()):
 		var event: Dictionary = events[i]
 		match event.type:
-			"move", "displace": positions[event.actor] = event.to.duplicate()
+			"move":
+				if event.actor != "player":
+					var slide := _plan("move", event.actor, i, event.from, event.to, [], "move", "")
+					slide["actor"] = event.actor
+					_cues.append(slide)
+				positions[event.actor] = event.to.duplicate()
+			"displace": positions[event.actor] = event.to.duplicate()
 			"release", "backlash":
 				var target: Array = command.get("target", []) if event.type == "release" else []
 				pending = _plan(event.type, event.source, i, positions.player, target, [], event.kind)
@@ -64,6 +73,7 @@ func _plan(type: String, source: String, event_index: int, origin: Array, target
 		"from": origin.duplicate(), "to": target.duplicate(), "cells": cells.duplicate(true)}
 
 func _duration(cue: Dictionary) -> float:
+	if cue.type == "move": return DURATIONS.move
 	# All footprints share one ordered timeline; only shove gets an animated hand.
 	return DURATIONS[cue.type] if cue.kind == "shove" else TACTICAL_DURATION
 
@@ -85,9 +95,11 @@ func frame() -> Dictionary:
 	if _index < _cues.size():
 		cue = _cues[_index].duplicate(true)
 		cue.progress = clampf(_elapsed / _duration(cue), 0.0, 1.0)
+	var deferred := _new_turn and not cue.is_empty()
 	return {
 		"generation": _generation,
-		"announcements": _announcements.duplicate(true),
+		"announcements": [] if deferred else _announcements.duplicate(true),
+		"announcements_deferred": deferred,
 		"held": _held.duplicate(true),
 		"cues": _cues.duplicate(true),
 		"cue": cue,
