@@ -2,6 +2,7 @@ extends "res://ui/smoke.gd"
 ## Actual Stage joins: projection, roster, warnings and borrowed attack geometry.
 
 const MotionOverlay = preload("res://ui/wavefront_overlay.gd")
+const GroundProjection = preload("res://ui/stage_projection.gd")
 
 func _comparison_setup() -> bool:
 	if not _two_pursuers_setup(): return false
@@ -364,6 +365,128 @@ func _test_wide_borrowed_geometry() -> void:
 	check(game.state.stored == held, "fresh source aim does not rewrite the held ability or expire it")
 	_check_warning_sources()
 
+func _foreground_alpha(image: Image, stage: Rect2, point: Vector2) -> float:
+	var uv := (point - stage.position) / stage.size
+	if uv.x < 0 or uv.y < 0 or uv.x >= 1 or uv.y >= 1: return 1.0
+	var pixel := Vector2i(uv * Vector2(image.get_size()))
+	return image.get_pixel(pixel.x, pixel.y).a
+
+func _capacity_measure(projection, dimensions: Vector2i, stage: Rect2, foreground: Image) -> Dictionary:
+	var bounds := Rect2(projection.project(Vector2.ZERO), Vector2.ZERO)
+	var min_altitude := INF
+	var min_step := INF
+	var min_cell_height := INF
+	var min_cell_width := INF
+	var touched := 0
+	var max_cover := 0.0
+	var blocked_patch_cells := 0
+	for y in range(dimensions.y):
+		for x in range(dimensions.x):
+			var polygon: PackedVector2Array = projection.cell_polygon([x, y])
+			var box := Rect2(polygon[0], Vector2.ZERO)
+			for i in range(polygon.size()):
+				bounds = bounds.expand(polygon[i])
+				box = box.expand(polygon[i])
+				var edge: Vector2 = polygon[(i + 1) % 4] - polygon[i]
+				for opposite in [2, 3]:
+					min_altitude = minf(min_altitude, absf((polygon[(i + opposite) % 4] - polygon[i]).cross(edge)) / edge.length())
+			min_cell_height = minf(min_cell_height, box.size.y)
+			min_cell_width = minf(min_cell_width, box.size.x)
+			var center: Vector2 = projection.project(Vector2(x + 0.5, y + 0.5))
+			for direction in [Vector2i.RIGHT, Vector2i.DOWN]:
+				if x + direction.x < dimensions.x and y + direction.y < dimensions.y:
+					var neighbor: Vector2 = projection.project(Vector2(x + direction.x + 0.5, y + direction.y + 0.5))
+					min_step = minf(min_step, center.distance_to(neighbor))
+			var covered := 0
+			for v in [0.1, 0.3, 0.5, 0.7, 0.9]:
+				for u in [0.1, 0.3, 0.5, 0.7, 0.9]:
+					if _foreground_alpha(foreground, stage, projection.project(Vector2(x + u, y + v))) > 0.1:
+						covered += 1
+			if covered > 0: touched += 1
+			max_cover = maxf(max_cover, covered / 25.0)
+			var blocked := false
+			for offset in [Vector2(0.5, 0.5), Vector2(0.35, 0.5), Vector2(0.65, 0.5), Vector2(0.5, 0.35), Vector2(0.5, 0.65)]:
+				if _foreground_alpha(foreground, stage, projection.project(Vector2(x, y) + offset)) > 0.1:
+					blocked = true
+			if blocked: blocked_patch_cells += 1
+	return {"bounds": bounds, "minimum_cell_altitude": min_altitude,
+		"minimum_cell_box": Vector2(min_cell_width, min_cell_height), "minimum_neighbor_step": min_step,
+		"foreground_touched_cells_sampled": touched, "maximum_sampled_cover": max_cover,
+		"blocked_center_patch_cells": blocked_patch_cells}
+
+func _test_capacity_boundaries() -> void:
+	# This is a bounded live-renderer capacity fixture, not permanent encounter
+	# tuning. Numerical 7/8 comparisons below configure only the existing pure
+	# projection helper; they do not add playable modes or change any game rule.
+	for viewport in [Vector2i(1024, 720), Vector2i(1280, 800)]:
+		await _stage_resize(viewport)
+		var data := F.two_pursuers()
+		data.width = 7
+		data.height = 7
+		data.objective = "defeat_all"
+		data.erase("exit")
+		data.player.pos = [0, 3]
+		data.enemies[0].pos = [6, 0]
+		data.enemies[1].pos = [6, 6]
+		data.enemies[1].ability.width = 3
+		await load_fixture(data)
+		var before := _gameplay_facts()
+		var stage: Rect2 = game.board._stage_rect()
+		var foreground: Image = game.board.stage_renderer.foreground.texture.get_image()
+		if foreground.is_compressed(): check(foreground.decompress() == OK, "foreground alpha is available for exact geometry inspection")
+		var current := _capacity_measure(game.board._ensure_projection(), Vector2i(7, 7), stage, foreground)
+		check(current.blocked_center_patch_cells == 0,
+			"every playable cell retains a clear central patch in the original foreground art; no invisible trap cells")
+		var widths := {}
+		for row in game.board.standee_layout():
+			var meta: Dictionary = game.board._standee_assembly[row.actor]
+			var accepted_size: Vector2 = meta.canvas * stage.size.y * meta.height_fraction / meta.canvas.y
+			check(row.rect.size.distance_to(accepted_size) < 0.01,
+				"capacity uses accepted actor scale metadata, never uniform standee shrinking")
+			var image: Image = game.board._standee_images[row.actor]
+			widths[row.actor] = image.get_used_rect().size.x * row.rect.size.x / image.get_width()
+			check(row.foot.distance_to(game.board.cell_center(row.cell)) < 0.01
+				and row.foot.y > stage.position.y + stage.size.y * game.board.stage_renderer._floor_top,
+				"extreme-start actor feet stay on the shared floor below the Director seam")
+			check(_foreground_alpha(foreground, stage, row.foot) <= 0.1,
+				"actual extreme actor foot/source anchor is not hidden by the foreground")
+		for y in range(7):
+			for x in range(7):
+				var center: Vector2 = game.board.cell_center([x, y])
+				check(stage.has_point(center) and game.board._input_cell(center, true) == [x, y],
+					"every capacity cell center remains on-stage and selectable through art without changing actor-priority picking")
+				for offset in [Vector2(0.35, 0.5), Vector2(0.65, 0.5), Vector2(0.5, 0.35), Vector2(0.5, 0.65)]:
+					var patch: Vector2 = game.board._ensure_projection().project(Vector2(x, y) + offset)
+					check(game.board._from_pixel(patch) == [x, y],
+						"central visible patch has usable interior ownership, not only one lucky center pixel")
+		print("CAPACITY current ", {"viewport": viewport, "dimensions": Vector2i(7, 7), "stage": stage,
+			"geometry": current, "accepted_actor_alpha_widths": widths})
+		# Report, do not style-assert, the density tradeoff. Source alpha and real
+		# projected distances inform the candidate choice; these are not claims
+		# that a particular pixel size or sampled cover percentage looks good.
+		for count in [7, 8]:
+			var projection := GroundProjection.new()
+			var reclaimed := Rect2(stage.position + stage.size * Vector2(0.08, 0.445), stage.size * Vector2(0.74, 0.51))
+			check(projection.configure_ground(count, count, reclaimed, 30.0), "existing shared homography supports a candidate capacity probe")
+			print("CAPACITY reclaimed-floor proposal ", {"viewport": viewport, "dimensions": Vector2i(count, count),
+				"geometry": _capacity_measure(projection, Vector2i(count, count), stage, foreground)})
+		check(_gameplay_facts() == before, "capacity probes never move actors, spend AP or fabricate telegraphs")
+		_check_plane_join()
+		_check_warning_sources()
+		_check_roster()
+		_stage_controls_fit("capacity " + str(viewport))
+		var snapshot: Dictionary = game.model.snapshot()
+		for cell in [[0, 0], [6, 0], [6, 6], [0, 6], [3, 0], [6, 3], [3, 6], [0, 3]]:
+			await _floor_click(cell)
+			check(game.selected == cell and game.model.snapshot() == snapshot,
+				"real GUI reaches every outer corner/edge destination without an invisible or inaccessible edge cell")
+		var selected := _gameplay_facts()
+		await _stage_resize(Vector2i(1280, 800) if viewport.x == 1024 else Vector2i(1024, 720))
+		check(_gameplay_facts() == selected, "capacity resize preserves selection, history, budget and exact model state")
+		_check_plane_join()
+		_check_warning_sources()
+		_check_roster()
+
 func _run() -> void:
 	if not _comparison_pack_ready():
 		quit(2)
@@ -382,6 +505,7 @@ func _run() -> void:
 	await _test_roster_hp_sync()
 	await _test_rehearsal_motion()
 	await _test_wide_borrowed_geometry()
+	await _test_capacity_boundaries()
 	print("Stage board integration: %d checks, %d failures. Injected GUI, not visual acceptance." % [checks, failures])
 	game.queue_free()
 	await process_frame

@@ -10,7 +10,7 @@ related: [.lore/work/intents/player-brief.md, .lore/work/experiments/002-shadow-
 
 ## Inputs and provenance
 
-- Experiment ID: `003-active-opponents`. Current stage: Ronald reports the `744fca3` fight felt good, engaging and puzzle-like; next discussion concerns encounter boards and opponent variety.
+- Experiment ID: `003-active-opponents`. Current stage: positive puzzle-like feedback on `744fca3`; the 7×7 Stage-capacity candidate is technically verified/reviewed and awaits Ronald's visual judgment before opponent expansion.
 - Source baseline: `37026b6`, following packaged-resource checkpoint `8587639` and cleanup `144c1a9`. Accepted presentation and 2.7-second telegraph waves are the starting point.
 - Input procedures: repository experiment-record template and `implement`/`verification-planning` workflows. This is a revision of the selected capture mechanic, not fresh hook discovery.
 - Audience: Ronald only. Godot, existing packaged artwork, no new dependencies or asset generation.
@@ -347,6 +347,30 @@ His desired next focus is opponent variety: movement, attacks and multiple attac
 This is positive reported engagement for one played encounter, not measured session duration, voluntary replay, run retention or a general fun finding. Replaying an already-understood fixed puzzle and wanting another encounter are distinct outcomes. Do not treat the report as evidence that a full run already works or that a mandatory repeatable-room loop is the goal.
 
 The bounded fight checkpoint `mind-garage-jkv` is complete. Next settle board/opponent design scope under `mind-garage-dxm` before implementation; run/progression remains deferred and blocked under `mind-garage-7am`. Preserve the accepted bargain and encounter as a baseline while discussing what genuinely different tactical problems new casts and boards could create.
+
+#### Authorized maximum-extent board exploration
+
+Ronald agrees board size/layout can be an encounter parameter influenced by opponents. More AP through later player levels is a future possibility, not authorization to implement progression or change the current budget. His immediate request is to see the maximum usable board: edge coordinate labels are unnecessary, some foreground overlap may be acceptable, and tile/title overhead should be examined rather than assuming the existing 5×5 footprint.
+
+Baseline is the accepted game at `744fca3`, with feedback checkpoint `da35a09`. `mind-garage-p4z` owns one bounded playable visual candidate, blocking broader board/opponent scope `mind-garage-dxm`. The designer owns footprint, spacing and readable overlap. Runtime dimensions and starting placement may change as required; existing actors, attack data, 3 AP, Capture/Shine bargain, artwork and pacing remain unchanged. No general terrain engine, editor, new assets, legacy display mode or new capture tooling.
+
+Question before inspecting results: how much usable tactical floor can this Stage support without losing actor-foot location, full threat interpretation, legal destination access or controls at minimum and normal viewport sizes? Partial visual overlap is not automatically failure; an actionable cell that cannot be understood or targeted is. Headless projection/input/extreme-cell checks support technical boundaries, while Ronald judges the actual candidate live. Larger space may change travel and encounter balance, so do not label this a better fight or a validated opponent-design capacity merely because more cells fit.
+
+The designer's test-only pass uses existing projection/integration machinery, not a new board renderer or style-specific failing test. It measures current bounds and a proposed reclaimed-floor budget, comparing 7×7 and 8×8 without adding implemented display modes. Before results, the working selection heuristic is clear cell-centre/interior patches and actor feet with unchanged standee scale, and roughly 20 px minimum far-cell depth at the minimum viewport. That heuristic is a practical readability hypothesis, not a universal aesthetic threshold. Independent baseline execution precedes selecting and implementing one candidate.
+
+Independent baseline passes **4376/0**, exit 0, with source unchanged. Using the same controlled 7×7 test grid, the old floor budget gives minimum cell depth 17.20 px at 1024×720; the proposed reclaimed floor gives 20.88 px. At 1280×800 those values are 19.87 and 24.13 px. An 8×8 grid on the proposed floor gives 18.19 and 21.03 px respectively. These controlled comparisons are not a claim that the original production encounter was already 7×7. Both proposed grids have zero sampled foreground coverage/blocked central patches. Logs: `.lore/local/verification/board-capacity/baseline/`.
+
+The selected candidate uses 7×7 as a practical minimum-window clearance choice, not a proved universal maximum. Only `ui/board.gd` and `content/two_pursuers.gd` change in production: reclaim the floor with normalized fit budget `[.08,.445,.74,.51]`, remove edge coordinate drawing, and launch a 7×7 encounter with player `[0,3]`, A `[6,0]`, B `[6,6]`. The shared projection algorithm, source artwork, standee scale, Director, roster, AP, HP, ability data, AI and wave pacing are unchanged.
+
+Measured actual author-stage bounds expand from 555×216 to 674×262 board-local pixels at 1024×720 and from 642×249 to 779×303 at 1280×800. All 49 tested cell-centre/interior patches and extreme GUI selections pass; foreground overlap is allowed in principle but sampled coverage is zero for this candidate. Independent post-change verification follows the frozen source; author checks are not substituted for it. Logs: `.lore/local/verification/board-capacity/author/`.
+
+Independent final verification passes board integration **4376/0**, full UI smoke **674/0**, projection **1018/0**, standee **297/0** and actual default CLI **31/0**, all exit 0 without script/setup errors. Actual post-change dimensions/positions and alpha-clearance metrics match the proposed layout; only board/content production files differ from baseline. The 90-file game boundary is stable before/after, SHA-256 `7a3be4e14f7b41bbad57257f3ca3ae760750bd6492845bf70877bbfa33c62595`. The unchanged model suite is reused, not newly rerun. Evidence: `.lore/local/verification/board-capacity/final/`.
+
+Fresh bounded correctness review finds no material defect. It confirms coordinate removal is drawing-only, dynamic dimensions feed targeting/shader/threat/roster joins, encounter stats/rules are unchanged, and escape projection is unaffected. Refactor/quality assessments and Ronald's visual judgment remain separate. The earlier 25-command fight replay belongs to the **5×5 `744fca3`** checkpoint, not this new 7×7 capacity candidate.
+
+The subsequent separate refactor assessment recommends no further change; independent lightweight engineering-quality assessment finds the localized reuse of the cached projection and ordinary encounter data proportionate, with no material concerns. It confirms the 90-file frozen manifest and reads recorded checks without claiming new execution. Final README/status wording changes only after these assessments. No screenshots, recordings, compositor operations or new art were used.
+
+Capacity handoff: close an old game process and launch normally. Judge the far row's tile/threat readability, actor-foot location and access, front-edge/foreground relationship, and overall use of the Stage floor. The candidate's 7×7 selection is revisable; 8×8 misses the provisional minimum-window clearance heuristic, not a universal aesthetic law. Do not infer complete-fight balance or enjoyment from these layout guards, or change AP/AI to compensate before live feedback.
 
 ### Capture limitation investigation after `d230a48`
 

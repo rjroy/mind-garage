@@ -295,7 +295,7 @@ func _ensure_projection():
 		var rect := _stage_rect()
 		if not _standee_textures.is_empty():
 			stage_projection.configure_ground(dimensions.x, dimensions.y,
-				Rect2(rect.position + rect.size * Vector2(0.15, 0.50), rect.size * Vector2(0.70, 0.42)), 30.0)
+				Rect2(rect.position + rect.size * Vector2(0.08, 0.445), rect.size * Vector2(0.74, 0.51)), 30.0)
 		else:
 			var quad := PackedVector2Array()
 			for point in [Vector2(0.25, 0.46), Vector2(0.75, 0.46), Vector2(0.77, 0.885), Vector2(0.20, 0.885)]:
@@ -578,11 +578,9 @@ func _draw() -> void:
 	for x in range(state.width + 1):
 		var start: Vector2 = _ensure_projection().project(Vector2(x, 0))
 		draw_line(start, _ensure_projection().project(Vector2(x, state.height)), Color("bb887b", 0.55), 1)
-		if x < state.width: _text(_ensure_projection().project(Vector2(x + 0.5, 0)) + Vector2(-3, -8), str(x), Color("f0d2a0"), 12)
 	for y in range(state.height + 1):
 		var start: Vector2 = _ensure_projection().project(Vector2(0, y))
 		draw_line(start, _ensure_projection().project(Vector2(state.width, y)), Color("bb887b", 0.55), 1)
-		if y < state.height: _text(_ensure_projection().project(Vector2(0, y + 0.5)) + Vector2(-20, 4), str(y), Color("f0d2a0"), 12)
 	for wall in state.walls: _tile(wall, 3, Color("837077"), true)
 	if state.get("objective", "escape") == "escape" and state.has("exit"):
 		var exit_color := Color("ffe1a0")

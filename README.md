@@ -18,7 +18,7 @@ godot --path games/borrowed-turns
 
 The current candidate uses **3 shared AP per turn**: a cardinal step, arming Capture, or Shine costs 1 AP. Armed Capture acquires the next enemy attack that hits you **after its normal damage and effects**; it does not cancel danger. Shine repeatedly uses the held ability without consuming it. Holding has no expiry or backlash, but defeating its source removes the ability. A chases with a narrow shove; B seeks usable maximum attack range with a three-wide shove. End Turn resolves attacks, opponent movement, then fresh aim and announcements. Reaching zero AP does not advance time. See the [play instructions](games/borrowed-turns/README.md) and [active-opponent revision record](.lore/work/experiments/003-active-opponents/record.md).
 
-This is a mechanic prototype, not a finished roguelite or a validated progression system. Ronald reports the armed-Capture/reusable-Shine fight felt good, engaging and puzzle-like, but not particularly replayable as the same encounter. That is positive engagement evidence from one player, not run retention or a general enjoyment result. The next discussion concerns board capacity and opponent variety. The [Curtain Call narrative direction](.lore/work/narrative/borrowed-turns/curtain-call-narrative-brief.md) supplies context, not an exhaustive mechanics specification.
+This is a mechanic prototype, not a finished roguelite or a validated progression system. Ronald reports the 5×5 armed-Capture/reusable-Shine fight at `744fca3` felt good, engaging and puzzle-like, but not particularly replayable as the same encounter. That is positive engagement evidence from one player, not run retention or a general enjoyment result. Normal launch now presents a **7×7 board-capacity candidate** using more of the Stage floor, without edge coordinate labels or smaller actors. Combat rules and stats are unchanged; the larger layout awaits live visual judgment, not a balance claim. The [Curtain Call narrative direction](.lore/work/narrative/borrowed-turns/curtain-call-narrative-brief.md) supplies context, not an exhaustive mechanics specification.
 
 The earlier escape encounter is retained with `--encounter=escape`; it is not the default goal. Active-fight feasibility and technical verification do not establish that the fight is fun.
 
@@ -37,7 +37,7 @@ godot --path games/borrowed-turns
 
 Stage is the sole presentation. The accepted art and shared board projection are unchanged by the active-opponent revision. Runtime puppet textures ship in the game; necessary preparation artwork and recipes live under `assets-source/`. No local experiment history is needed to play. See the [stage instructions](games/borrowed-turns/README.md#theatre-stage).
 
-The active-opponent fight checkpoint `mind-garage-jkv` is complete. Board and opponent variety are the next design discussion; multi-fight runs and progression remain deferred under `mind-garage-7am`.
+The active-opponent fight checkpoint `mind-garage-jkv` is complete. Board-capacity candidate `mind-garage-p4z` awaits visual review before broader board/opponent discussion `mind-garage-dxm`; multi-fight runs and progression remain deferred under `mind-garage-7am`.
 
 ## Shared foundations
 
