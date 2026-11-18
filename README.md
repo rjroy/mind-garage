@@ -38,7 +38,7 @@ godot --path games/borrowed-turns
 
 Stage is the sole presentation. The accepted art and shared board projection are unchanged by the active-opponent revision. Runtime puppet textures ship in the game; necessary preparation artwork and recipes live under `assets-source/`. No local experiment history is needed to play. See the [stage instructions](games/borrowed-turns/README.md#theatre-stage).
 
-The active-fight, Stage-capacity and opponent-selection checkpoints are complete. Switcher implementation/playtest work is `mind-garage-ds5`; multi-fight runs and progression remain deferred under `mind-garage-7am`.
+The active-fight, Stage-capacity and Switcher checkpoints are complete. Ronald considers Switcher sufficient for now, with polish deferred. Current discussion `mind-garage-g9s` defines a configurable opponent-component library before implementation; multi-fight runs and progression remain deferred under `mind-garage-7am`.
 
 ## Shared foundations
 

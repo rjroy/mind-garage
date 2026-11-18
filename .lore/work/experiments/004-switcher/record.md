@@ -10,7 +10,7 @@ related: [.lore/work/design/borrowed-turns-opponents.md, .lore/work/experiments/
 
 ## Inputs and provenance
 
-- Stable ID: `004-switcher`. Stage: solo and paired candidate technically verified and reviewed; awaiting Ronald's play.
+- Stable ID: `004-switcher`. Stage: Ronald reports the candidate is fine and defers polish; the next discussion concerns a configurable opponent-component library.
 - Game baseline: accepted 7×7 Stage `8275a48`; design/feedback checkpoints `14ee86c` and `3565320`. Existing prototype: `games/borrowed-turns`.
 - Human contribution: Ronald requested opponent variety after finding the earlier fight engaging and puzzle-like, accepted the larger board, and selected the recommended Switcher-first direction with “Great. Lets see it.” The shortlist and damaging-swap proposal originated with AI; no originality claim follows.
 - Scope: one Switcher, checked alone and then paired with existing B, directly selectable through the current encounter UI. The other five shortlist roles are not authorized builds.
@@ -75,7 +75,7 @@ Temporary scripts, logs and manifests belong under ignored `.lore/local/verifica
 
 ## Sessions and evidence
 
-No Switcher human play, enjoyment score, desire-to-continue report or voluntary replay is recorded yet.
+Ronald has now tried the candidate and reports: “It's fine. I think there's some polish to be made, but I don't know if nows the time.” No enjoyment score, command trace, completion count, desire-to-continue report or voluntary replay measure was collected. Do not infer those outcomes from this qualitative report.
 
 Initial independent focused model RED (`tests/run.gd -- --focus=switcher`) exits 1 with **95 checks, 16 failures**, without setup/script errors. It exposes missing fixed-cell announcements, exchange and ordering. Some Shine rejection checks incorrectly assume the missing initial exchange had succeeded, and one event-order comparison permits a missing-event index of −1; those are test-isolation defects, not independent evidence of missing Shine validation. A test-only repair gates dependent checks on the asserted initial exchange, makes event presence explicit and adds the agreed mask assertions. Independent RED recheck precedes production. The ten-file core boundary remains unchanged during execution; initial evidence is local at `switcher/model-red/`.
 
@@ -153,6 +153,8 @@ The subsequent separate refactor assessment recommends no further change before 
 
 Final handoff: try solo to learn the locked-cell exchange, then Switcher+B to judge positional consequences and whether the borrowed ability offers useful choices. Observe whether the target wash, exchange pads, movement-before-damage and acquisition are understandable. A completed diagnostic route is not a human enjoyment or replay finding. Only documentation/status wording changes after the final verified executable freeze.
 
+Ronald accepts the current candidate as sufficient to move on rather than authorizing polish. He finds one-opponent-at-a-time development laborious and wants a configurable library. Before implementation, he explicitly asks to agree the components: base stats, abilities, movement patterns, standee/puppet references, names and any other necessary parts. This advances `mind-garage-g9s` to component-model discussion, not authorization for a framework or code migration.
+
 Verification budget:
 
 - Controlled model tests: exact target/occupancy/walls/range, locked-cell miss and changed occupant, atomic paired exchange, effect/damage/death/acquisition order, repeatable Shine/source loss, later independent attacks, assessment purity and reset.
@@ -167,12 +169,12 @@ Initial rule and comparison criteria recorded before results. Technical reconnai
 
 ## Findings and next decision
 
-Game outcome: unknown until played. Method outcome: shortlist reconciliation identified a utility-only last-enemy deadlock risk; that is design analysis, not evidence that a damaging swap will be fun.
+Game outcome: Ronald reports the candidate is fine, with possible polish deferred. No stronger enjoyment or replay conclusion is supported. Method outcome: shortlist reconciliation identified a utility-only last-enemy deadlock risk and preview consumer review found SW-C01. Human feedback now redirects effort from adding roles individually to agreeing a reusable component model.
 
-Next human decision: does the exchange change the puzzle in a worthwhile and readable way, alone and beside B? Abstraction revisit is deferred separately, not silently included in this playtest.
+Next decision: agree the opponent component model under `mind-garage-g9s` before building the library. Further Switcher polish remains unselected.
 
 ## Repeatability handoff
 
 Preserve the accepted 7×7 baseline checkpoint and input hashes above. Record final direct launch, runtime version, exact checks and concise replay recipes without depending on local logs. Repeating a requested comparison is not voluntary replay and cannot restore first exposure.
 
-Human playtest: `mind-garage-ds5`. Deferred abstraction/design revisit: `mind-garage-g9s`. Run/progression discussion `mind-garage-7am` remains blocked.
+Completed Switcher checkpoint: `mind-garage-ds5`. Current component-model discussion: `mind-garage-g9s`. Run/progression discussion `mind-garage-7am` remains deferred.
