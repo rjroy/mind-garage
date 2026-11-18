@@ -8,7 +8,9 @@ The shared research question is: **Can AI originate a central game mechanic and 
 
 Human playtest feedback is part of that process. The question is not whether AI can build a game without human contact, or whether a clever prompt alone can establish that a design is novel and fun.
 
-## Current prototype: Borrowed Turns opponent trials
+**Experiment concluded.** Ronald’s verdict: no, he would not entrust current AI with the job of finding the fun. He supplied the [research on what makes games fun](.lore/work/notes/what-makes-games-fun.md) at the outset. The AI could discuss that research, build a playable game and find clever solutions, but when asked to focus on enjoyment it kept answering a different question: what could a player solve? Ronald considers that a useful result, and a relief. The prototype and research below remain as the record, not a request for another iteration.
+
+## Final prototype: Borrowed Turns opponent trials
 
 Survive an enemy's announced attack, borrow its ability, then turn it against the hunt. Normal play opens a **solo Switcher** fight in the accepted Stage presentation. **Switcher + B** is independently available in the encounter selector:
 
