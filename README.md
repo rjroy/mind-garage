@@ -1,5 +1,7 @@
 # Mind Garage
 
+**New playable session: [Last Light on the Rink](games/last-light-on-the-rink/README.md).** Skate a closing number with two lantern skaters on grooves you cut into the ice. From the repository root: `godot --path games/last-light-on-the-rink`.
+
 A workspace for multiple experiments in AI-led game design. Each experiment explores a small, replayable game and the process used to find its fun.
 
 **Mind Garage names the experimental effort, not a game.** Individual game prototypes have their own working titles; the selected first direction is currently called **Borrowed Turns**.
