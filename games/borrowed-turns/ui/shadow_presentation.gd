@@ -3,6 +3,7 @@ extends RefCounted
 
 const DURATIONS := {"capture": 0.60, "shine": 0.44, "resolve": 0.38, "move": 0.26}
 const TACTICAL_DURATION := 0.18
+const SWAP_DURATION := 0.60
 var _generation := -1
 var _announcements: Array = []
 var _held: Dictionary = {}
@@ -47,6 +48,9 @@ func observe(before: Dictionary, _command: Dictionary, after: Dictionary, genera
 					_queue(slide, held)
 				positions[event.actor] = event.to.duplicate()
 			"displace": positions[event.actor] = event.to.duplicate()
+			"swap":
+				positions[event.actor] = event.to.duplicate()
+				positions[event.other] = event.from.duplicate()
 			"shine":
 				pending = _plan("shine", event.source, i, positions.player, event.target, [], event.kind)
 			"capture":
@@ -59,15 +63,20 @@ func observe(before: Dictionary, _command: Dictionary, after: Dictionary, genera
 				_queue(transfer, {})
 			"ability_lost":
 				held = {}
-			"ray", "area":
+			"ray", "area", "mask":
 				if event.actor == "player":
 					if not pending.is_empty():
+						if event.type == "mask":
+							pending.from = event.from.duplicate()
+							pending.to = event.target.duplicate()
 						pending.cells = event.cells.duplicate(true)
 						pending.footprint_type = event.type
 						_queue(pending, held)
 						pending = {}
 				else:
-					_queue(_plan("resolve", event.actor, i, positions.get(event.actor, []), [], event.cells, event.kind, event.type), held)
+					var origin: Array = event.from if event.type == "mask" else positions.get(event.actor, [])
+					var target: Array = event.target if event.type == "mask" else []
+					_queue(_plan("resolve", event.actor, i, origin, target, event.cells, event.kind, event.type), held)
 	return true
 
 func _queue(cue: Dictionary, held: Dictionary) -> void:
@@ -86,8 +95,12 @@ func _acquired(before: Dictionary, after: Dictionary, source: String) -> Diction
 func _set_facts(snapshot: Dictionary) -> void:
 	_announcements = []
 	for intent in snapshot.get("intentions", []):
-		if intent.kind == "shove":
-			_announcements.append({"source": intent.source, "kind": "shove", "turn": snapshot.turn, "cells": intent.cells.duplicate(true)})
+		if intent.kind in ["shove", "swap"]:
+			var row := {"source": intent.source, "kind": intent.kind, "turn": snapshot.turn, "cells": intent.cells.duplicate(true)}
+			if intent.kind == "swap":
+				row["from"] = intent.from.duplicate()
+				row["target"] = intent.target.duplicate()
+			_announcements.append(row)
 	_held = snapshot.get("stored", {}).duplicate(true)
 
 func _plan(type: String, source: String, event_index: int, origin: Array, target: Array, cells: Array, kind: String = "shove", footprint_type: String = "ray") -> Dictionary:
@@ -96,8 +109,16 @@ func _plan(type: String, source: String, event_index: int, origin: Array, target
 
 func _duration(cue: Dictionary) -> float:
 	if cue.type == "move": return DURATIONS.move
+	if cue.kind == "swap":
+		return DURATIONS.capture if cue.type == "capture" else SWAP_DURATION
 	# All footprints share one ordered timeline; only shove gets an animated hand.
 	return DURATIONS[cue.type] if cue.kind == "shove" else TACTICAL_DURATION
+
+static func exchange_progress(progress: float) -> float:
+	return smoothstep(0.08, 0.58, progress)
+
+static func impact_progress(progress: float) -> float:
+	return smoothstep(0.64, 0.90, progress)
 
 func advance(delta: float) -> void:
 	if delta <= 0.0: return

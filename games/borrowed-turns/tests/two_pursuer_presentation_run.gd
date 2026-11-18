@@ -160,10 +160,76 @@ func test_movement_is_not_a_fresh_attack() -> void:
 	check(source(compose(p, t.after, controller.frame()), "A").get("occurrence", {}).get("turn", -1) == t.after.turn,
 		"fresh Director warning begins at settlement")
 
+func test_switcher_identity_locked_target_and_atomic_event_segment() -> void:
+	var p := Presenter.new()
+	var t := F.swap_hit()
+	var controller := Controller.new()
+	controller.reset(t.before, 4)
+	var desc := compose(p, t.before, controller.frame(), "A")
+	var row := source(desc, "A")
+	check(row.get("name", "") == "Switcher" and row.get("occurrence", {}) == {"source": "A", "turn": 1, "kind": "swap"},
+		"provisional A artwork is explicitly a Switcher with Swap occurrence identity, never a shove disguise")
+	check(row.get("cells", []) == [[2, 3]] and row.get("from", []) == [2, 1] and row.get("target", []) == [2, 3],
+		"Director receives exact source and locked single-cell target, not a filled ray")
+	check(source(desc, "B").get("occurrence", {}).is_empty(), "solo Switcher never invents a second active source")
+	controller.observe(t.before, t.command, t.after, 4)
+	var seen: Array = []
+	for _step in range(14400):
+		var frame: Dictionary = controller.frame()
+		if not frame.busy: break
+		desc = compose(p, t.after, frame)
+		var index: int = frame.cue.event_index
+		if index not in seen:
+			seen.append(index)
+			if index == 0:
+				cue_check(desc, frame, t.after, "resolve", "A")
+				check(desc.get("current_cue", {}).get("events", []) == t.after.events.slice(0, 3),
+					"owning resolve exposes mask -> atomic swap -> damage, without stealing later capture")
+				check(desc.get("held_occurrence", {}).is_empty() and desc.get("transfer", {}).is_empty(),
+					"actual exchange and hit occur before any acquisition motif")
+			if index == 3:
+				check(desc.get("transfer", {}).get("occurrence", {}) == {"source": "A", "turn": 1, "kind": "swap"},
+					"actual acquired Swap transfers only after exchange and damage")
+		controller.advance(1.0 / 120.0)
+	check(seen == [0, 3], "Switcher visits exactly its owning attack then acquisition, not fake generic move stages")
+	desc = compose(p, t.after, controller.frame())
+	check(desc.get("held_occurrence", {}) == {"source": "A", "turn": 1, "kind": "swap"}
+		and source(desc, "A").get("occurrence", {}) == {"source": "A", "turn": 2, "kind": "swap"},
+		"held Swap and source's fresh eligible plan retain different occurrence identities")
+	for invalid in [false, true]:
+		var miss := F.swap_miss(invalid)
+		controller.reset(miss.before, 4)
+		controller.observe(miss.before, miss.command, miss.after, 4)
+		desc = compose(p, miss.after, controller.frame())
+		check(desc.get("current_cue", {}).get("events", []) == miss.after.events
+			and desc.get("current_cue", {}).get("cells", [99]) == miss.after.events[0].cells,
+			"honest finite miss is owned by its actual singleton or empty mask, with locked target metadata intact")
+		check(desc.get("transfer", {}).is_empty(), "empty target never produces a fictitious handoff")
+
+func test_switcher_shine_owner_and_source_loss() -> void:
+	var p := Presenter.new()
+	for loss in [false, true]:
+		var t := F.swap_shine(loss)
+		var controller := Controller.new()
+		controller.reset(t.before, 4)
+		controller.observe(t.before, t.command, t.after, 4)
+		var desc := compose(p, t.after, controller.frame())
+		cue_check(desc, controller.frame(), t.after, "shine", "player")
+		check(desc.get("current_cue", {}).get("events", []) == t.after.events,
+			"Shine owns the complete mask/exchange/damage/death segment rather than a shove animation")
+		check(desc.get("held_occurrence", {}) == {"source": "A", "turn": 1, "kind": "swap"},
+			"source-linked Swap identity remains through its full killing exchange")
+		controller.advance(60.0)
+		desc = compose(p, t.after, controller.frame())
+		check(desc.get("held_occurrence", {}) == ({} if loss else {"source": "A", "turn": 1, "kind": "swap"}),
+			"only actual source death clears the completed Swap motif")
+
 func _run() -> void:
 	test_inspection_arming_and_detachment()
 	test_attack_handoff_and_other_attack()
 	test_reusable_shine_and_loss()
 	test_movement_is_not_a_fresh_attack()
+	test_switcher_identity_locked_target_and_atomic_event_segment()
+	test_switcher_shine_owner_and_source_loss()
 	print("Two-source presentation: %d checks, %d failures. Controlled facts, not visual acceptance." % [checks, failures.size()])
 	quit(0 if failures.is_empty() else 1)

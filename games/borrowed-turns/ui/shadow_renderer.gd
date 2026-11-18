@@ -67,6 +67,7 @@ func draw_shadows(canvas: Control, state: Dictionary, frame: Dictionary, center:
 	if frame.is_empty(): return
 	var loop: float = frame.loop_phase
 	for intent in frame.announcements:
+		if intent.kind != "shove": continue # Swap has paired board pads, not a pushing hand.
 		if _pending(frame, "resolve", intent.source): continue
 		for enemy in state.enemies:
 			if enemy.id != intent.source: continue

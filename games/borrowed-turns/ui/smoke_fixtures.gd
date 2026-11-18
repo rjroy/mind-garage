@@ -98,3 +98,12 @@ static func shine_victory() -> Dictionary:
 	var data := armed_fight(false)
 	data.enemies = [enemy("A", [2, 1], ability("shove", 1, 3), 2, [0, 1])]
 	return data
+
+static func switcher(pair: bool = false, source_hp: int = 5) -> Dictionary:
+	var data := {
+		"objective": "defeat_all", "width": 7, "height": 7, "walls": [] if pair else [[1, 1]],
+		"player": {"pos": [2, 3], "hp": 20}, "rules": {"actions": 3},
+		"enemies": [enemy("A", [2, 1], ability("swap", 1, 2), source_hp, [0, 1])],
+	}
+	if pair: data.enemies.append(enemy("B", [4, 1], ability("shove", 1, 2, 0, true, 3), 5, [-1, 0]))
+	return data

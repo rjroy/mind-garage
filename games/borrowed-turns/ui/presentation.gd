@@ -17,7 +17,12 @@ static func cell(pos: Array) -> String:
 static func actor(id: String) -> String:
 	return "You" if id == "player" else id.to_upper()
 
+static func enemy_name(enemy: Dictionary) -> String:
+	if not str(enemy.get("name", "")).is_empty(): return str(enemy.name)
+	return "Switcher" if enemy.kind == "swap" else "Pursuer " + str(enemy.id).to_upper()
+
 static func geometry(ability: Dictionary) -> String:
+	if ability.kind == "swap": return "One occupied target · exchange, then damage"
 	if ability.kind == "burst": return "Area radius %d" % ability.radius
 	var width: int = ability.get("width", 1)
 	return "Line · Width %d" % width if width > 1 else "Line"
@@ -41,11 +46,15 @@ static func event_text(event: Dictionary) -> String:
 	var source := str(event.get("source", "")).to_upper()
 	match event.get("type", ""):
 		"move": return "%s moved to %s." % [who, cell(event.to)]
-		"capture_armed": return "Capture armed. The next enemy hit is acquired after its normal damage and push."
+		"capture_armed": return "Capture armed. The next enemy hit is acquired after its normal effects and damage."
 		"capture": return "Acquired %s from %s after taking the hit." % [event.kind, source]
 		"shine": return "Shine · %s toward %s." % [str(event.kind).capitalize(), cell(event.target)]
 		"ability_lost": return "Ability lost: source %s was defeated." % source
 		"ray", "area": return "%s · %s footprint: %d cells." % [who, event.type, event.cells.size()]
+		"mask":
+			return "%s · Swap target %s%s." % [who, cell(event.target),
+				" · no valid hit" if event.cells.is_empty() else " · only this tile"]
+		"swap": return "%s at %s swaps with %s at %s; damage follows." % [who, cell(event.from), actor(event.other), cell(event.to)]
 		"damage": return "%s took %d damage; %d HP left." % [who, event.amount, event.hp]
 		"displace": return "%s displaced to %s." % [who, cell(event.to)]
 		"death": return "%s fell." % who
@@ -62,7 +71,7 @@ static func preview_text(predicted: Dictionary) -> String:
 
 static func stored_text(state: Dictionary) -> String:
 	if state.stored.is_empty():
-		return "Held: empty\nArm Capture for 1 AP, then take an enemy hit. Damage and push still happen."
+		return "Held: empty\nArm Capture for 1 AP, then take an enemy hit. Its effects and damage still happen."
 	var stored: Dictionary = state.stored
 	var ability: Dictionary = stored.ability
 	return "Source %s · %s\nShine: 1 AP per use. Keep using it while its source lives.\nA new captured hit replaces it." % [

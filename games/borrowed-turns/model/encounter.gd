@@ -19,6 +19,8 @@ func reset() -> void:
 		"capture_armed": false, "stored": {},
 		"intentions": [], "events": [],
 	}, true)
+	for enemy in _state.enemies:
+		_announce_swap(enemy)
 	_refresh_footprints()
 
 
@@ -121,6 +123,11 @@ func _target_ray(origin: Array, target: Array, reach: int, width: int = 1) -> Ar
 
 func _enemy_footprint(enemy: Dictionary) -> Array:
 	var ability: Dictionary = enemy.ability
+	if ability.kind == "swap":
+		var target: Array = enemy.get("announced_target", [])
+		if _cell(target) and not _target_ray(enemy.pos, target, ability.range).is_empty():
+			return [target.duplicate()]
+		return []
 	var width: int = ability.get("width", 1) if ability.kind == "shove" else 1
 	var cells := _front(enemy.pos, enemy.dir, ability.range, width)
 	if ability.kind == "burst" and not cells.is_empty():
@@ -133,7 +140,20 @@ func _refresh_footprints() -> void:
 	if _state.status != "playing":
 		return
 	for enemy in _state.enemies:
-		_state.intentions.append({"source": enemy.id, "kind": enemy.ability.kind, "cells": _enemy_footprint(enemy)})
+		if enemy.ability.kind == "swap" and enemy.get("announced_target", []).is_empty():
+			continue
+		var intention := {"source": enemy.id, "kind": enemy.ability.kind, "cells": _enemy_footprint(enemy)}
+		if enemy.ability.kind == "swap":
+			intention["from"] = enemy.pos.duplicate()
+			intention["target"] = enemy.get("announced_target", []).duplicate()
+		_state.intentions.append(intention)
+
+
+func _announce_swap(enemy: Dictionary) -> void:
+	if enemy.ability.kind != "swap":
+		return
+	var target: Array = _state.player.pos
+	enemy["announced_target"] = target.duplicate() if not _target_ray(enemy.pos, target, enemy.ability.range).is_empty() else []
 
 
 func _keys_allowed(action: Dictionary, allowed: Array) -> bool:
@@ -183,6 +203,8 @@ func _shine_rejection(action: Dictionary) -> String:
 	var ability: Dictionary = _state.stored.ability
 	if _target_ray(_state.player.pos, action.target, ability.range).is_empty():
 		return "Target is outside an unobstructed ability range."
+	if ability.kind == "swap" and _enemy(_occupant(action.target)).is_empty():
+		return "Swap requires an enemy target."
 	return ""
 
 
@@ -217,6 +239,10 @@ func _shine(action: Dictionary) -> void:
 	_state.action_points -= 1
 	var ability: Dictionary = held.ability
 	var origin: Array = _state.player.pos.duplicate()
+	if ability.kind == "swap":
+		_event("shine", {"source": held.source, "kind": ability.kind, "target": action.target.duplicate()})
+		_resolve_swap("player", ability, action.target)
+		return
 	var center: Array = action.target if ability.kind == "burst" else origin
 	var cells: Array
 	if ability.kind == "burst":
@@ -239,6 +265,9 @@ func _end_turn() -> void:
 		if enemy.is_empty():
 			continue
 		var ability: Dictionary = enemy.ability
+		if ability.kind == "swap":
+			_resolve_swap(id, ability, enemy.get("announced_target", []))
+			continue
 		var ray := _ray(enemy.pos, enemy.dir, ability.range)
 		var center: Array = ray.back() if ability.kind == "burst" and not ray.is_empty() else enemy.pos
 		_resolve_ability(id, ability, _enemy_footprint(enemy), center)
@@ -251,6 +280,7 @@ func _end_turn() -> void:
 		_move_enemy(enemy)
 	for enemy in _state.enemies:
 		enemy.dir = _aim(enemy.pos)
+		_announce_swap(enemy)
 	_state.turn += 1
 	_state.action_points = _state.rules.actions
 	_event("turn", {"number": _state.turn})
@@ -336,6 +366,31 @@ func _targets(actor_id: String, cells: Array, is_area: bool) -> Array:
 	return targets
 
 
+func _resolve_swap(actor_id: String, ability: Dictionary, target: Array) -> void:
+	if not _cell(target):
+		return
+	var actor: Dictionary = _state.player if actor_id == "player" else _enemy(actor_id)
+	if actor.is_empty():
+		return
+	var origin: Array = actor.pos.duplicate()
+	var valid := not _target_ray(origin, target, ability.range).is_empty()
+	_event("mask", {
+		"actor": actor_id, "kind": "swap", "cells": [target.duplicate()] if valid else [],
+		"from": origin.duplicate(), "target": target.duplicate(),
+	})
+	if not valid:
+		return
+	var other_id := _occupant(target)
+	if other_id.is_empty() or other_id == actor_id:
+		return
+	var other: Dictionary = _state.player if other_id == "player" else _enemy(other_id)
+	actor.pos = target.duplicate()
+	other.pos = origin.duplicate()
+	_event("swap", {"actor": actor_id, "other": other_id, "from": origin, "to": target.duplicate()})
+	_damage(other_id, ability.damage)
+	_finish_ability(actor_id, ability, other_id == "player" and actor_id != "player")
+
+
 func _resolve_ability(actor_id: String, ability: Dictionary, cells: Array, center: Array) -> void:
 	var is_area: bool = ability.kind == "burst"
 	_event("area" if is_area else "ray", {"actor": actor_id, "kind": ability.kind, "cells": cells.duplicate(true)})
@@ -352,6 +407,10 @@ func _resolve_ability(actor_id: String, ability: Dictionary, cells: Array, cente
 		var actor: Dictionary = _state.player if id == "player" else _enemy(id)
 		if ability.push and not actor.is_empty():
 			_displace(id, actor, center)
+	_finish_ability(actor_id, ability, player_hit)
+
+
+func _finish_ability(actor_id: String, ability: Dictionary, player_hit: bool) -> void:
 	# A source can die partway through an area effect. Finish the entire effect
 	# before invalidating its held ability or acquiring a new one.
 	if not _state.stored.is_empty() and _enemy(_state.stored.source).is_empty():

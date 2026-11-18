@@ -6,6 +6,7 @@ const BOARD := "res://ui/board.gd"
 const Regions = preload("res://ui/telegraph_regions.gd")
 const Overlay = preload("res://ui/wavefront_overlay.gd")
 const ShadowPresentation = preload("res://ui/shadow_presentation.gd")
+const SwapFixture = preload("res://tests/shadow_fixtures.gd")
 var board_script: Script
 var checks := 0
 var failures: Array[String] = []
@@ -578,6 +579,47 @@ func test_wide_curves_and_projection() -> void:
 			"width never invents threatened source or origin-side cells")
 		board.free()
 
+func test_switcher_locked_target_is_not_a_shove_corridor() -> void:
+	var board = make_board()
+	var state := SwapFixture.swap_state(true)
+	board.set_view(state, {}, [], [], "")
+	board.set_presentation({"loop_phase": 0.23})
+	var marks: Array = board.announcement_marks()
+	var a := mark(marks, "A")
+	check(marks.size() == 2 and a.get("kind", "") == "swap"
+		and a.get("origin", []) == [2, 1] and a.get("target", []) == [2, 3],
+		"Switcher exposes both authoritative exchange endpoints alongside independent B ownership")
+	check(a.get("cells", []) == [[2, 3]] and [2, 1] not in a.get("cells", []) and [2, 2] not in a.get("cells", []),
+		"only the locked victim cell is threatened; source landing pad and connecting path are not damage tiles")
+	var region := mark(board.announcement_regions(), "A")
+	check(region.get("contours", []) == Regions.boundaries([[2, 3]]), "Switcher target wash uses exactly one full model tile")
+	var rows: Array = board.announcement_waves()
+	var swap_row := mark(rows, "A")
+	var b_row := mark(rows, "B")
+	check(swap_row.get("kind", "") == "swap" and swap_row.get("fills", []) == Regions.boundaries([[2, 3]])
+		and swap_row.get("fronts", []).is_empty(), "exchange target uses a targeted mask, never moving shove wavefronts")
+	check(not b_row.get("fronts", []).is_empty() and b_row.get("cells", []) == state.intentions[1].cells,
+		"B retains its separate real wide-shove region and wave language")
+	var moved := state.duplicate(true)
+	moved.player.pos = [3, 3]
+	moved.capture_armed = false
+	board.set_view(moved, {}, [], [], "A")
+	check(mark(board.announcement_marks(), "A") == a,
+		"leaving the target cell or inspecting Switcher does not retarget the locked attack to the player")
+	check(mark(board.announcement_waves(), "B") == b_row, "Switcher inspection never changes B's current cells or phase")
+	var invalid := moved.duplicate(true)
+	invalid.enemies[0].pos = [1, 1]
+	invalid.intentions[0].from = [1, 1]
+	invalid.intentions[0].cells = []
+	board.set_view(invalid, {}, [], [], "")
+	a = mark(board.announcement_marks(), "A")
+	check(a.get("origin", []) == [1, 1] and a.get("target", []) == [2, 3] and a.get("cells", [99]).is_empty(),
+		"current source position changes without inventing a frozen origin or rehoming the target")
+	region = mark(board.announcement_waves(), "A")
+	check(region.get("fills", []).is_empty() and region.get("fronts", []).is_empty(),
+		"invalid source-to-target geometry does not invent threatened cells or a shove")
+	board.free()
+
 func _run() -> void:
 	if not setup():
 		quit(2)
@@ -591,6 +633,7 @@ func _run() -> void:
 	test_wave_source_origin_and_translation()
 	test_board_wave_phase_and_ownership()
 	test_wide_curves_and_projection()
+	test_switcher_locked_target_is_not_a_shove_corridor()
 	test_wave_pacing_against_director()
 	print("Board warnings: %d checks, %d failures. Controlled facts, not visual acceptance." % [checks, failures.size()])
 	quit(1 if not failures.is_empty() else 0)

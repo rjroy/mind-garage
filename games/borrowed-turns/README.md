@@ -15,7 +15,13 @@ godot --path games/borrowed-turns
 godot --path games/borrowed-turns -- --encounter=escape
 ```
 
-Normal play opens **Two pursuers** in **Stage** view: defeat both opponents with one shared 3-AP pool. A chases the player with a narrow shove; B seeks a usable firing position at maximum range with a three-wide shove. The player starts at the left edge midpoint and opponents at the opposite corners. The explicit **escape** encounter remains available in the encounter selector or command above. Both use the shared model and AP-only budget. The original V1–V6 chooser, variant launch modes, discard and wait are removed. The original build at `fd8e91d` remains historical, not a parallel legacy engine.
+Normal play opens **Switcher** in **Stage** view: one damaging-swap opponent, on the accepted 7×7 floor, with the same 3-AP budget. **Switcher + B**, baseline **Two pursuers** and **escape** are independently available through the encounter selector. No encounter completion unlock is required. All use the shared model and current Capture/Shine bargain. The original V1–V6 chooser, variant launch modes, discard and wait are removed; `fd8e91d` remains historical, not a parallel legacy engine.
+
+```bash
+godot --path games/borrowed-turns -- --encounter=switcher
+godot --path games/borrowed-turns -- --encounter=switcher-b
+godot --path games/borrowed-turns -- --encounter=two-pursuers
+```
 
 The former Invert preview is not part of the current core rules; the retired `--invert` option is rejected. There is no progression gate.
 
@@ -35,6 +41,16 @@ In the default fight, defeat all foes. The goal and number remaining stay visibl
 Choose **Move**, **Capture**, **Shine** or **End turn**, then choose a target for Move/Shine. Inspect the predicted board overlay and summary; **Preview** lists exact ordered effects in the upper-stage Details sheet. A separate **Confirm** commits. **Cancel** or right click backs out of a prepared command without changing the model; it does not refund previously confirmed arming. End turn also previews and requires confirmation. **Recent events** contains committed events only.
 
 Keyboard: Tab / Shift+Tab traverses controls; Space / Enter activates. M selects Move, C Capture, S Shine, E prepares End turn. With board focus, arrows inspect and Enter selects a cell; a separate Enter confirms. Esc cancels, Ctrl+R requests restart. Controls help does not advance play.
+
+## Switcher: fixed-cell exchange
+
+The Switcher chases using the existing one-step movement policy. When the player is cardinally aligned within range 2 with no intervening wall, it announces that exact cell. The target cell stays fixed during the player turn; moving away makes an empty-cell attack miss. Another living actor moved into the locked cell can become the victim instead. Its source position and wall/range validity still matter.
+
+On a hit, both actors exchange positions first, then the victim takes 1 damage. Armed Capture acquires Swap only after these normal consequences, if the player survives. Borrowed Swap lets Shine target an occupied enemy cell on a clear cardinal line within range 2; it rejects empty, diagonal, self and blocked targets. Shine remains reusable until its source dies, including when a source-killing exchange completes its relocation.
+
+The filled wash marks only the locked target cell. Hollow exchange pads and the connecting pulse explain the two positions; they do not mark damage along the corridor or an additional threatened source tile. The Switcher provisionally reuses A's accepted artwork but is named **Switcher** in the roster, Plans and Director. No new art or progression is involved.
+
+Try solo first, then **Switcher + B**. The pair keeps B's three-wide shove unchanged, allowing exchanges to change who occupies its already announced region. Build, checks and interpretation limits are in [experiment 004](../../.lore/work/experiments/004-switcher/record.md).
 
 ## Holding and source-linked abilities
 
@@ -61,7 +77,7 @@ Full model-authored footprint markings remain authoritative. Rehearsal and previ
 
 Finite shadow cues complete independently of persistent idle/held loops. Gameplay input waits for finite feedback, not an arbitrary scene sleep or endless animation. Restart cancels old visual work. The model commits once on confirmation; animation never decides gameplay results.
 
-The earlier visual pilot does not establish enjoyment. The current active-opponent revision is recorded separately in [experiment 003](../../.lore/work/experiments/003-active-opponents/record.md); one complete fight is the next human checkpoint.
+The earlier visual pilot does not establish enjoyment. [Experiment 003](../../.lore/work/experiments/003-active-opponents/record.md) records the accepted bargain, positive single-fight feedback and larger Stage. [Experiment 004](../../.lore/work/experiments/004-switcher/record.md) records the new Switcher solo/paired playtest.
 
 ## Theatre stage
 
@@ -80,7 +96,7 @@ godot --path games/borrowed-turns -- \
   --encounter=two-pursuers
 ```
 
-The visible encounter selector retains both **Two pursuers** and **escape**. Changing encounters explicitly confirms a new fight; Cancel keeps the existing one. Restart restores the selected encounter. Omitting the encounter option opens the active fight in Stage.
+The encounter selector offers **Switcher**, **Switcher + B**, **Two pursuers** and **escape**. Changing encounters explicitly confirms a new fight; Cancel keeps the existing one. Restart restores the selected encounter. Omitting the encounter option opens solo Switcher in Stage.
 
 The five puppet textures ship in `res://assets/puppets/two-pursuers`; import them as described above after a fresh checkout. Their source and portable extraction recipes are documented in [`assets-source/borrowed-turns/two-pursuers`](../../assets-source/borrowed-turns/two-pursuers/README.md). An optional `--puppet-pack=<directory>` override accepts native RGBA `a-body.png`, `a-hands.png`, `b-body.png`, `b-hands.png` (290×145) and `p-lantern.png` (145×145). Missing or invalid material fails clearly on direct launch; a chooser failure keeps the existing run and reports the problem. No substitute art is used.
 
@@ -96,9 +112,9 @@ Voluntary enemy moves have finite slide stages after the old attacks. Ability di
 
 ### Angled board and wavefront overlays
 
-Ronald accepted the Director images and standee sizes, then selected source-driven moving curves for the floor warnings. The normal **Stage / Two pursuers** entry opens that presentation without a hidden appearance choice. The earlier ribbon/stamp controls and runtime hand decorations are retired; checkpoint `38d7e3e` preserves that experiment for historical comparison. Source artwork and projection are unchanged.
+Ronald accepted the Director images and standee sizes, then selected source-driven moving curves for shove warnings. The retained **Two pursuers** encounter opens that presentation without a hidden appearance choice; Switcher uses its distinct single-cell exchange marks on the same floor. Earlier ribbon/stamp controls and runtime hand decorations are retired; checkpoint `38d7e3e` preserves that experiment for historical comparison. Source artwork and projection are unchanged.
 
-Current enemy warnings cover every affected tile edge to edge, beneath the standees. Curved fronts repeatedly travel from the attacker's position along its actual attack direction to the end of that footprint. They do not point at or track the player. **Cool A/diamond** and **warm B/circle**, matching the foot markers and roster, identify the sources. Each announcement has its own moving fronts, including where the affected regions overlap. These exact regions come from model-authored cells, not a convex hull, an extra source square or an invented push destination. The figures remain upright; the floor material, grid, regions, motion, feet, depth sorting and picking share one ground-plane homography.
+Shove warnings cover every affected tile edge to edge, beneath the standees. Curved fronts travel from the attacker along the actual attack direction; they do not track the player. Swap instead marks its single locked cell and exchange endpoints. **Cool A/diamond** and **warm B/circle**, matching the foot markers and roster, identify the sources. Exact regions come from model-authored cells, not a convex hull, an extra source square or an invented destination. Floor material, grid, regions, motion, feet, depth sorting and picking share one ground-plane homography.
 
 Capture does not remove an enemy's announced region. Mint marks show legal choices and exact command predictions, not additional enemy wavefronts. Costs, armed/held state, consequence summary, Confirm/Cancel and explicit Details remain available.
 

@@ -8,19 +8,20 @@ The shared research question is: **Can AI originate a central game mechanic and 
 
 Human playtest feedback is part of that process. The question is not whether AI can build a game without human contact, or whether a clever prompt alone can establish that a design is novel and fun.
 
-## Current prototype: Borrowed Turns, active-opponent fight
+## Current prototype: Borrowed Turns, Switcher exploration
 
-Steal an enemy's announced action, then turn it against the hunt. Normal play now opens a small, turn-based **defeat-all fight** against two active opponents in the accepted Stage presentation.
+Survive an enemy's announced attack, borrow its ability, then turn it against the hunt. Normal play opens a **solo Switcher** fight in the accepted Stage presentation. **Switcher + B** is independently available in the encounter selector:
 
 ```bash
 godot --path games/borrowed-turns
+godot --path games/borrowed-turns -- --encounter=switcher-b
 ```
 
-The current candidate uses **3 shared AP per turn**: a cardinal step, arming Capture, or Shine costs 1 AP. Armed Capture acquires the next enemy attack that hits you **after its normal damage and effects**; it does not cancel danger. Shine repeatedly uses the held ability without consuming it. Holding has no expiry or backlash, but defeating its source removes the ability. A chases with a narrow shove; B seeks usable maximum attack range with a three-wide shove. End Turn resolves attacks, opponent movement, then fresh aim and announcements. Reaching zero AP does not advance time. See the [play instructions](games/borrowed-turns/README.md) and [active-opponent revision record](.lore/work/experiments/003-active-opponents/record.md).
+The candidate uses **3 shared AP per turn**: a cardinal step, arming Capture, or Shine costs 1 AP. Armed Capture acquires the next enemy attack that hits you **after its normal damage and effects**; it does not cancel danger. Shine repeatedly uses the held ability without consuming it. Holding has no expiry or backlash, but defeating its source removes the ability. The Switcher locks one cell, exchanges positions with its occupant, then deals damage. B retains its three-wide shove. Reaching zero AP does not advance time. See the [play instructions](games/borrowed-turns/README.md), [Switcher record](.lore/work/experiments/004-switcher/record.md) and [earlier active-fight record](.lore/work/experiments/003-active-opponents/record.md).
 
 This is a mechanic prototype, not a finished roguelite or a validated progression system. Ronald reports the 5×5 armed-Capture/reusable-Shine fight at `744fca3` felt good, engaging and puzzle-like, but not particularly replayable as the same encounter. That is positive engagement evidence from one player, not run retention or a general enjoyment result. Normal launch now uses the accepted **7×7 Stage extent** from `8275a48`, without edge coordinate labels or smaller actors. Combat rules and stats are unchanged; layout acceptance is not a new balance claim. The [Curtain Call narrative direction](.lore/work/narrative/borrowed-turns/curtain-call-narrative-brief.md) supplies context, not an exhaustive mechanics specification.
 
-The earlier escape encounter is retained with `--encounter=escape`; it is not the default goal. Active-fight feasibility and technical verification do not establish that the fight is fun.
+The accepted A+B fight remains available with `--encounter=two-pursuers`; escape remains `--encounter=escape`. These are encounter choices, not old rules or display modes. Mechanical feasibility does not establish that the new opponent is fun.
 
 The first six-variant prototype is preserved at source commit `fd8e91d`; it is not a parallel mode in the live game. Subsequent human feedback and the unlimited-capture/backlash direction are recorded in [design revision 02](.lore/work/experiments/001-hook-discovery/design-revision-02.md), with provisional [executable rules](.lore/work/experiments/001-hook-discovery/revision-02-executable-rules.md).
 
@@ -37,7 +38,7 @@ godot --path games/borrowed-turns
 
 Stage is the sole presentation. The accepted art and shared board projection are unchanged by the active-opponent revision. Runtime puppet textures ship in the game; necessary preparation artwork and recipes live under `assets-source/`. No local experiment history is needed to play. See the [stage instructions](games/borrowed-turns/README.md#theatre-stage).
 
-The active-opponent fight checkpoint `mind-garage-jkv` and Stage-capacity checkpoint `mind-garage-p4z` are complete. Opponent design continues under `mind-garage-dxm`; multi-fight runs and progression remain deferred under `mind-garage-7am`.
+The active-fight, Stage-capacity and opponent-selection checkpoints are complete. Switcher implementation/playtest work is `mind-garage-ds5`; multi-fight runs and progression remain deferred under `mind-garage-7am`.
 
 ## Shared foundations
 

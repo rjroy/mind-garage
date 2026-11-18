@@ -18,6 +18,15 @@ The model helper checks nonmutating assessment and exact preview-to-commit equal
 
 The candidate pays AP to arm, takes an enemy attack's complete normal effects before acquisition, permits repeated Shine without consuming storage, and loses the held ability when its source dies. Old free acquisition, threat-free adjacency, attack cancellation, expiry and backlash assertions are superseded. UI consumers must use model-authored events/cells, not recompute combat.
 
+The Switcher extension has its own focused model check:
+
+```sh
+godot --headless --path games/borrowed-turns --script res://tests/run.gd -- --focus=switcher
+godot --headless --path games/borrowed-turns --script res://ui/smoke.gd -- --focus=switcher
+```
+
+It protects fixed-cell targeting, singleton masks, atomic exchange before damage/acquisition, invalid Shine targets, repeat use/source death and later independent attacks. Drawing checks must observe actual `_draw()` mask/ray dispatch as well as helper results; a correct returned footprint does not prove the preview consumer draws it.
+
 Invert and the plain/paper display modes are removed. Preserve rejection coverage where applicable, not parallel compatibility paths.
 
 The controlled push-axis regression runs independently with:

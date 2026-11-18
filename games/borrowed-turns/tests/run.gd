@@ -488,7 +488,140 @@ func test_burst_push_axes() -> void:
 	for item in [["tie", [5, 2]], ["xdom", [6, 4]], ["ydom", [4, 6]]]:
 		check(destinations.get(item[0], []) == item[1] and enemy(s, item[0]).get("pos") == item[1], "burst push axis destination: " + item[0])
 
+func switcher(pos: Array, hp: int = 5) -> Dictionary:
+	return F.foe("switcher", pos, [-1, 0], F.ability("swap", 2, 1), hp)
+
+func test_swap_locked_contact_and_reset() -> void:
+	var b := F.board()
+	b.player.pos = [2, 3]
+	b.enemies = [switcher([4, 3])]
+	var g = model(b)
+	var initial: Dictionary = g.snapshot()
+	var intent := intention(initial, "switcher")
+	check(intent.get("kind") == "swap" and intent.get("from") == [4, 3] and intent.get("target") == [2, 3] and intent.get("cells") == [[2, 3]], "swap announces one locked destination with current source")
+	if not apply(g, {"type": "capture"}, "arm for swap"): return
+	if not apply(g, {"type": "end_turn"}, "swap hits armed player"): return
+	var s: Dictionary = g.snapshot()
+	var swaps := events(s, "swap")
+	var masks := events(s, "mask")
+	check(s.get("player", {}).get("pos") == [4, 3] and enemy(s, "switcher").get("pos") == [2, 3] and s.get("player", {}).get("hp") == 19, "enemy swaps positions before dealing one damage")
+	check(masks.size() == 1 and masks[0].get("actor") == "switcher" and masks[0].get("kind") == "swap" and masks[0].get("cells") == [[2, 3]] and masks[0].get("from") == [4, 3] and masks[0].get("target") == [2, 3], "valid swap mask describes locked cell and source")
+	check(swaps.size() == 1 and swaps[0].get("actor") == "switcher" and swaps[0].get("other") == "player" and swaps[0].get("from") == [4, 3] and swaps[0].get("to") == [2, 3], "swap event contains paired pre-exchange positions")
+	check(types(s).find("mask") >= 0 and types(s).find("swap") > types(s).find("mask") and types(s).find("damage") > types(s).find("swap") and types(s).find("capture") > types(s).find("damage"), "mask, exchange and damage precede acquisition")
+	check(s.get("stored", {}).get("source") == "switcher" and s.get("stored", {}).get("ability", {}).get("kind") == "swap" and not s.get("capture_armed", true), "armed contact captures swap payload")
+	check(events(s, "move").is_empty(), "swap is not reported as voluntary movement")
+	g.reset()
+	check(g.snapshot() == initial, "reset restores original lock and positions")
+
+func test_swap_lock_miss_and_announcement_validity() -> void:
+	var b := F.board()
+	b.player.pos = [2, 3]
+	b.enemies = [switcher([4, 3])]
+	var g = model(b)
+	if not apply(g, {"type": "capture"}, "arm before leaving swap lock"): return
+	if not apply(g, {"type": "move", "to": [2, 2]}, "leave locked cell"): return
+	var locked := intention(g.snapshot(), "switcher")
+	check(locked.get("target") == [2, 3] and locked.get("cells") == [[2, 3]], "swap lock does not follow player movement")
+	if not apply(g, {"type": "end_turn"}, "empty locked tile"): return
+	var s: Dictionary = g.snapshot()
+	check(s.get("player", {}).get("hp") == 20 and s.get("player", {}).get("pos") == [2, 2] and s.get("stored", {}).is_empty() and s.get("capture_armed", false), "empty lock misses and leaves capture armed")
+	check(events(s, "swap").is_empty(), "empty lock emits no swap")
+	var masks := events(s, "mask")
+	check(masks.size() == 1 and masks[0].get("actor") == "switcher" and masks[0].get("kind") == "swap" and masks[0].get("from") == [4, 3] and masks[0].get("target") == [2, 3] and masks[0].get("cells") == [[2, 3]], "empty locked cell retains honest mask")
+	for entry in [
+		{"pos": [5, 3], "walls": [], "name": "out of range"},
+		{"pos": [4, 2], "walls": [], "name": "diagonal"},
+		{"pos": [4, 3], "walls": [[3, 3]], "name": "wall"},
+	]:
+		b.walls = entry.walls
+		b.enemies = [switcher(entry.pos)]
+		g = model(b)
+		check(intention(g.snapshot(), "switcher").get("cells", []).is_empty(), "swap has no announcement when " + entry.name)
+
+func test_swap_replacement_occupant_and_source_displaced() -> void:
+	var b := F.board()
+	b.player.pos = [2, 3]
+	b.enemies = [
+		F.foe("pusher", [0, 3], [1, 0], F.ability("shove", 1, 1, 0, true)),
+		F.foe("occupant", [1, 3], [0, 1], F.ability("bolt", 1, 0)),
+		switcher([4, 3]),
+	]
+	var g = model(b)
+	if not apply(g, {"type": "capture"}, "arm before replacement occupant"): return
+	if not apply(g, {"type": "move", "to": [2, 2]}, "vacate lock before replacement"): return
+	if not apply(g, {"type": "end_turn"}, "replacement occupant swaps"): return
+	var s: Dictionary = g.snapshot()
+	check(enemy(s, "switcher").get("pos") == [2, 3] and enemy(s, "occupant").get("pos") == [4, 3] and enemy(s, "occupant").get("hp") == 8, "locked cell swaps its actual enemy occupant after prior push")
+	check(s.get("capture_armed", false) and s.get("stored", {}).is_empty(), "swapping another enemy cannot capture")
+	var swaps := events(s, "swap")
+	check(swaps.size() == 1 and swaps[0].get("other") == "occupant" and types(s).find("displace") >= 0 and types(s).find("swap") > types(s).find("displace"), "prior displacement precedes replacement-occupant exchange")
+	b.enemies = [
+		F.foe("pusher", [3, 3], [1, 0], F.ability("shove", 1, 1, 0, true)),
+		switcher([4, 3]),
+	]
+	g = model(b)
+	check(intention(g.snapshot(), "switcher").get("cells") == [[2, 3]], "intermediate actor does not block swap announcement")
+	if not apply(g, {"type": "capture"}, "arm for displaced source"): return
+	if not apply(g, {"type": "end_turn"}, "source displaced out of swap range"): return
+	s = g.snapshot()
+	check(enemy(s, "switcher").get("pos") == [5, 3] and events(s, "swap").is_empty() and s.get("capture_armed", false) and s.get("player", {}).get("hp") == 20, "source displacement makes old lock out of range and misses")
+	var masks := events(s, "mask")
+	check(masks.size() == 1 and masks[0].get("actor") == "switcher" and masks[0].get("kind") == "swap" and masks[0].get("from") == [5, 3] and masks[0].get("cells") == [], "invalid displaced-source geometry emits empty swap mask")
+
+func test_swap_shine_and_source_death() -> void:
+	var b := F.board()
+	b.walls = [[3, 2]]
+	b.enemies = [switcher([3, 3], 2), F.foe("other", [3, 1], [0, -1], F.ability("bolt", 1, 0)), F.foe("far", [6, 3], [1, 0], F.ability("bolt", 1, 0))]
+	var g = model(b)
+	if not apply(g, {"type": "capture"}, "arm for borrowed swap"): return
+	if not apply(g, {"type": "end_turn"}, "acquire borrowed swap"): return
+	var acquired: Dictionary = g.snapshot()
+	var setup_masks := events(acquired, "mask")
+	var setup_ok: bool = acquired.get("player", {}).get("pos") == [3, 3] and enemy(acquired, "switcher").get("pos") == [1, 3] and acquired.get("stored", {}).get("ability", {}).get("kind") == "swap" and setup_masks.size() == 1 and setup_masks[0].get("cells") == [[1, 3]]
+	check(setup_ok, "borrowed swap setup exchanges positions and emits initial mask")
+	if not setup_ok: return
+	reject(g, {"type": "shine", "target": [2, 3]}, "swap shine empty target")
+	reject(g, {"type": "shine", "target": [3, 3]}, "swap shine self target")
+	reject(g, {"type": "shine", "target": [2, 2]}, "swap shine diagonal target")
+	reject(g, {"type": "shine", "target": [3, 1]}, "swap shine blocked by wall")
+	reject(g, {"type": "shine", "target": [6, 3]}, "swap shine occupied target beyond range")
+	reject(g, {"type": "shine", "target": [-1, 3]}, "swap shine off board")
+	if not apply(g, {"type": "capture"}, "arm while holding swap"): return
+	if not apply(g, {"type": "shine", "target": [1, 3]}, "shine swap first time"): return
+	var s: Dictionary = g.snapshot()
+	var swaps := events(s, "swap")
+	check(s.get("player", {}).get("pos") == [1, 3] and enemy(s, "switcher").get("pos") == [3, 3] and enemy(s, "switcher").get("hp") == 1, "shine exchanges player and target then damages target")
+	check(s.get("stored", {}).get("source") == "switcher" and s.get("capture_armed", false), "shine retains ability and cannot trigger own capture")
+	check(swaps.size() == 1 and swaps[0].get("actor") == "player" and swaps[0].get("other") == "switcher" and swaps[0].get("from") == [3, 3] and swaps[0].get("to") == [1, 3], "shine swap event records atomic exchange")
+	if not apply(g, {"type": "shine", "target": [3, 3]}, "shine swap kills source"): return
+	s = g.snapshot()
+	swaps = events(s, "swap")
+	check(s.get("player", {}).get("pos") == [3, 3] and enemy(s, "switcher").is_empty() and s.get("stored", {}).is_empty(), "lethal shine completes exchange then clears dead source")
+	check(swaps.size() == 1 and types(s).find("swap") >= 0 and types(s).find("damage") > types(s).find("swap") and types(s).find("death") > types(s).find("damage") and types(s).find("ability_lost") > types(s).find("death"), "lethal exchange precedes damage, death and ability loss")
+	check(s.get("capture_armed", false), "own lethal shine leaves capture armed")
+
+func test_swap_followed_by_attack() -> void:
+	var b := F.board()
+	b.player.pos = [2, 3]
+	b.enemies = [switcher([4, 3]), F.foe("later", [4, 5], [0, -1], F.ability("bolt", 2, 2))]
+	var g = model(b)
+	if not apply(g, {"type": "capture"}, "arm before swap and later attack"): return
+	if not apply(g, {"type": "end_turn"}, "resolve swap before later attack"): return
+	var s: Dictionary = g.snapshot()
+	check(s.get("player", {}).get("pos") == [4, 3] and s.get("player", {}).get("hp") == 17, "later enemy attacks player at post-swap position")
+	check(types(s).find("swap") >= 0 and types(s).find("capture") > types(s).find("swap") and types(s).rfind("ray") > types(s).find("capture"), "later attack resolves after swap acquisition")
+	check(s.get("stored", {}).get("source") == "switcher", "later hit does not replace consumed capture")
+
 func _initialize() -> void:
+	if OS.get_cmdline_user_args().has("--focus=switcher"):
+		test_swap_locked_contact_and_reset()
+		test_swap_lock_miss_and_announcement_validity()
+		test_swap_replacement_occupant_and_source_displaced()
+		test_swap_shine_and_source_death()
+		test_swap_followed_by_attack()
+		print("Checks: ", checks, "; failures: ", failures.size())
+		quit(0 if failures.is_empty() else 1)
+		return
 	var focused := OS.get_cmdline_user_args().has("--focus=armed-capture-shine")
 	if not focused:
 		test_budget_boundary()
@@ -510,5 +643,11 @@ func _initialize() -> void:
 	test_rearm_replaces_only_on_contact()
 	test_dead_source_cannot_be_acquired()
 	test_shine_borrowed_wide_endpoint()
+	if not focused:
+		test_swap_locked_contact_and_reset()
+		test_swap_lock_miss_and_announcement_validity()
+		test_swap_replacement_occupant_and_source_displaced()
+		test_swap_shine_and_source_death()
+		test_swap_followed_by_attack()
 	print("Checks: ", checks, "; failures: ", failures.size())
 	quit(0 if failures.is_empty() else 1)

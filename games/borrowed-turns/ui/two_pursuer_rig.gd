@@ -2,6 +2,9 @@ extends Node2D
 ## Bounded two-source performance. Positions are theatrical, never map bearings.
 ## All time and outcomes come from the shared controller and pure descriptor.
 
+const P = preload("res://ui/presentation.gd")
+const Timeline = preload("res://ui/shadow_presentation.gd")
+
 const GLOW := """
 shader_type canvas_item;
 render_mode unshaded;
@@ -145,11 +148,12 @@ func present(description: Dictionary, rect: Rect2) -> void:
 	_player.scale = Vector2.ONE * scale_factor
 	_player.modulate = Color.WHITE
 	var victims := _victims(cue)
+	var reaction := Timeline.impact_progress(progress) if cue.get("kind", "") == "swap" else progress
 	if "player" in victims:
 		# No player reaction merely because an enemy acts. Zero-damage recorded
 		# damage/displacement still qualifies; no new outcome is computed here.
-		_player.position.x += sin(progress * TAU) * sin(progress * PI) * 4 * scale_factor
-		_player.modulate = Color(1, 0.78, 0.66) if progress > 0.35 and progress < 0.75 else Color.WHITE
+		_player.position.x += sin(reaction * TAU) * sin(reaction * PI) * 4 * scale_factor
+		_player.modulate = Color(1, 0.78, 0.66) if reaction > 0.35 and reaction < 0.75 else Color.WHITE
 	var wanted: Array[String] = []
 	var any_threat := false
 	for id in ["A", "B"]:
@@ -161,7 +165,7 @@ func present(description: Dictionary, rect: Rect2) -> void:
 		var capturing: bool = not transfer.is_empty() and transfer.occurrence.source == id
 		var acting: bool = cue.get("type", "") == "resolve" and cue.get("source", "") == id
 		var moving: bool = cue.get("type", "") == "move" and cue.get("actor", "") == id
-		body.visible = not occurrence.is_empty() or capturing or acting or moving
+		body.visible = row.get("present", false) or capturing or acting or moving
 		body.modulate = Color("f7d9a3") if row.get("inspected", false) else Color.WHITE
 		var anchor: Vector2 = body.position + HINGES[id] * scale_factor
 		var threatens: bool = row.get("threatens_player", false)
@@ -170,14 +174,16 @@ func present(description: Dictionary, rect: Rect2) -> void:
 		# During committed resolutions keep the next announcement quiet, rather
 		# than showing next-turn attacks on top of this turn's actual outcome.
 		if not occurrence.is_empty():
-			var press := sin(local_phase * TAU) if threatens else 0.0
+			var press := sin(local_phase * TAU) if threatens and row.get("kind", "") != "swap" else 0.0
 			var direction := 1.0 if id == "A" else -1.0
 			_pose(occurrence, "rehearsal" if threatens else "watchful", anchor + Vector2(press * direction * 4, 0) * scale_factor,
 				scale_factor, local_phase, 1.0, press * 0.023 if threatens else direction * 0.40)
 			wanted.append(_key(occurrence))
 		if body.visible:
+			var identity := "◇ A" if id == "A" else "○ B"
+			if row.get("kind", "") == "swap": identity += " · " + row.name
 			_labels.append({"at": body.position + Vector2(125, 4) * scale_factor,
-				"text": ("◇ A" if id == "A" else "○ B") + (" · watching" if not threatens and not acting and not capturing and not moving else "")})
+				"text": identity + (" · watching" if not threatens and not acting and not capturing and not moving else "")})
 		if not description.busy and not occurrence.is_empty(): _prior_sources[id] = occurrence.duplicate(true)
 	if not transfer.is_empty():
 		var occurrence: Dictionary = transfer.occurrence
@@ -200,8 +206,29 @@ func present(description: Dictionary, rect: Rect2) -> void:
 		wanted.append(_key(held))
 		_lines.append({"points": PackedVector2Array([handle, destination]), "color": Color("b6e6ce")})
 		_labels.append({"at": destination + Vector2(-8, -39) * scale_factor,
-			"text": "Held %s · T%d" % [held.source, held.turn]})
-	if not cue.is_empty() and cue.type in ["shine", "resolve"]:
+			"text": "Held %s · %s" % [held.source, "Swap" if held.kind == "swap" else "T%d" % held.turn]})
+	if not cue.is_empty() and cue.kind == "swap" and cue.type in ["shine", "resolve"]:
+		var exchange: Dictionary = {}
+		for event in cue.get("events", []):
+			if event.type == "swap": exchange = event
+		var caption := "You Shine · Swap" if cue.type == "shine" else "Switcher"
+		if exchange.is_empty():
+			caption += " · target %s missed" % P.cell(cue.to) if not cue.cells.is_empty() else " · no valid exchange"
+		else:
+			caption += " · exchange first, then damage"
+			var anchors := PackedVector2Array()
+			for actor in [exchange.actor, exchange.other]:
+				anchors.append(handle if actor == "player" else _bodies[actor].position + HINGES[actor] * scale_factor)
+			_lines.append({"points": anchors, "color": Color("b6e6ce")})
+			var traded := Timeline.exchange_progress(progress)
+			for amount in [traded, 1.0 - traded]:
+				var point: Vector2 = anchors[0].lerp(anchors[1], amount)
+				var radius := 4.0 * scale_factor
+				_lines.append({"points": PackedVector2Array([point + Vector2(0, -radius),
+					point + Vector2(radius, 0), point + Vector2(0, radius), point - Vector2(radius, 0),
+					point + Vector2(0, -radius)]), "color": Color("b6e6ce")})
+		_labels.append({"at": rect.position + rect.size * Vector2(0.22, 0.505), "text": caption, "floor": true})
+	elif not cue.is_empty() and cue.type in ["shine", "resolve"]:
 		var id: String = cue.source
 		var relevant: bool = cue.type != "resolve" or "player" in victims
 		var occurrence: Dictionary = held if cue.type == "shine" else _prior_sources.get(id, {})

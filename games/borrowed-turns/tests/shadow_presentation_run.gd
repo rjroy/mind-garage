@@ -207,11 +207,115 @@ func test_ordered_moves_and_fresh_warnings() -> void:
 	check(not p.observe(transition.before, {"type": "end_turn"}, transition.after, 31) and not p.frame().busy,
 		"restart cancels old movement generation")
 
+func test_locked_swap_announcements_and_misses() -> void:
+	for invalid in [false, true]:
+		var t := F.swap_miss(invalid)
+		var p = controller(t.before)
+		var announcements: Array = p.frame().announcements
+		check(announcements.size() == 1, "Switcher exposes its targeted announcement, not only shove rehearsals")
+		if announcements.size() == 1:
+			var row: Dictionary = announcements[0]
+			check(row.get("kind", "") == "swap" and row.get("source", "") == "A"
+				and row.get("cells", []) == [[2, 3]] and row.get("from", []) == t.before.intentions[0].from
+				and row.get("target", []) == [2, 3], "announcement preserves current source and locked cell without homing on the moved player")
+		observe(p, t)
+		var frame := view(p, "swap miss")
+		check(cue_types(frame) == ["resolve"], "even a missed exchange gets one finite mask-owned attack, never a fabricated swap or capture")
+		var cue: Dictionary = frame.get("cue", {})
+		var mask: Dictionary = t.after.events[0]
+		check(cue.get("footprint_type", "") == "mask" and cue.get("cells", [99]) == mask.cells
+			and cue.get("from", []) == mask.from and cue.get("to", []) == mask.target
+			and cue.get("event_index", -1) == 0, "valid empty miss keeps its singleton mask; invalid geometry keeps the authoritative empty mask")
+		p.advance(60.0)
+		check(not p.frame().busy and p.frame().held.is_empty() and t.after.capture_armed
+			and t.after.player == t.before.player, "miss finishes honestly without damage, relocation, acquisition or consuming arming")
+
+func test_exchange_then_damage_then_acquisition() -> void:
+	for pair in [false, true]:
+		var t := F.swap_hit(pair, pair)
+		var p = controller(t.before)
+		observe(p, t)
+		var frame := view(p, "Switcher attack")
+		var expected := ["resolve", "capture", "resolve"] if pair else ["resolve", "capture"]
+		check(cue_types(frame) == expected, "atomic paired movement remains INSIDE its mask-owned ability before acquisition and the other attack")
+		var cues: Array = frame.cues
+		if cues.size() != expected.size(): continue
+		var mask: Dictionary = t.after.events[0]
+		check(cues[0].kind == "swap" and cues[0].footprint_type == "mask"
+			and cues[0].event_index == 0 and cues[0].cells == mask.cells
+			and cues[0].from == mask.from and cues[0].to == mask.target,
+			"resolve cue is owned by the explicit mask, not manufactured from the later exchange")
+		check(t.after.events[1].type == "swap" and t.after.events[2].type == "damage"
+			and cues[1].get("event_index", -1) == 3, "exchange completes before normal damage, then actual capture")
+		check(cues[1].get("from", []) == [2, 3] and cues[1].get("to", []) == [2, 1],
+			"capture transfer starts at the source AFTER exchanging and lands at the player's exchanged position")
+		check(frame.held == t.before.stored, "old held ownership remains during the complete incoming exchange and damage")
+		frame = seek(p, "capture")
+		check(frame.get("held", {"missing": true}).is_empty(), "actual transfer never duplicates the acquired Swap motif")
+		p.advance(60.0)
+		check(p.frame().held == t.after.stored and not p.frame().busy,
+			"settled captured Swap is reusable and retains actual source identity")
+		p.reset(t.before, 2)
+		check(not p.observe(t.before, t.command, t.after, 1) and not p.frame().busy,
+			"old-generation exchange cannot restart after cancellation")
+	var other := F.swap_other_occupant()
+	var p = controller(other.before)
+	observe(p, other)
+	var cues: Array = p.frame().cues
+	check(cue_types(p.frame()) == ["resolve", "resolve"], "another occupant is hit without inventing player acquisition")
+	if cues.size() == 2:
+		check(cues[0].to == [4, 1] and cues[1].get("source", "") == "B" and cues[1].get("from", []) == [2, 1],
+			"B's later attack starts from its real exchanged position, not its old cell")
+	check(other.after.capture_armed and other.after.stored.is_empty(), "hitting a different living occupant does not consume the player's armed capture")
+
+func test_swap_shine_reuse_source_loss_and_detachment() -> void:
+	for loss in [false, true]:
+		var t := F.swap_shine(loss)
+		var p = controller(t.before)
+		observe(p, t)
+		var frame := view(p, "Swap Shine")
+		check(cue_types(frame) == ["shine"], "Shine owns mask, atomic exchange and damage as one finite ability")
+		var cue: Dictionary = frame.get("cue", {})
+		var mask: Dictionary = t.after.events[1]
+		check(cue.get("kind", "") == "swap" and cue.get("footprint_type", "") == "mask"
+			and cue.get("cells", []) == mask.cells and cue.get("from", []) == mask.from
+			and cue.get("to", []) == mask.target and cue.get("event_index", -1) == 0,
+			"Swap Shine uses its explicit mask and selected target, not a ray or final actor position")
+		check(frame.held == t.before.stored and t.after.player.pos == [2, 1],
+			"held Swap stays through the full source-killing exchange; player relocation is already authoritative")
+		var saved: Dictionary = p.frame()
+		if not frame.cue.is_empty():
+			frame.cue["from"] = [99, 99]
+			frame.cue["to"] = [99, 99]
+			frame.cue.cells.append([99, 99])
+		check(p.frame() == saved, "mask endpoints and geometry are deeply detached from consumers")
+		p.advance(60.0)
+		check(p.frame().held == t.after.stored and not p.frame().busy,
+			"normal Shine retains Swap, while actual source death clears it only after full resolution")
+		if not loss:
+			var repeated := t.duplicate(true)
+			repeated.before = t.after.duplicate(true)
+			repeated.command.target = [2, 3]
+			repeated.after = t.before.duplicate(true)
+			repeated.after.action_points = 1
+			repeated.after.enemies[0].hp = 3
+			repeated.after.events = [
+				{"type": "shine", "source": "A", "kind": "swap", "target": [2, 3]},
+				{"type": "mask", "actor": "player", "kind": "swap", "from": [2, 1], "target": [2, 3], "cells": [[2, 3]]},
+				{"type": "swap", "actor": "player", "other": "A", "from": [2, 1], "to": [2, 3]},
+				{"type": "damage", "actor": "A", "amount": 1, "hp": 3},
+			]
+			observe(p, repeated)
+			check(cue_types(p.frame()) == ["shine"] and p.frame().held == t.before.stored, "repeated retained Swap presents another actual exchange without reacquisition")
+
 func _run() -> void:
 	test_arm_is_not_acquisition()
 	test_damage_then_acquisition_before_next_attack()
 	test_reusable_shine_and_source_loss()
 	test_detachment_time_and_generation()
 	test_ordered_moves_and_fresh_warnings()
+	test_locked_swap_announcements_and_misses()
+	test_exchange_then_damage_then_acquisition()
+	test_swap_shine_reuse_source_loss_and_detachment()
 	print("Shadow presentation: %d checks, %d failures. Controlled events, not visual acceptance." % [checks, failures.size()])
 	quit(0 if failures.is_empty() else 1)

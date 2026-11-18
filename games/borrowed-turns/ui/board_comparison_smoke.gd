@@ -140,7 +140,7 @@ func _check_plane_join() -> void:
 func _check_warning_sources() -> void:
 	var expected := {}
 	for intent in game.state.intentions:
-		if intent.source in ["A", "B"] and intent.kind == "shove": expected[intent.source] = intent.cells
+		if intent.source in ["A", "B"] and intent.kind in ["shove", "swap"]: expected[intent.source] = intent.cells
 	var observed := {}
 	var regions: Array = game.board.announcement_regions()
 	for row in regions:
@@ -167,6 +167,10 @@ func _check_wave_join() -> void:
 			metadata.erase("fills")
 			metadata.erase("fronts")
 			check(metadata == region, "actual wave row keeps source/origin/direction/turn/cells and logical contours")
+			if region.kind == "swap":
+				check(row.get("fills", []) == region.contours and row.get("fronts", []).is_empty()
+					and row.get("target", []) == region.target, "actual Switcher target is a mask with paired endpoints, not a shove wave corridor")
+				continue
 			var geometry: Dictionary = MotionOverlay.wave_geometry(region, phase)
 			check(row.get("fills", []) == region.contours and row.get("fills", []) == geometry.fills,
 				"real floor wash covers each whole model-affected tile, without inset or invented source coverage")
@@ -500,7 +504,7 @@ func _run() -> void:
 		await process_frame
 		quit(2)
 		return
-	check(game.encounter_id == "two-pursuers", "normal entry opens the accepted Stage slice without an appearance matrix")
+	check(game.encounter_id == "switcher", "normal entry opens solo Switcher in the accepted Stage without an appearance matrix")
 	await _test_controlled_slice()
 	await _test_roster_hp_sync()
 	await _test_rehearsal_motion()

@@ -7,6 +7,7 @@ signal cancel_requested
 
 const P = preload("res://ui/presentation.gd")
 const ShadowRenderer = preload("res://ui/shadow_renderer.gd")
+const ShadowPresentation = preload("res://ui/shadow_presentation.gd")
 const PaperCells = preload("res://ui/paper_cells.gd")
 const StageProjection = preload("res://ui/stage_projection.gd")
 const StageRenderer = preload("res://ui/stage_renderer.gd")
@@ -79,12 +80,18 @@ func announcement_marks() -> Array:
 	if not theatre_mode or state.is_empty(): return []
 	var marks: Array = []
 	for intent in _visible_intentions():
-		if intent.source not in ["A", "B"] or intent.kind != "shove": continue
+		if intent.source not in ["A", "B"] or intent.kind not in ["shove", "swap"]: continue
 		for enemy in state.get("enemies", []):
 			if enemy.id != intent.source or enemy.get("hp", 0) <= 0: continue
-			marks.append({"source": intent.source, "turn": state.turn, "kind": intent.kind,
-				"origin": enemy.pos.duplicate(), "direction": enemy.dir.duplicate(),
-				"cells": intent.cells.duplicate(true), "lane": 0 if intent.source == "A" else 1})
+			var row := {"source": intent.source, "turn": state.turn, "kind": intent.kind,
+				"origin": enemy.pos.duplicate(), "cells": intent.cells.duplicate(true),
+				"lane": 0 if intent.source == "A" else 1}
+			if intent.kind == "swap":
+				row.origin = intent.from.duplicate()
+				row["target"] = intent.target.duplicate()
+			else:
+				row["direction"] = enemy.dir.duplicate()
+			marks.append(row)
 			break
 	return marks
 
@@ -105,6 +112,10 @@ func announcement_waves() -> Array:
 	if shadow_frame.has("loop_cycles"):
 		phase = fposmod(float(shadow_frame.loop_cycles) / 1.5, 1.0)
 	for row in rows:
+		if row.kind == "swap":
+			row["fills"] = row.contours.duplicate(true)
+			row["fronts"] = []
+			continue
 		var geometry := WavefrontOverlay.wave_geometry(row, phase)
 		row["fills"] = geometry.fills
 		row["fronts"] = geometry.fronts
@@ -172,6 +183,9 @@ func _visual_actors() -> Array:
 		var end := _cue_event_end(cue)
 		var start: int = cue.get("event_index", -1)
 		var progress: float = cue.get("progress", clampf((1.0 - accent) / 0.88, 0.0, 1.0))
+		var swap_cue: bool = cue.get("kind", "") == "swap"
+		var health := {}
+		for id in old: health[id] = old[id].hp
 		var alive := positions.keys()
 		for i in range(events.size()):
 			if not cue.is_empty() and i >= end: break
@@ -181,7 +195,15 @@ func _visual_actors() -> Array:
 				var from := Vector2(event.from[0], event.from[1])
 				var to := Vector2(event.to[0], event.to[1])
 				positions[event.actor] = from.lerp(to, amount)
-			if event.type == "death" and amount >= 1.0: alive.erase(event.actor)
+			if event.type == "swap":
+				var from := Vector2(event.from[0], event.from[1])
+				var to := Vector2(event.to[0], event.to[1])
+				var exchanged := ShadowPresentation.exchange_progress(progress) if i >= start else 1.0
+				positions[event.actor] = from.lerp(to, exchanged)
+				positions[event.other] = to.lerp(from, exchanged)
+			var impacted := ShadowPresentation.impact_progress(progress) if swap_cue and i >= start else amount
+			if event.type == "damage" and (i < start or impacted >= 0.5): health[event.actor] = event.hp
+			if event.type == "death" and impacted >= 1.0: alive.erase(event.actor)
 		for id in old:
 			if id not in alive:
 				actors.erase(id)
@@ -190,6 +212,7 @@ func _visual_actors() -> Array:
 				actors[id] = {"actor": id, "cell": old[id].pos.duplicate(), "hp": old[id].hp}
 			var pos = positions[id]
 			actors[id]["grid"] = Vector2(pos[0] + 0.5, pos[1] + 0.5)
+			if swap_cue: actors[id].hp = health[id]
 	return actors.values()
 
 func standee_layout() -> Array:
@@ -206,10 +229,14 @@ func standee_layout() -> Array:
 		var factor: float = _stage_rect().size.y * meta.height_fraction / meta.canvas.y
 		var foot: Vector2 = projection.project(actor.grid)
 		var rect := Rect2(foot - meta.foot * factor, meta.canvas * factor)
+		var actor_name := "You" if id == "player" else "Pursuer " + id
+		if id != "player":
+			for enemy in _motion_before.get("enemies", []) + state.enemies:
+				if enemy.id == id: actor_name = P.enemy_name(enemy)
 		rows.append({"actor": id, "cell": actor.cell.duplicate(), "rect": rect, "foot": foot,
 			"tab_rect": Rect2(foot - marker_size / 2.0, marker_size), "opacity": 1.0,
 			"texture": _standee_textures[id], "hp": actor.hp,
-			"name": "You" if id == "player" else "Pursuer " + id,
+			"name": actor_name,
 			"roster_rect": _roster_rect(id) if id in living else Rect2()})
 	rows.sort_custom(func(a: Dictionary, b: Dictionary): return a.foot.y < b.foot.y)
 	var focus: String = _hover_actor if not _hover_actor.is_empty() else _focused_actor
@@ -463,15 +490,17 @@ func effect_footprints() -> Array:
 	var stage := "enemy"
 	for event in effects:
 		if event.type == "shine": stage = "shine"
-		if event.type in ["ray", "area"]:
+		if event.type in ["ray", "area", "mask"]:
 			footprints.append({"type": event.type, "actor": event.actor,
 				"stage": stage if event.actor == "player" else "enemy", "cells": event.cells.duplicate(true)})
 	return footprints
 
 func _draw_effect_footprint(footprint: Dictionary, active_shadow: bool = false) -> void:
 	var color := _borrowed() if footprint.actor == "player" and footprint.stage == "shine" else _danger()
+	if footprint.type == "mask" and footprint.actor != "player": color = _source_color(footprint.actor)
 	for cell in footprint.cells:
-		_tile(cell, 7, color, false, 2)
+		if footprint.type == "mask": _tile(cell, 0, Color(color, 0.30), true)
+		else: _tile(cell, 7, color, false, 2)
 	if footprint.type == "ray" and footprint.actor == "player" and footprint.stage == "shine" and not footprint.cells.is_empty():
 		# The last affected cell may be a side lane, not the chosen endpoint.
 		var origin: Array = state.player.pos
@@ -489,6 +518,22 @@ func _draw_effect_footprint(footprint: Dictionary, active_shadow: bool = false) 
 					break
 		if origin.size() == 2 and target.size() == 2:
 			_arrow(cell_center(origin), cell_center(target), _borrowed(), false)
+
+func _draw_exchange_link(origin: Array, target: Array, phase: float, color: Color) -> void:
+	# Hollow exchange endpoints are not extra threatened tiles. Only the model
+	# mask gets a wash; this thin connection represents the two-way trade.
+	var from := Vector2(origin[0] + 0.5, origin[1] + 0.5)
+	var to := Vector2(target[0] + 0.5, target[1] + 0.5)
+	var projection = _ensure_projection()
+	draw_dashed_line(projection.project(from), projection.project(to), Color(color, 0.65), 1.4, 5.0)
+	for endpoint in [from, to]:
+		var ring := PackedVector2Array()
+		for i in range(33):
+			var angle := TAU * float(i) / 32.0
+			ring.append(projection.project(endpoint + Vector2(cos(angle), sin(angle)) * 0.30))
+		draw_polyline(ring, Color(color, 0.95), 1.8, true)
+	for amount in [phase, 1.0 - phase]:
+		draw_circle(projection.project(from.lerp(to, amount)), 2.4, color)
 
 func _draw_choices() -> void:
 	for cell in candidates:
@@ -593,8 +638,12 @@ func _draw() -> void:
 	var wave_sources: Array = []
 	for region in regions: wave_sources.append(region.source)
 	wavefront_overlay.draw_regions(self, regions)
+	for region in regions:
+		if region.kind == "swap" and not region.cells.is_empty():
+			var phase := fposmod(float(shadow_frame.get("loop_cycles", 0.0)) / 1.5, 1.0)
+			_draw_exchange_link(region.origin, region.target, phase, _source_color(region.source))
 	for intent in _visible_intentions():
-		if intent.source in wave_sources and intent.kind == "shove": continue
+		if intent.source in wave_sources: continue
 		for cell in intent.cells:
 			var key := str(cell)
 			threat_counts[key] = threat_counts.get(key, 0) + 1
@@ -606,7 +655,7 @@ func _draw() -> void:
 			if intent.source == source: _tile(cell, 3, _danger(), false, 2)
 			if threat_counts[key] > 1 and _standee_textures.is_empty():
 				_text(tile.position + Vector2(tile.size.x - 14, 14), str(threat_counts[key]), _danger())
-		if intent.kind != "burst" and not intent.cells.is_empty() and _standee_textures.is_empty():
+		if intent.kind not in ["burst", "swap"] and not intent.cells.is_empty() and _standee_textures.is_empty():
 			for enemy in state.enemies:
 				if enemy.id == intent.source:
 					_arrow(cell_center(enemy.pos), cell_center(intent.cells.back()), _danger(), true)
@@ -626,13 +675,19 @@ func _draw() -> void:
 	var death_cells: Array = []
 	for enemy in state.enemies: effect_positions[enemy.id] = enemy.pos
 	for event in effects:
-		if not shadow_effects and event.type in ["ray", "area"]:
+		if not shadow_effects and event.type in ["ray", "area", "mask"]:
 			var footprint: Dictionary = footprints[footprint_index]
 			footprint_index += 1
 			_draw_effect_footprint(footprint)
 		if event.type == "move" or event.type == "displace":
 			_arrow(cell_center(event.from), cell_center(event.to), _borrowed(), false)
 			effect_positions[event.actor] = event.to
+		if event.type == "mask" and not event.cells.is_empty():
+			var color := _borrowed() if event.actor == "player" else _source_color(event.actor)
+			_draw_exchange_link(event.from, event.target, shadow_frame.get("loop_phase", 0.0), color)
+		if event.type == "swap":
+			effect_positions[event.actor] = event.to
+			effect_positions[event.other] = event.from
 		if event.type == "death" and effect_positions.has(event.actor): death_cells.append(effect_positions[event.actor])
 	var enemies: Array = state.enemies.duplicate()
 	enemies.sort_custom(func(a: Dictionary, b: Dictionary): return cell_center(a.pos).y < cell_center(b.pos).y)
@@ -643,7 +698,7 @@ func _draw() -> void:
 		# silhouettes. Every model-authored cell/source remains represented.
 		var labels_per_cell := {}
 		for intent in _visible_intentions():
-			if intent.source in wave_sources and intent.kind == "shove": continue
+			if intent.source in wave_sources: continue
 			for cell in intent.cells:
 				var key := str(cell)
 				var index: int = labels_per_cell.get(key, 0)

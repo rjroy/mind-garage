@@ -590,12 +590,13 @@ func _test_actor_access() -> void:
 
 func _test_chooser() -> void:
 	var original: Dictionary = game.model.snapshot()
+	var original_id: String = game.encounter_id
 	await _choose_encounter_ui("escape")
 	check(game.encounter_dialog.visible and game.model.snapshot() == original,
 		"chooser requests replacing the encounter without mutating the live fight")
 	game.encounter_dialog.get_cancel_button().pressed.emit()
 	game.encounter_dialog.hide()
-	check(game.encounter_id == "two-pursuers" and game.model.snapshot() == original, "canceling chooser preserves the current run")
+	check(game.encounter_id == original_id and game.model.snapshot() == original, "canceling chooser preserves the current run")
 	await _choose_encounter_ui("escape")
 	game.encounter_dialog.confirmed.emit()
 	game.encounter_dialog.hide()
@@ -700,6 +701,149 @@ func _test_escape_keyboard_and_replay() -> void:
 	game.restart_dialog.hide()
 	check(game.state.turn == 1 and game.state.action_points == 2 and game.history_lines.size() == 1, "confirmed restart isolates budgets and history")
 
+func _test_switcher_startup() -> void:
+	check(game.encounter_id == "switcher" and game.encounter_picker.get_selected_metadata() == "switcher",
+		"normal entry opens solo Switcher, without a hidden study mode or forced unlock")
+	var kinds: Array = []
+	for enemy in game.state.enemies: kinds.append(enemy.ability.kind)
+	check(kinds == ["swap"] and game.state.objective == "defeat_all" and game.state.action_points == 3,
+		"actual solo entry uses one damaging Swap opponent and the existing three-AP fight")
+	check(game.board.standee_layout().size() == 2 and _standee_entry("B").is_empty(), "solo profile has player and Switcher only, no phantom B")
+	if not _standee_entry("A").is_empty():
+		check(_standee_entry("A").name.to_lower().contains("switcher"), "provisional A source art has an explicit Switcher roster identity")
+	var ids: Array = []
+	for i in range(game.encounter_picker.item_count): ids.append(game.encounter_picker.get_item_metadata(i))
+	for id in ["switcher", "switcher-b", "two-pursuers", "escape"]:
+		check(id in ids, "existing encounter selector offers " + id)
+
+func _choose_switcher_profile(id: String) -> bool:
+	var available := false
+	for i in range(game.encounter_picker.item_count):
+		if game.encounter_picker.get_item_metadata(i) == id: available = true
+	check(available, "real chooser contains " + id + " without installing a separate sandbox")
+	if not available:
+		print("MASKED Switcher chooser path: missing ", id)
+		return false
+	if game.encounter_id != id:
+		await _choose_encounter_ui(id)
+		if game.encounter_dialog.visible:
+			game.encounter_dialog.confirmed.emit()
+			game.encounter_dialog.hide()
+		await process_frame
+	check(game.encounter_id == id and game.encounter_picker.get_selected_metadata() == id, "confirmed chooser loads the requested Switcher encounter")
+	return game.encounter_id == id
+
+func _test_switcher_profiles() -> void:
+	_test_switcher_startup()
+	for id in ["switcher-b", "switcher"]:
+		if not await _choose_switcher_profile(id): continue
+		check(game.state.enemies.size() == (2 if id == "switcher-b" else 1), "actual selected profile has only its authored opponents")
+		check(game.state.enemies[0].ability.kind == "swap" and _standee_entry("A").name.to_lower().contains("switcher"),
+			"Switcher kind and visible role agree when accepted A artwork is reused")
+		if id == "switcher-b":
+			check(game.state.enemies[1].ability.kind == "shove" and game.state.enemies[1].ability.get("width", 1) == 3,
+				"paired B remains the existing wide shove, not another Swap opponent")
+		else:
+			check(_standee_entry("B").is_empty(), "return to solo removes B's standee and roster hit target")
+
+func _test_switcher_real_hit_and_shine() -> void:
+	for pair in [false, true]:
+		await load_fixture(F.switcher(pair, 2 if not pair else 5))
+		var initial: Dictionary = game.model.snapshot()
+		check(_standee_entry("A").get("name", "").to_lower().contains("switcher"), "real active Switcher uses its name, not Pursuer A")
+		var initial_row := _standee_entry("A")
+		check(initial_row.get("texture") is Texture2D and initial_row.texture.resource_path == "res://assets/standees/two-pursuers/enemy-a.png",
+			"new role reuses the exact accepted A PNG, not generated artwork or a primitive substitute")
+		if game._puppet_rig:
+			var labels := ""
+			for row in game._puppet_rig._labels: labels += str(row.get("text", "")) + "\n"
+			check(labels.to_lower().contains("switcher"), "Director labels the active reused source as Switcher")
+			if not pair: check(not game._puppet_rig._bodies["B"].visible, "solo Director does not show phantom B")
+		if not await _prepare_arm(): continue
+		await commit()
+		select("end_turn")
+		var expected: Dictionary = game.prediction.duplicate(true)
+		var types: Array = []
+		for event in expected.events: types.append(event.type)
+		check(types.slice(0, 4) == ["mask", "swap", "damage", "capture"]
+			and expected.player.hp == (18 if pair else 19), "real exact preview exchanges first, then applies full hit, then acquires; B remains independently dangerous")
+		var exchange: Dictionary = expected.events[1]
+		check(game.preview_details.text.to_lower().contains("swap")
+			and game.preview_details.text.contains(P.cell(exchange.from)) and game.preview_details.text.contains(P.cell(exchange.to)),
+			"exact preview explicitly explains both exchanged positions, not a generic shove")
+		var rows: Array = game.board.effect_footprints()
+		check(not rows.is_empty() and rows[0].type == "mask" and rows[0].cells == [[2, 3]],
+			"actual live preview shows the single model target, never the line or source cell")
+		press(game.confirm_button)
+		var history: Array = game.history_lines.duplicate()
+		var saw_exchange := false
+		var time_limit := Time.get_ticks_msec() + 10000
+		while game.resolving and Time.get_ticks_msec() < time_limit:
+			var frame: Dictionary = game.shadow.frame()
+			if frame.cue.get("kind", "") == "swap" and frame.cue.get("type", "") == "resolve":
+				var a: Array = game.board._visual_actors()
+				var points := {}
+				for row in a: points[row.actor] = row.grid - Vector2(0.5, 0.5)
+				if points.has("A") and points.has("player"):
+					saw_exchange = saw_exchange or (points.A.y > 1.01 and points.A.y < 2.99
+						and points.player.y > 1.01 and points.player.y < 2.99)
+				game._confirm()
+				game._select_cell([0, 0])
+				check(game.model.snapshot() == expected and game.history_lines == history, "both relocation participants remain input-locked in one owning ability")
+			await process_frame
+		check(not game.resolving and saw_exchange and game.state == expected,
+			"actual paired standees move continuously together, then settle exactly to the committed model")
+		check(game.state.stored.get("ability", {}).get("kind", "") == "swap"
+			and _standee_entry("A").rect.size == initial_row.rect.size, "full damaging exchange acquires Swap without resizing the accepted source")
+		if pair: continue
+		for invalid in [[3, 1], [2, 1], [3, 2], [-1, 1], [2, 4], [1, 1]]:
+			var before: Dictionary = game.model.snapshot()
+			history = game.history_lines.duplicate()
+			select("shine")
+			await _stage_gui_click(game.board.cell_center(invalid), true)
+			if invalid[0] < 0: game._select_cell(invalid) # Explicit off-board assessment, no injected external input.
+			game._confirm()
+			check(game.confirm_button.disabled and game.prediction.is_empty() and game.model.snapshot() == before
+				and game.history_lines == history, "empty/self/diagonal/off-board/range/wall Swap Shine rejects atomically in the real UI")
+		var held: Dictionary = game.state.stored.duplicate(true)
+		for target in [[2, 3], [2, 1]]:
+			if not await _prepare_shine(target): break
+			var mask: Dictionary = game.prediction.events[1]
+			check(mask.type == "mask" and mask.cells == [target] and game.prediction.events[2].type == "swap",
+				"reusable Swap Shine consumes the real mask then atomic exchange, not a ray")
+			await commit()
+			check(game.state.player.pos == target, "source-killing Shine still completes the player's actual relocation")
+			if game.state.status == "playing": check(game.state.stored == held, "nonlethal Swap Shine retains its source-linked ability")
+		check(game.state.status == "won" and game.state.stored.is_empty() and game.shadow.frame().held.is_empty(),
+			"second damaging exchange defeats its source and clears power after the full relocation")
+		press(game.restart_button)
+		check(game.state == initial and not game.state.capture_armed and not game.shadow.frame().busy, "Switcher terminal Replay clears all paired animation and held ownership")
+
+func _test_switcher_real_miss_and_restart() -> void:
+	await load_fixture(F.switcher())
+	if not await _prepare_arm(): return
+	await commit()
+	await move([3, 3])
+	var before: Dictionary = game.model.snapshot()
+	select("end_turn")
+	check(game.prediction.events[0].type == "mask" and game.prediction.events[0].cells == [[2, 3]]
+		and not game.prediction.events.any(func(event): return event.type in ["swap", "damage", "capture"]),
+		"leaving the locked tile previews an honest singleton mask miss, not homing or hidden acquisition")
+	var expected: Dictionary = game.prediction.duplicate(true)
+	press(game.confirm_button)
+	var generation: int = game.generation
+	game._apply_restart()
+	await settle()
+	check(game.generation > generation and not game.shadow.frame().busy and game.state.player.pos == [2, 3],
+		"restart during a finite Swap/miss cancels old generation and both actor motions")
+	if not await _prepare_arm(): return
+	await commit()
+	await move([3, 3])
+	select("end_turn")
+	await commit()
+	check(game.state == expected and game.state.player.hp == before.player.hp and game.state.capture_armed,
+		"miss keeps normal HP/position and armed capture after exact settlement")
+
 func _run() -> void:
 	game = load("res://scenes/encounter.tscn").instantiate()
 	root.add_child(game)
@@ -712,7 +856,7 @@ func _run() -> void:
 	var focus := ""
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--focus="): focus = arg.trim_prefix("--focus=")
-	if focus not in ["", "armed-capture-shine", "stage", "two-pursuers-cli"]:
+	if focus not in ["", "armed-capture-shine", "stage", "two-pursuers-cli", "switcher"]:
 		printerr("Unknown smoke focus: ", focus)
 		game.queue_free()
 		await process_frame
@@ -726,9 +870,15 @@ func _run() -> void:
 		await _test_shine_keys_and_cancellation()
 	elif focus == "stage":
 		await _test_stage_integration()
+	elif focus == "switcher":
+		await _test_switcher_profiles()
+		await _test_switcher_real_hit_and_shine()
+		await _test_switcher_real_miss_and_restart()
 	else:
-		_test_two_pursuers_startup()
+		_test_switcher_startup()
 		await _test_chooser()
+		await _test_switcher_real_hit_and_shine()
+		await _test_switcher_real_miss_and_restart()
 		await _test_arm_damage_and_reuse()
 		await _test_shine_source_loss_and_replay()
 		await _test_shine_keys_and_cancellation()
