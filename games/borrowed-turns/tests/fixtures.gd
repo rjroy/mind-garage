@@ -9,9 +9,8 @@ static func foe(id: String, pos: Array, direction: Array, skill: Dictionary, hp:
 
 static func board() -> Dictionary:
 	return {
-		"width": 8, "height": 7, "walls": [],
+		"objective": "defeat_all", "width": 8, "height": 7, "walls": [],
 		"player": {"pos": [1, 3], "hp": 20},
-		"exit": {"pos": [7, 6], "opens": 20},
 		"rules": {"actions": 3},
 		"enemies": [foe("a", [2, 3], [1, 0], ability("bolt", 3, 1))],
 	}

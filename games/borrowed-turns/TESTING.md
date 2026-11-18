@@ -14,7 +14,7 @@ The runner prints check/failure counts and exits 1 on assertion failures. A pars
 /usr/bin/godot --headless --path games/borrowed-turns --script res://tests/run.gd -- --focus=armed-capture-shine
 ```
 
-The model helper checks nonmutating assessment and exact preview-to-commit equality for successfully exercised commands. Invalid commands check rejection and complete atomicity. The current full suite additionally covers armed/held/terminal reset, movement and aim policies, combat/escape objectives, geometry, push and source-linked storage.
+The model helper checks nonmutating assessment and exact preview-to-commit equality for successfully exercised commands. Invalid commands check rejection and complete atomicity. The full suite also covers armed/held/terminal reset, movement and aim policies, defeat-all victory, geometry, push and source-linked storage.
 
 The candidate pays AP to arm, takes an enemy attack's complete normal effects before acquisition, permits repeated Shine without consuming storage, and loses the held ability when its source dies. Old free acquisition, threat-free adjacency, attack cancellation, expiry and backlash assertions are superseded. UI consumers must use model-authored events/cells, not recompute combat.
 

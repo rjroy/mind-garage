@@ -5,33 +5,15 @@ const Shadow = preload("res://ui/shadow_presentation.gd")
 const F = preload("res://tests/shadow_fixtures.gd")
 const Mixed = preload("res://tests/shadow_rendering_fixtures.gd")
 const MovementFixture = preload("res://ui/smoke_fixtures.gd")
-const Renderer = preload("res://ui/shadow_renderer.gd")
 const Board = preload("res://ui/board.gd")
 
 class ArrowProbe extends "res://ui/board.gd":
 	var arrows: Array = []
 	var tiles: Array = []
-	func _arrow(from: Vector2, to: Vector2, _color: Color, _dashed: bool) -> void:
+	func _arrow(from: Vector2, to: Vector2, _color: Color) -> void:
 		arrows.append({"from": from, "to": to})
 	func _tile(cell: Array, _inset: float, _color: Color, _filled: bool = false, _width: float = 1.0) -> void:
 		tiles.append(cell.duplicate())
-
-class EnemyOwnershipProbe extends "res://ui/board.gd":
-	# Observe the actual _draw -> _draw_enemy join during a normal Canvas draw.
-	# Keep the production enemy drawing, including its independent inspection
-	# emphasis, rather than calculating a second outline-selection rule.
-	var ownership_inputs: Dictionary = {}
-	var inspection_inputs: Dictionary = {}
-
-	func _draw() -> void:
-		ownership_inputs.clear()
-		inspection_inputs.clear()
-		super._draw()
-
-	func _draw_enemy(enemy: Dictionary, stored: Dictionary) -> void:
-		ownership_inputs[enemy.id] = stored.duplicate(true)
-		inspection_inputs[enemy.id] = source
-		super._draw_enemy(enemy, stored)
 
 class PreviewDispatchProbe extends "res://ui/board.gd":
 	# Record the real Canvas _draw consumer, not just effect_footprints() or a
@@ -151,11 +133,10 @@ func test_attack_capture_and_later_loss() -> void:
 	p.reset(t.before, 1)
 	p.observe(t.before, t.command, t.after, 1)
 	var cue: Dictionary = p.frame().get("cue", {})
-	var renderer := Renderer.new()
 	var saved := t.duplicate(true)
-	check(cue.get("type", "") == "resolve" and renderer.gesture_endpoint(t.after, cue) == t.after.events[0].cells.back(),
-		"later lethal attack cannot truncate an earlier normal shove before its complete damage/displacement")
-	check(t == saved, "gesture query never mutates authoritative cue ownership")
+	check(cue.get("type", "") == "resolve" and cue.get("cells", []) == t.after.events[0].cells,
+		"later lethal attack cannot truncate the earlier shove's event-owned footprint")
+	check(t == saved, "cue inspection never mutates authoritative ownership")
 	collect_feedback(p, t.after, expected_from_events(t.after.events), "normal strike -> acquisition -> later attack")
 
 func test_mixed_enemy_resolution() -> void:
@@ -186,7 +167,6 @@ func test_moves_do_not_leak_into_ability_motion() -> void:
 	p.observe(t.before, {"type": "end_turn"}, t.after, 51)
 	var board := Board.new()
 	board.size = Vector2(1024, 650)
-	board.theatre_mode = true
 	board.set_view(t.after, {}, [], [], "")
 	board.show_transition(t.before)
 	var seen: Array = []
@@ -318,74 +298,6 @@ func test_shine_arrow_owns_target_not_last_wide_cell() -> void:
 			check(model.snapshot() == after, "draw commands never mutate real state")
 			probe.free()
 
-func check_enemy_draw_ownership(probe: EnemyOwnershipProbe, p, state: Dictionary, expected_source: String, inspected: String, label: String) -> void:
-	var saved := state.duplicate(true)
-	var frame: Dictionary = p.frame()
-	check(frame.get("held", {}).get("source", "") == expected_source, label + ": shared timeline has the controlled boundary ownership")
-	probe.set_view(state, {}, [], [], inspected)
-	probe.set_presentation(frame)
-	probe.queue_redraw()
-	# Normal SceneTree draw dispatch, not manual _draw outside a Canvas callback.
-	await process_frame
-	await process_frame
-	check(not probe.theatre_mode and probe.standee_layout().is_empty(),
-		"C2 exercises the supported escape-profile enemy drawing, not standees or theatre")
-	check(probe.ownership_inputs.size() == state.enemies.size(),
-		label + ": inherited board drawing actually visits every current enemy")
-	for enemy in state.enemies:
-		check(probe.ownership_inputs.get(enemy.id, {"missing": true}) == frame.held,
-			label + ": actual enemy outline consumer receives this boundary's held dictionary, not final storage")
-		check(probe.inspection_inputs.get(enemy.id, "") == inspected and probe.source == inspected,
-			label + ": independent inspected-source emphasis survives without becoming held ownership")
-	check(state == saved and p.frame() == frame, label + ": drawing and SceneTree frames cannot mutate combat or advance the controller")
-
-func test_enemy_outline_uses_event_boundary_ownership() -> void:
-	var probe := EnemyOwnershipProbe.new()
-	probe.size = Vector2(1008, 514)
-	root.add_child(probe)
-	var initial := F.state()
-	var armed := initial.duplicate(true)
-	armed.capture_armed = true
-	armed.action_points = 2
-	armed.events = [{"type": "capture_armed"}]
-	var p := Shadow.new()
-	p.reset(initial, 1)
-	check(p.observe(initial, {"type": "capture"}, armed, 1), "C2 controlled targetless arm transition accepted")
-	await check_enemy_draw_ownership(probe, p, armed, "", "B", "arm only")
-	for replacement in [false, true]:
-		var t := F.armed_hit(replacement)
-		var saved := t.duplicate(true)
-		p.reset(t.before, 2 if replacement else 1)
-		check(p.observe(t.before, t.command, t.after, 2 if replacement else 1),
-			"C2 complete ordinary hit -> acquisition -> independent later attack accepted")
-		check(t.after.events[1].type == "damage" and t.after.events[2].type == "displace"
-			and t.after.events[3].type == "capture" and t.after.stored.source == "A",
-			"C2 fixture owns acquisition only AFTER full first-strike damage and push")
-		var seen: Array = []
-		for _step in range(14400):
-			var frame: Dictionary = p.frame()
-			if not frame.busy: break
-			var index: int = frame.cue.event_index
-			if index not in seen:
-				seen.append(index)
-				if index == 0:
-					await check_enemy_draw_ownership(probe, p, t.after, "B" if replacement else "", "A", "before damaging strike completes")
-				elif index == 3:
-					await check_enemy_draw_ownership(probe, p, t.after, "", "B", "actual transfer")
-				elif index == 4:
-					await check_enemy_draw_ownership(probe, p, t.after, "A", "B", "after handoff during other attack")
-			p.advance(1.0 / 240.0)
-		check(seen == [0, 3, 4] and not p.frame().busy, "C2 visits every finite boundary on the existing controller clock")
-		await check_enemy_draw_ownership(probe, p, t.after, "A", "B", "settled held ability")
-		check(t == saved, "C2 ownership rendering leaves both supplied snapshots and all events unchanged")
-	var lost := F.shine_transition("shove", true)
-	p.reset(lost.before, 3)
-	check(p.observe(lost.before, lost.command, lost.after, 3), "C2 source-killing Shine transition accepted")
-	p.advance(60.0)
-	await check_enemy_draw_ownership(probe, p, lost.after, "", "B", "settled source loss")
-	probe.queue_free()
-	await process_frame
-
 func test_explicit_swap_masks_not_rays_or_exchange_derived_fills() -> void:
 	for t in [F.swap_hit(), F.swap_hit(true), F.swap_miss(), F.swap_miss(true), F.swap_shine(), F.swap_shine(true), F.swap_other_occupant()]:
 		var p := Shadow.new()
@@ -409,7 +321,6 @@ func test_explicit_swap_masks_not_rays_or_exchange_derived_fills() -> void:
 func swap_board():
 	var board := Board.new()
 	board.size = Vector2(1008, 514)
-	board.theatre_mode = true
 	var image := Image.create(8, 12, false, Image.FORMAT_RGBA8)
 	image.fill(Color.WHITE)
 	var texture := ImageTexture.create_from_image(image)
@@ -505,19 +416,41 @@ func test_actual_preview_draw_dispatches_mask_and_later_ray() -> void:
 	var probe := PreviewDispatchProbe.new()
 	probe.size = Vector2(1008, 514)
 	root.add_child(probe)
+	var saw_announcement := false
+	var saw_empty_mask := false
 	for t in cases:
 		var saved: Dictionary = t.duplicate(true)
 		var expected := expected_from_events(t.after.events)
 		var expected_links: Array = []
+		var expected_announcements: Array = []
+		for intent in t.before.intentions:
+			if intent.kind == "swap" and not intent.cells.is_empty():
+				expected_announcements.append({"from": intent.from.duplicate(), "target": intent.target.duplicate()})
 		for event in t.after.events:
-			if event.type == "mask" and not event.cells.is_empty():
-				expected_links.append({"from": event.from.duplicate(), "target": event.target.duplicate()})
+			if event.type == "mask":
+				if event.cells.is_empty():
+					saw_empty_mask = true
+				else:
+					expected_links.append({"from": event.from.duplicate(), "target": event.target.duplicate()})
 		var p := Shadow.new()
 		p.reset(t.before, 1)
 		var frame: Dictionary = p.frame()
-		probe.set_view(t.before, t.after, [], t.command.get("target", []), "")
+		probe.bind_composition(t.before.enemies)
+		probe.last_events = []
+		probe.set_view(t.before, {}, [], [], "")
 		probe.set_presentation(frame)
 		var count := probe.draw_count
+		probe.queue_redraw()
+		await process_frame
+		await process_frame
+		check(probe.draw_count > count, "SW-C01 no-preview Stage announcement draw executed")
+		check(probe.links.size() == expected_announcements.size() and probe.links == expected_announcements,
+			"SW-C01 no-preview draw emits exactly the ordered live swap announcement endpoints")
+		saw_announcement = saw_announcement or not expected_announcements.is_empty()
+		var baseline: Array = probe.links.duplicate(true)
+		probe.set_view(t.before, t.after, [], t.command.get("target", []), "")
+		probe.set_presentation(frame)
+		count = probe.draw_count
 		probe.queue_redraw()
 		await process_frame
 		await process_frame
@@ -529,13 +462,16 @@ func test_actual_preview_draw_dispatches_mask_and_later_ray() -> void:
 			"SW-C01 actual preview drawing dispatches EVERY mask and ray, including empty mask rows")
 		check(probe.dispatched == expected,
 			"SW-C01 actual helper dispatch preserves exact source/type/stage/cells and order; B never consumes A's mask index")
-		check(probe.links == expected_links,
-			"SW-C01 real preview links keep owning mask from/target; an invalid empty mask does not invent an exchange")
+		var all_links: Array = baseline + expected_links
+		check(probe.links.size() == all_links.size() and probe.links == all_links,
+			"SW-C01 preview preserves ordered announcement links and adds exactly the nonempty mask endpoints")
 		if expected.size() == 2:
 			check(expected[0].actor == "A" and expected[0].type == "mask"
 				and expected[1].actor == "B" and expected[1].type == "ray" and expected[0].cells != expected[1].cells,
 				"SW-C01 mixed fixture genuinely distinguishes both owners and their logical coverage")
 		check(t == saved and p.frame() == frame, "SW-C01 real preview drawing preserves snapshots, event payloads and the shared clock")
+	check(saw_announcement, "SW-C01 fixtures exercise a real live swap announcement")
+	check(saw_empty_mask, "SW-C01 fixtures exercise an empty preview mask")
 	probe.queue_free()
 	await process_frame
 
@@ -544,7 +480,6 @@ func _run() -> void:
 	test_mixed_enemy_resolution()
 	test_moves_do_not_leak_into_ability_motion()
 	test_shine_arrow_owns_target_not_last_wide_cell()
-	await test_enemy_outline_uses_event_boundary_ownership()
 	test_explicit_swap_masks_not_rays_or_exchange_derived_fills()
 	test_atomic_exchange_positions_depth_and_source_killing_shine()
 	await test_actual_preview_draw_dispatches_mask_and_later_ray()

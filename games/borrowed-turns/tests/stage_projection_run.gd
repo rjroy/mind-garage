@@ -10,12 +10,8 @@ extends SceneTree
 ## - ui/paper_cells.gd, RefCounted: sample(cell: Array, visual_seed: int) -> Dictionary
 ##   Detached {uv_rect: Rect2 in normalized texture coordinates,
 ##             quarter_turn: int, tint: Color}. No global RNG or gameplay data.
-## - board.gd: cell_polygon(Array), piece_appearance(Array),
-##   figure_layout(Array) -> {origin: Vector2, foot: Vector2, size: float}.
-##   Extract existing rectangular geometry and figure origin/size without changing
-##   baseline behavior. Draw paths MUST consume these shared seams, not test copies.
-##   Stage flag may initially be inert; neutral loadable helpers are sufficient.
-##   No substantive stage implementation belongs in this setup.
+## - board.gd: cell_polygon(Array), piece_appearance(Array), configure_standees
+##   and standee_layout expose the shipped Stage projection and actor placement.
 ## Exit 2 is setup, 1 is assertion RED, 0 passes. Syntax-only author validation.
 
 const Encounter = preload("res://model/encounter.gd")
@@ -66,7 +62,8 @@ func _setup() -> bool:
 		and _method(projection, "unproject", 1) and _method(projection, "cell_at", 1) \
 		and _method(projection, "cell_polygon", 1) and _method(material, "sample", 2) \
 		and _method(board, "cell_polygon", 1) \
-		and _method(board, "piece_appearance", 1) and _method(board, "figure_layout", 1)
+		and _method(board, "piece_appearance", 1) and _method(board, "configure_standees", 2) \
+		and _method(board, "standee_layout", 0)
 	if ready:
 		ready = projection.call("project", Vector2.ZERO) is Vector2 \
 			and projection.call("unproject", Vector2.ZERO) is Vector2 \
@@ -252,16 +249,22 @@ func test_stable_material() -> void:
 	check(randi() == expected_random, "visual sampling does not consume global gameplay RNG")
 
 func board_fixture(columns: int, rows: int) -> Dictionary:
-	var data := F.encounter([])
+	var data := F.encounter([F.enemy("A", [2, 0], F.ability("bolt", 0, 1), 12, [1, 0])])
 	data.width = columns
 	data.height = rows
 	data.player.pos = [1, 1]
-	data.exit.pos = [columns - 1, rows - 1]
 	return data
 
 func test_board_consumer() -> void:
 	var model = Encounter.new()
 	var board = board_script.new()
+	var image := Image.create(12, 20, false, Image.FORMAT_RGBA8)
+	image.fill(Color.WHITE)
+	var texture := ImageTexture.create_from_image(image)
+	var art := {"player": texture, "A": texture, "B": texture}
+	var anchor := {"canvas": Vector2(12, 20), "foot": Vector2(6, 19), "height_fraction": 0.4}
+	check(board.configure_standees(art, {"player": anchor, "A": anchor, "B": anchor}),
+		"controlled standee textures and foot anchors configure")
 	for dimensions in [Vector2i(4, 3), Vector2i(9, 5)]:
 		model.configure(board_fixture(dimensions.x, dimensions.y), "R2")
 		var snapshot: Dictionary = model.snapshot()
@@ -274,12 +277,13 @@ func test_board_consumer() -> void:
 			var center: Vector2 = board.cell_center(cell)
 			check(polygon.size() == 4 and Geometry2D.is_point_in_polygon(center, polygon), "actual board places logical centers inside shared drawing polygons")
 			check(board._from_pixel(center) == cell, "actual board hit conversion selects the displayed logical tile")
-			var layout: Dictionary = board.call("figure_layout", cell)
-			check(layout.get("origin") is Vector2 and layout.get("foot") is Vector2 and layout.get("size") is float,
-				"actual figure placement provides upright origin, foot and scale")
-			if layout.get("origin") is Vector2 and layout.get("foot") is Vector2 and layout.get("size") is float:
-				check(near(layout.foot, center) and layout["size"] > 0 and layout.origin.y < layout.foot.y and is_equal_approx(layout.origin.x, layout.foot.x),
-					"stage figure feet anchor to the logical tile without tilting the standee")
+		var standees: Array = board.standee_layout()
+		check(standees.size() == 2, "live standee layout contains player and controlled opponent")
+		for row in standees:
+			var rect: Rect2 = row.rect
+			check(near(row.foot, board.cell_center(row.cell)) and rect.size.x > 0 and rect.size.y > 0
+				and near(rect.position + rect.size * Vector2(0.5, 0.95), row.foot),
+				"live standee foot uses the shared projected cell and injected upright anchor")
 		var back: PackedVector2Array = board.call("cell_polygon", [0, 0])
 		var front: PackedVector2Array = board.call("cell_polygon", [0, dimensions.y - 1])
 		if back.size() == 4 and front.size() == 4:
@@ -289,10 +293,6 @@ func test_board_consumer() -> void:
 		if back.size() == 4 and front.size() == 4 and top_right.size() == 4 and bottom_right.size() == 4:
 			var reference = configured(dimensions.x, dimensions.y, PackedVector2Array([back[0], top_right[1], bottom_right[2], front[3]]))
 			check(near(board.cell_center([1, 1]), reference.call("project", Vector2(1.5, 1.5))), "actual actor anchor uses the same projective mapping as floor corners")
-		var far_figure: Dictionary = board.call("figure_layout", [0, 0])
-		var near_figure: Dictionary = board.call("figure_layout", [0, dimensions.y - 1])
-		check(far_figure.get("size", 0.0) > 0 and far_figure.get("size", 0.0) < near_figure.get("size", 0.0),
-			"upright figures scale with stage depth")
 		var old_piece: Dictionary = board.call("piece_appearance", [1, 1])
 		var old_center: Vector2 = board.cell_center([1, 1])
 		board.size = Vector2(650, 470)

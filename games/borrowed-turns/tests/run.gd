@@ -15,8 +15,6 @@ func check(condition: bool, label: String) -> void:
 func model(board: Dictionary = {}):
 	var g = Encounter.new()
 	var fixture: Dictionary = (F.board() if board.is_empty() else board).duplicate(true)
-	if not fixture.has("objective"):
-		fixture.objective = "escape"
 	g.configure(fixture, "R2")
 	return g
 
@@ -97,14 +95,6 @@ func test_end_turn_intentions_and_reset() -> void:
 	check(second.snapshot() == second_initial, "runs are isolated")
 	first.reset()
 	check(first.snapshot() == second_initial, "reset restores exact independent initial state")
-	var exit_board := F.board()
-	exit_board.exit = {"pos": [1, 2], "opens": 1}
-	g = model(exit_board)
-	if not apply(g, {"type": "move", "to": [1, 2]}, "move onto open exit"): return
-	check(g.snapshot().get("status") == "won", "open exit wins immediately")
-	var wins := events(g.snapshot(), "win")
-	check(g.snapshot().get("objective") == "escape" and not wins.is_empty() and wins[0].get("objective") == "escape", "escape snapshot and win event identify objective")
-	reject(g, {"type": "end_turn"}, "terminal state")
 
 func mobile(id: String, pos: Array, direction: Array, skill: Dictionary, pattern: String, budget: int = 1, hp: int = 10) -> Dictionary:
 	var result := F.foe(id, pos, direction, skill, hp)
@@ -404,7 +394,6 @@ func test_reset_new_states() -> void:
 func test_shine_validation_and_combat_win() -> void:
 	var b := F.board()
 	b.objective = "defeat_all"
-	b.erase("exit")
 	b.enemies = [F.foe("source", [4, 3], [-1, 0], F.ability("bolt", 3, 1), 1)]
 	var default_board: Dictionary = b.duplicate(true)
 	default_board.erase("objective")
@@ -612,7 +601,98 @@ func test_swap_followed_by_attack() -> void:
 	check(types(s).find("swap") >= 0 and types(s).find("capture") > types(s).find("swap") and types(s).rfind("ray") > types(s).find("capture"), "later attack resolves after swap acquisition")
 	check(s.get("stored", {}).get("source") == "switcher", "later hit does not replace consumed capture")
 
+func library_board(abilities: Array, decision: String = "first_in_range") -> Dictionary:
+	var b := F.board()
+	b.opponent_definitions = {
+		"shared": {
+			"name": "Paper Sentinel",
+			"stats": {"max_hp": 1},
+			"abilities": abilities.duplicate(true),
+			"decision": decision,
+			"presentation": {"kit": "paper-sentinel"},
+		},
+	}
+	b.enemies = [
+		{"id": "first", "definition": "shared", "pos": [4, 3], "dir": [-1, 0]},
+		{"id": "second", "definition": "shared", "pos": [1, 1], "dir": [1, 0]},
+	]
+	return b
+
+func test_reusable_opponent_instances_and_source_link() -> void:
+	var bolt := F.ability("bolt", 3, 1)
+	var b := library_board([bolt])
+	var g = model(b)
+	var initial: Dictionary = g.snapshot()
+	var first := enemy(initial, "first")
+	var second := enemy(initial, "second")
+	var ready: bool = first.get("hp", -1) == 1 and second.get("hp", -1) == 1 and intention(initial, "first").get("cells", []).has([1, 3]) and not intention(initial, "second").get("cells", []).has([1, 3])
+	check(ready, "shared definition creates independent instance HP and directional intentions")
+	if not ready: return
+	if not apply(g, {"type": "capture"}, "arm against shared definition"): return
+	if not apply(g, {"type": "end_turn"}, "capture first shared instance"): return
+	var acquired: Dictionary = g.snapshot()
+	check(acquired.get("stored", {}).get("source") == "first" and acquired.get("stored", {}).get("ability") == bolt, "capture links actual instance and its payload")
+	check(enemy(acquired, "first").get("hp", -1) == 1 and enemy(acquired, "second").get("hp", -1) == 1, "attacks retain separate instance HP")
+	if acquired.get("stored", {}).get("source") != "first": return
+	if not apply(g, {"type": "shine", "target": [1, 1]}, "defeat other shared instance"): return
+	var after_other: Dictionary = g.snapshot()
+	check(enemy(after_other, "second").is_empty() and enemy(after_other, "first").get("hp", -1) == 1 and after_other.get("stored", {}).get("source") == "first", "defeating another instance neither damages source nor clears its held ability")
+	if not apply(g, {"type": "shine", "target": [4, 3]}, "defeat captured shared instance"): return
+	var after_source: Dictionary = g.snapshot()
+	check(enemy(after_source, "first").is_empty() and after_source.get("stored", {}).is_empty(), "defeating actual source clears held ability")
+	g.reset()
+	check(g.snapshot() == initial, "shared definition reset restores independent instances and intentions")
+
+func test_reusable_loadout_decision_and_lock() -> void:
+	var short := F.ability("shove", 1, 1)
+	var long := F.ability("bolt", 3, 2)
+	var b := library_board([short, long])
+	b.enemies.resize(1)
+	b.enemies[0].pos = [3, 3]
+	var g = model(b)
+	var announced := intention(g.snapshot(), "first")
+	var selected_long: bool = announced.get("kind") == "bolt" and announced.get("cells", []).has([1, 3])
+	check(selected_long, "first_in_range selects second ability when only its footprint reaches player")
+	check(intention(model(b).snapshot(), "first") == announced, "loadout decision is deterministic")
+	if selected_long:
+		if not apply(g, {"type": "capture"}, "arm selected long ability"): return
+		if not apply(g, {"type": "move", "to": [2, 3]}, "move into first ability range after announcement"): return
+		check(intention(g.snapshot(), "first") == announced, "repositioning does not switch announced ability")
+		if not apply(g, {"type": "end_turn"}, "resolve locked long ability"): return
+		var s: Dictionary = g.snapshot()
+		check(s.get("player", {}).get("hp") == 18 and s.get("stored", {}).get("ability") == long, "resolution and capture use locked second ability")
+		check(intention(s, "first").get("kind") == "shove", "next announcement selects first ability when both footprints reach player")
+	b.player.pos = [7, 3]
+	check(intention(model(b).snapshot(), "first").get("kind") == "shove", "first_in_range falls back to first ability when neither reaches")
+	b.player.pos = [1, 3]
+	b.opponent_definitions.shared.decision = "fixed"
+	check(intention(model(b).snapshot(), "first").get("kind") == "shove", "fixed policy selects first ability even when second reaches")
+
+func test_swap_range_uses_current_player_target() -> void:
+	var b := library_board([F.ability("swap", 2, 1)])
+	b.opponent_definitions.shared.movement = {"pattern": "keep_max_range", "budget": 2}
+	b.enemies.resize(1)
+	b.enemies[0].pos = [6, 3]
+	var g = model(b)
+	var initial: Dictionary = g.snapshot()
+	var announced := intention(initial, "first")
+	check(enemy(initial, "first").get("ability", {}).get("kind") == "swap" and enemy(initial, "first").get("announced_target") == [] and announced.is_empty(), "out-of-range swap has no locked target or intention")
+	if not apply(g, {"type": "move", "to": [2, 3]}, "move player before range-keeping turn"): return
+	var before_end: Dictionary = g.snapshot()
+	check(enemy(before_end, "first").get("pos") == [6, 3] and intention(before_end, "first") == announced, "player movement neither moves ranger nor retargets locked swap")
+	if not apply(g, {"type": "end_turn"}, "swap ranger approaches current player"): return
+	var after: Dictionary = g.snapshot()
+	check(events(after, "swap").is_empty() and after.get("player", {}).get("pos") == [2, 3] and after.get("player", {}).get("hp") == 20, "unannounced swap does not resolve against the moved player")
+	check(enemy(after, "first").get("pos") == [4, 3], "swap ranger moves to farthest legal firing position for current player")
+	var next := intention(after, "first")
+	check(next.get("kind") == "swap" and next.get("target") == [2, 3] and next.get("cells") == [[2, 3]], "new swap announcement targets reachable current player")
+
 func _initialize() -> void:
+	if OS.get_cmdline_user_args().has("--focus=swap-range"):
+		test_swap_range_uses_current_player_target()
+		print("Checks: ", checks, "; failures: ", failures.size())
+		quit(0 if failures.is_empty() else 1)
+		return
 	if OS.get_cmdline_user_args().has("--focus=switcher"):
 		test_swap_locked_contact_and_reset()
 		test_swap_lock_miss_and_announcement_validity()
@@ -624,6 +704,9 @@ func _initialize() -> void:
 		return
 	var focused := OS.get_cmdline_user_args().has("--focus=armed-capture-shine")
 	if not focused:
+		test_reusable_opponent_instances_and_source_link()
+		test_reusable_loadout_decision_and_lock()
+		test_swap_range_uses_current_player_target()
 		test_budget_boundary()
 		test_end_turn_intentions_and_reset()
 		test_movement_and_aim()

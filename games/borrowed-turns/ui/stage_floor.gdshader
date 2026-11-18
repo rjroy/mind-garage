@@ -11,7 +11,6 @@ uniform vec4 source_crop = vec4(0.0, 0.0, 1.0, 1.0);
 uniform vec4 paper_tint : source_color = vec4(1.0);
 uniform int quarter_turn = 0;
 uniform bool apron = false;
-uniform bool repeat_apron = false;
 varying vec2 plane_pixel;
 
 void vertex() {
@@ -23,7 +22,7 @@ void fragment() {
 	vec2 logical = vec2(dot(inverse_x, pixel), dot(inverse_y, pixel)) / dot(inverse_w, pixel) * board_size;
 	vec2 piece = (logical - cell_origin) / cell_span;
 	vec2 sample_uv = clamp(piece, vec2(0.0), vec2(1.0));
-	if (repeat_apron) { sample_uv = vec2(1.0) - abs(mod(piece, vec2(2.0)) - vec2(1.0)); }
+	if (apron) { sample_uv = vec2(1.0) - abs(mod(piece, vec2(2.0)) - vec2(1.0)); }
 	if (quarter_turn == 1) { sample_uv = vec2(sample_uv.y, 1.0 - sample_uv.x); }
 	if (quarter_turn == 2) { sample_uv = vec2(1.0) - sample_uv; }
 	if (quarter_turn == 3) { sample_uv = vec2(1.0 - sample_uv.y, sample_uv.x); }

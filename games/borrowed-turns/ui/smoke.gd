@@ -3,7 +3,6 @@ extends SceneTree
 
 const F = preload("res://ui/smoke_fixtures.gd")
 const P = preload("res://ui/presentation.gd")
-const Production = preload("res://content/escape.gd")
 var game: Control
 var checks := 0
 var failures := 0
@@ -210,6 +209,11 @@ func _test_shine_source_loss_and_replay() -> void:
 	check(game.state.status == "won" and game.result.visible
 		and not game.result.text.to_lower().contains("escape") and game.shadow.frame().held.is_empty(),
 		"source-death victory clears held presentation without restoring danger-cancel mechanics")
+	check(game.state.action_points > 0 and game.action_buttons.capture.disabled,
+		"victory disables Capture even with AP remaining")
+	var wins: Array = game.state.events.filter(func(event): return event.get("type") == "win" and event.get("objective") == "defeat_all")
+	check(wins.size() == 1 and game.history.text.contains(P.event_text(wins[0])),
+		"committed History includes the actual defeat-all win event")
 	check(not game.history.text.to_lower().contains("canceled")
 		and not game.history.text.to_lower().contains("backlash"), "committed history never claims capture prevented a strike")
 	press(game.restart_button)
@@ -286,7 +290,6 @@ func _test_stage_integration() -> void:
 			data.width = dimensions.x
 			data.height = dimensions.y
 			data.player.pos = [1, 1]
-			data.exit.pos = [dimensions.x - 1, dimensions.y - 1]
 			await load_fixture(data)
 			var before: Dictionary = game.model.snapshot()
 			_stage_controls_fit("stage %s / %s" % [viewport_size, dimensions])
@@ -341,12 +344,11 @@ func _test_stage_integration() -> void:
 			check(game.generation > old_generation and game.state == before and game.shadow.frame().held.is_empty() and not game.shadow.frame().busy, "stage restart during feedback removes old held state and stale work")
 			check(game.board.piece_appearance([1, 1]) == paper_piece, "restart does not reshuffle the same visual field")
 			await _stage_resize(viewport_size)
-	# Real authored escape content plus controlled hit acquisition at each size.
+	# Controlled hit acquisition at each size.
 	for viewport_size in [Vector2i(1024, 720), Vector2i(1600, 900)]:
 		await _stage_resize(viewport_size)
-		await load_fixture(Production.DATA)
-		_stage_controls_fit("actual encounter " + str(viewport_size))
 		await load_fixture(F.armed_fight())
+		_stage_controls_fit("controlled encounter " + str(viewport_size))
 		if not await _prepare_arm(): continue
 		await commit()
 		select("end_turn")
@@ -461,7 +463,7 @@ func _test_two_pursuers_startup() -> void:
 	check(game.board.standee_layout().size() == 3, "command-line entry loads all three approved standee actors")
 
 func _test_shared_ap_and_ranges() -> void:
-	await load_fixture(F.encounter([], 3))
+	await load_fixture(F.encounter([F.enemy("A", [6, 6], F.ability("bolt", 0, 1), 12, [1, 0])], 3))
 	await move([2, 3])
 	await move([3, 3])
 	if not await _prepare_arm(): return
@@ -486,7 +488,7 @@ func _test_shared_ap_and_ranges() -> void:
 		"explicit End turn refreshes AP; a missed armed attack does not consume the arm")
 	check(ap_only(game.budgets.text + game.availability.text + game.history.text + game.help_dialog.dialog_text),
 		"budget/help/history have one AP resource and no MP")
-	await load_fixture(F.encounter([], 0))
+	await load_fixture(F.encounter([F.enemy("A", [6, 6], F.ability("bolt", 0, 1), 12, [1, 0])], 0))
 	before = game.model.snapshot()
 	history = game.history_lines.duplicate()
 	game._choose_action("capture")
@@ -591,22 +593,18 @@ func _test_actor_access() -> void:
 func _test_chooser() -> void:
 	var original: Dictionary = game.model.snapshot()
 	var original_id: String = game.encounter_id
-	await _choose_encounter_ui("escape")
+	await _choose_encounter_ui("two-pursuers")
 	check(game.encounter_dialog.visible and game.model.snapshot() == original,
 		"chooser requests replacing the encounter without mutating the live fight")
 	game.encounter_dialog.get_cancel_button().pressed.emit()
 	game.encounter_dialog.hide()
 	check(game.encounter_id == original_id and game.model.snapshot() == original, "canceling chooser preserves the current run")
-	await _choose_encounter_ui("escape")
-	game.encounter_dialog.confirmed.emit()
-	game.encounter_dialog.hide()
-	await process_frame
-	check(game.encounter_id == "escape" and game.fixture == Production.DATA
-		and game.state.objective == "escape", "explicit escape chooser uses the real retained authored content")
 	await _choose_encounter_ui("two-pursuers")
 	game.encounter_dialog.confirmed.emit()
 	game.encounter_dialog.hide()
 	await process_frame
+	check(game.encounter_id == "two-pursuers" and game.state.objective == "defeat_all",
+		"confirmed chooser loads the selected combat encounter")
 	_test_two_pursuers_startup()
 
 func _test_active_motion() -> void:
@@ -658,8 +656,9 @@ func _test_active_motion() -> void:
 	check(game.generation > generation and game.state == initial and not game.shadow.frame().busy
 		and game.history_lines.size() == 1, "restart cancels old slides and restores this fixture, not stale events")
 
-func _test_escape_keyboard_and_replay() -> void:
-	await load_fixture(F.encounter([], 2))
+func _test_keyboard_and_restart() -> void:
+	var fixture := F.encounter([F.enemy("A", [6, 6], F.ability("bolt", 0, 1), 12, [1, 0])], 2)
+	await load_fixture(fixture)
 	var before: Dictionary = game.model.snapshot()
 	var key := InputEventKey.new()
 	key.pressed = true
@@ -676,20 +675,6 @@ func _test_escape_keyboard_and_replay() -> void:
 	check(game.model.snapshot() == before and game.confirm_button.has_focus(), "board Enter selects; separate confirmation commits")
 	await commit()
 	check(game.state.action_points == 1, "single move spends exactly one shared AP")
-	var winning := F.encounter([], 2)
-	winning.exit = {"pos": [2, 3], "opens": 1}
-	await load_fixture(winning)
-	await move([2, 3])
-	check(game.state.status == "won" and game.result.visible and game.result.text.to_lower().contains("escape")
-		and game.history.text.to_lower().contains("escaped") and game.action_buttons.capture.disabled,
-		"explicit escape victory keeps terminal board/history and escape wording")
-	var generation: int = game.generation
-	press(game.restart_button)
-	check(game.generation > generation and game.state.status == "playing" and game.state.stored.is_empty()
-		and not game.state.capture_armed and game.history_lines.size() == 1, "terminal escape Replay restores the same fixture and clears old work")
-	await move([2, 3]) # Win again, then use a non-winning fixture for restart protection.
-	await load_fixture(F.encounter([], 2))
-	await move([2, 3])
 	before = game.model.snapshot()
 	press(game.restart_button)
 	check(game.restart_dialog.visible, "changed unfinished encounter requests restart confirmation")
@@ -713,7 +698,7 @@ func _test_switcher_startup() -> void:
 		check(_standee_entry("A").name.to_lower().contains("switcher"), "provisional A source art has an explicit Switcher roster identity")
 	var ids: Array = []
 	for i in range(game.encounter_picker.item_count): ids.append(game.encounter_picker.get_item_metadata(i))
-	for id in ["switcher", "switcher-b", "two-pursuers", "escape"]:
+	for id in ["switcher", "switcher-b", "two-pursuers"]:
 		check(id in ids, "existing encounter selector offers " + id)
 
 func _choose_switcher_profile(id: String) -> bool:
@@ -886,7 +871,7 @@ func _run() -> void:
 		await _test_actor_access()
 		await _test_active_motion()
 		await _test_stage_integration()
-		await _test_escape_keyboard_and_replay()
+		await _test_keyboard_and_restart()
 	print("Stage UI smoke [%s]: %d checks, %d failures. Injected GUI input, not physical input or enjoyment." % [focus, checks, failures])
 	game.queue_free()
 	await process_frame

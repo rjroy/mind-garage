@@ -8,7 +8,6 @@ const FLOOR := Color("f2f4ec")
 const GRID := Color("bac6b9")
 const DANGER := Color("a83b2a")
 const BORROWED := Color("00675f")
-const EXIT := Color("7a5d00")
 const WALL := Color("63756b")
 
 static func cell(pos: Array) -> String:
@@ -19,7 +18,42 @@ static func actor(id: String) -> String:
 
 static func enemy_name(enemy: Dictionary) -> String:
 	if not str(enemy.get("name", "")).is_empty(): return str(enemy.name)
-	return "Switcher" if enemy.kind == "swap" else "Pursuer " + str(enemy.id).to_upper()
+	# Legacy flattened Switcher fixtures predate authored names.
+	if not enemy.has("definition") and enemy.get("kind", "") == "swap": return "Switcher"
+	return "Pursuer " + str(enemy.id).to_upper()
+
+static func enemy_kit(enemy: Dictionary) -> String:
+	var kit := str(enemy.get("presentation", {}).get("kit", ""))
+	if not kit.is_empty(): return kit
+	# Only old flattened fixtures use actor IDs as artwork keys.
+	var id := str(enemy.get("id", ""))
+	return id if not enemy.has("definition") and id in ["A", "B"] else ""
+
+static func stage_legacy_composition(enemies: Array) -> bool:
+	for enemy in enemies:
+		if enemy.has("definition") or str(enemy.id) not in ["A", "B"]:
+			return false
+	return true
+
+static func stage_roles(enemies: Array) -> Dictionary:
+	# Historical A/B fixtures retain their roles even in reverse order. A mixed
+	# composition instead assigns every role by placement, never by artwork kit.
+	var legacy := stage_legacy_composition(enemies)
+	var roles := {}
+	for i in range(enemies.size()):
+		var id := str(enemies[i].id)
+		roles[id] = (0 if id == "A" else 1) if legacy else i
+	return roles
+
+static func stage_supports_kind(kind: String, definition_backed: bool) -> bool:
+	if kind in ["shove", "swap"]: return true
+	return definition_backed and kind in ["bolt", "burst", "pull"]
+
+static func stage_supports(snapshot: Dictionary, source: String, kind: String) -> bool:
+	if stage_supports_kind(kind, false): return true
+	for enemy in snapshot.get("enemies", []):
+		if enemy.get("id", "") == source: return stage_supports_kind(kind, enemy.has("definition"))
+	return false
 
 static func geometry(ability: Dictionary) -> String:
 	if ability.kind == "swap": return "One occupied target · exchange, then damage"
@@ -28,15 +62,11 @@ static func geometry(ability: Dictionary) -> String:
 	return "Line · Width %d" % width if width > 1 else "Line"
 
 static func ability_text(ability: Dictionary) -> String:
-	return "%s · %d damage\nRange %d · %s%s" % [str(ability.kind).capitalize(), ability.damage, ability.range, geometry(ability), " · Push" if ability.push else ""]
+	var effect := " · Pull one step toward source" if ability.kind == "pull" else (" · Push" if ability.push else "")
+	return "%s · %d damage\nRange %d · %s%s" % [str(ability.kind).capitalize(), ability.damage, ability.range, geometry(ability), effect]
 
 static func objective_text(state: Dictionary) -> String:
-	if state.get("objective", "escape") == "defeat_all":
-		return "%d HP · Foes left: %d\nDefeat all foes." % [state.player.hp, state.enemies.size()]
-	if not state.has("exit"): return "%d HP" % state.player.hp
-	return "%d HP · Exit %s\nReach %s%s" % [state.player.hp,
-		"open" if state.turn >= state.exit.opens else "opens turn %d" % state.exit.opens,
-		cell(state.exit.pos), "" if state.turn >= state.exit.opens else " when open"]
+	return "%d HP · Foes left: %d\nDefeat all foes." % [state.player.hp, state.enemies.size()]
 
 static func rejection_text(reason: String) -> String:
 	return reason
@@ -59,7 +89,7 @@ static func event_text(event: Dictionary) -> String:
 		"displace": return "%s displaced to %s." % [who, cell(event.to)]
 		"death": return "%s fell." % who
 		"turn": return "Turn %d · AP refreshed; fresh intentions." % event.number
-		"win": return "Victory. All foes defeated." if event.get("objective", "escape") == "defeat_all" else "Escaped through the open exit."
+		"win": return "Victory. All foes defeated."
 		"loss": return "Caught. Your health reached zero."
 	return str(event.get("type", ""))
 
@@ -86,7 +116,7 @@ static func command_summary(current: Dictionary, predicted: Dictionary, action: 
 	if predicted.status == "lost":
 		outcomes.append("This command kills you. No ability is acquired.")
 	elif predicted.status == "won":
-		outcomes.append("Victory. All foes defeated." if predicted.get("objective", "escape") == "defeat_all" else "You escape.")
+		outcomes.append("Victory. All foes defeated.")
 	else:
 		for event in predicted.events:
 			if event.type in ["capture_armed", "capture", "ability_lost"]: outcomes.append(event_text(event))

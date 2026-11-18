@@ -50,7 +50,7 @@ func _check_roster() -> void:
 	var frame: Rect2 = game.board._stage_rect()
 	var floor_seam := frame.position.y
 	if game.board.stage_renderer:
-		floor_seam += frame.size.y * game.board.stage_renderer._floor_top
+		floor_seam += frame.size.y * game.board.stage_renderer.FLOOR_TOP
 	var controls: Array = [game.objective, game.phase, game.budgets, game.stored,
 		game.instruction, game.consequence, game.confirm_button, game.cancel_button, game.restart_button]
 	controls.append_array(game.action_buttons.values())
@@ -316,6 +316,90 @@ func _test_roster_hp_sync() -> void:
 		check(not _standee_entry("B").is_empty(), "Restart restores living roster identities")
 		_check_roster()
 
+func _library_presentation_fixture(kit: String, display_name: String) -> Dictionary:
+	var skill := F.ability("shove", 1, 2)
+	# The flattened fields keep this a behavioral UI test before the model
+	# supports definitions. Identity and art exist only in the definition.
+	var first := F.enemy("north", [2, 1], skill.duplicate(true), 11, [0, 1])
+	var second := F.enemy("south", [2, 3], skill.duplicate(true), 11, [0, -1])
+	first["definition"] = "paper"
+	second["definition"] = "paper"
+	var data := F.encounter([first, second])
+	data.width = 5
+	data.height = 5
+	data.player.pos = [1, 2]
+	data["opponent_definitions"] = {
+		"paper": {"name": display_name, "stats": {"max_hp": 11},
+			"abilities": [skill], "decision": "fixed", "presentation": {"kit": kit}},
+	}
+	return data
+
+func _test_definition_presentation() -> void:
+	# Both instances share a definition and attack; only the declared kit/name
+	# changes between runs. Neither instance ID names an artwork key.
+	for case in [{"kit": "B", "name": "Copper Warden"}, {"kit": "A", "name": "Velvet Keeper"}]:
+		await load_fixture(_library_presentation_fixture(case.kit, case.name))
+		var first := _standee_entry("north")
+		var second := _standee_entry("south")
+		var expected_texture = game._slice_art.get("textures", {}).get(case.kit)
+		check(expected_texture is Texture2D, "controlled definition kit names an existing standee artwork key")
+		for row in [first, second]:
+			var id: String = row.get("actor", "")
+			check(not row.is_empty() and row.get("name", "") == case.name,
+				"definition name appears for each shared-kit instance, independent of attack and ID")
+			check(expected_texture is Texture2D and row.get("texture") == expected_texture,
+				"definition kit supplies each instance's actual standee texture")
+			var roster = row.get("roster_rect")
+			if roster is Rect2 and roster.has_area():
+				check(game.board.actor_at(roster.get_center()) == id and game.board.pick_cell(roster.get_center()) == row.get("cell", []),
+					"shared artwork retains instance-specific roster picking")
+				if await _roster_click(id):
+					check(game.source == id and game.selected == row.get("cell", []),
+						"real roster input selects the owning instance")
+			else:
+				check(false, "shared-kit instance has its own usable roster row")
+		var first_rect = first.get("roster_rect")
+		var second_rect = second.get("roster_rect")
+		check(first_rect is Rect2 and second_rect is Rect2 and first_rect.has_area() and second_rect.has_area()
+			and not first_rect.intersects(second_rect), "shared-kit instances have separate roster slots")
+		# The existing rig exposes actual sprites. Read their visible placement
+		# rather than assuming instance IDs are its internal role keys.
+		var rig = game._puppet_rig
+		var bodies: Array = []
+		if rig != null:
+			for body in rig._bodies.values():
+				if body is Sprite2D and body.visible: bodies.append(body)
+		bodies.sort_custom(func(a, b): return a.position.x < b.position.x)
+		var expected_body = game._puppet_art.get(str(case.kit).to_lower() + "_body")
+		check(bodies.size() == 2, "both shared-kit instances occupy Director left and right roles")
+		if bodies.size() == 2:
+			check(bodies[0].position.x < bodies[1].position.x and expected_body is Texture2D
+				and bodies[0].texture == expected_body and bodies[1].texture == expected_body,
+				"both Director roles use the declared kit, not their role or attack")
+			var facing_ok := true
+			for index in range(2):
+				var id: String = ["north", "south"][index]
+				var hand: Sprite2D
+				for key in rig._hands:
+					if str(key).begins_with(id + "/"):
+						hand = rig._hands[key].get_node_or_null("Art")
+				var body: Sprite2D = bodies[index]
+				var body_transform: Transform2D = rig.global_transform.affine_inverse() * body.global_transform
+				var body_reflected: bool = (body_transform.determinant() < 0.0) != body.flip_h
+				var expected_reflected: bool = (case.kit == "B" and index == 0) or (case.kit == "A" and index == 1)
+				if hand == null or not hand.is_visible_in_tree():
+					facing_ok = false
+				else:
+					var hand_transform: Transform2D = rig.global_transform.affine_inverse() * hand.global_transform
+					var hand_reflected: bool = (hand_transform.determinant() < 0.0) != hand.flip_h
+					facing_ok = facing_ok and body_reflected == expected_reflected and hand_reflected == expected_reflected
+			check(facing_ok, "shared-kit mismatched body and rehearsal hand face inward while the native role stays unchanged")
+			for index in range(2):
+				var id: String = ["north", "south"][index]
+				if await _roster_click(id):
+					check(bodies[index].modulate == Color("f7d9a3") and bodies[1 - index].modulate == Color.WHITE,
+						"fixture order assigns inspected instance to its own left/right Director role")
+
 func _test_wide_borrowed_geometry() -> void:
 	var data := F.wide_capture()
 	data.enemies[0].pos = [0, 2] # Inside Shine's left lane, outside its narrow center.
@@ -427,8 +511,6 @@ func _test_capacity_boundaries() -> void:
 		var data := F.two_pursuers()
 		data.width = 7
 		data.height = 7
-		data.objective = "defeat_all"
-		data.erase("exit")
 		data.player.pos = [0, 3]
 		data.enemies[0].pos = [6, 0]
 		data.enemies[1].pos = [6, 6]
@@ -450,7 +532,7 @@ func _test_capacity_boundaries() -> void:
 			var image: Image = game.board._standee_images[row.actor]
 			widths[row.actor] = image.get_used_rect().size.x * row.rect.size.x / image.get_width()
 			check(row.foot.distance_to(game.board.cell_center(row.cell)) < 0.01
-				and row.foot.y > stage.position.y + stage.size.y * game.board.stage_renderer._floor_top,
+				and row.foot.y > stage.position.y + stage.size.y * game.board.stage_renderer.FLOOR_TOP,
 				"extreme-start actor feet stay on the shared floor below the Director seam")
 			check(_foreground_alpha(foreground, stage, row.foot) <= 0.1,
 				"actual extreme actor foot/source anchor is not hidden by the foreground")
@@ -507,6 +589,7 @@ func _run() -> void:
 	check(game.encounter_id == "switcher", "normal entry opens solo Switcher in the accepted Stage without an appearance matrix")
 	await _test_controlled_slice()
 	await _test_roster_hp_sync()
+	await _test_definition_presentation()
 	await _test_rehearsal_motion()
 	await _test_wide_borrowed_geometry()
 	await _test_capacity_boundaries()

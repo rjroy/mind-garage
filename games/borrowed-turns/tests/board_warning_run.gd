@@ -53,8 +53,8 @@ func snapshot() -> Dictionary:
 	# Explicit footprints are intentionally truncated independently of range.
 	# This catches a renderer that invents geometry rather than copying cells.
 	return {
-		"turn": 7, "width": 8, "height": 6, "walls": [[3, 5]],
-		"player": {"pos": [3, 2], "hp": 29}, "exit": {"pos": [7, 5], "opens": 19},
+		"objective": "defeat_all", "turn": 7, "width": 8, "height": 6, "walls": [[3, 5]],
+		"player": {"pos": [3, 2], "hp": 29},
 		"enemies": [
 			{"id": "B", "pos": [3, 4], "dir": [0, -1], "hp": 13, "kind": "shove"},
 			{"id": "A", "pos": [3, 1], "dir": [0, 1], "hp": 17, "kind": "shove"},
@@ -70,7 +70,6 @@ func make_board():
 	var board = board_script.new()
 	# Outside the tree: no stage textures, rig or mutable production assembly.
 	board.size = Vector2(1008, 514)
-	board.theatre_mode = true
 	board.set_view(snapshot(), {}, [], [], "")
 	return board
 
@@ -99,9 +98,6 @@ func test_region_projection_and_preservation() -> void:
 			and board.source == before.source and board.cursor == before.cursor and board.hover_cell == before.hover,
 			"region projection/resize preserve authoritative facts, target, preview and inspection")
 		check(board._focused_actor == "A" and board._hover_actor == "B", "region readback preserves rear focus and hover")
-	board.theatre_mode = false
-	check(board.announcement_marks().is_empty() and board.announcement_regions().is_empty(),
-		"other Stage profiles keep the existing renderer")
 	board.free()
 
 func region_area(contours: Array) -> float:
@@ -466,8 +462,6 @@ func test_board_wave_phase_and_ownership() -> void:
 			rows[0].fills[0][0] = Vector2(999, 999)
 			rows[0].fronts[0]["progress"] = -99.0
 		check(board.announcement_waves() != rows or rows.is_empty(), "real wave draw readback is detached")
-	board.theatre_mode = false
-	check(board.announcement_waves().is_empty(), "original escape Stage retains its existing warning profile")
 	board.free()
 
 func wave_progress(board, frame: Dictionary) -> float:

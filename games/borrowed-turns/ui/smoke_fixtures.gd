@@ -9,9 +9,8 @@ static func enemy(id: String, pos: Array, skill: Dictionary, hp: int = 12, direc
 
 static func encounter(enemies: Array, actions: int = 4, health: int = 20) -> Dictionary:
 	return {
-		"objective": "escape",
+		"objective": "defeat_all",
 		"width": 7, "height": 7, "walls": [], "player": {"pos": [1, 3], "hp": health},
-		"exit": {"pos": [6, 6], "opens": 30},
 		"rules": {"actions": actions}, "enemies": enemies,
 	}
 
@@ -24,7 +23,6 @@ static func two_pursuers(center_player: bool = false) -> Dictionary:
 	data.width = 5
 	data.height = 5
 	data.player.pos = [2, 2] if center_player else [1, 2]
-	data.exit = {"pos": [4, 4], "opens": 12}
 	return data
 
 static func movement_transition() -> Dictionary:
@@ -34,8 +32,6 @@ static func movement_transition() -> Dictionary:
 		enemy("A", [3, 1], ability("shove", 2, 3, 0, true), 11, [0, 1]),
 		enemy("B", [3, 2], ability("bolt", 1, 3), 13, [-1, 0]),
 	], 3, 29)
-	before.objective = "defeat_all"
-	before.erase("exit")
 	before.merge({"turn": 4, "status": "playing", "action_points": 3,
 		"stored": {}, "capture_armed": false, "events": [],
 		"intentions": [{"source": "A", "kind": "shove", "cells": [[3, 2], [3, 3], [3, 4]]},
@@ -65,11 +61,9 @@ static func active_fight() -> Dictionary:
 		enemy("A", [4, 1], ability("shove", 2, 2, 0, true), 11, [-1, 0]),
 		enemy("B", [5, 5], ability("shove", 1, 3, 0, true), 13, [-1, 0]),
 	], 3, 39)
-	data.objective = "defeat_all"
 	data.enemies[0]["movement_pattern"] = "chase_player"
 	data.enemies[1]["movement_pattern"] = "keep_max_range"
 	for foe in data.enemies: foe["movement_budget"] = 1
-	data.erase("exit")
 	return data
 
 static func wide_capture() -> Dictionary:
@@ -77,9 +71,7 @@ static func wide_capture() -> Dictionary:
 		enemy("A", [1, 2], ability("shove", 1, 2, 0, true), 11, [0, -1]),
 		enemy("B", [3, 4], ability("shove", 2, 2, 0, true, 3), 13, [0, -1]),
 	], 3, 29)
-	data.objective = "defeat_all"
 	data.player.pos = [2, 3] # B's side lane, never its narrow center column.
-	data.erase("exit")
 	return data
 
 static func armed_fight(push: bool = true) -> Dictionary:

@@ -33,6 +33,8 @@ var _generation := -1
 var _prior_sources: Dictionary = {}
 var _lines: Array = []
 var _labels: Array = []
+var _roles: Dictionary = {}
+var _kits: Dictionary = {}
 
 func _sprite(texture: Texture2D) -> Sprite2D:
 	var sprite := Sprite2D.new()
@@ -46,6 +48,8 @@ func configure_assets(textures: Dictionary) -> bool:
 	_bodies.clear()
 	_hands.clear()
 	_textures.clear()
+	_roles.clear()
+	_kits.clear()
 	for key in ["a_body", "a_hands", "b_body", "b_hands", "p_lantern"]:
 		if not textures.get(key) is Texture2D: return false
 		var canvas := Vector2(145, 145) if key == "p_lantern" else Vector2(290, 145)
@@ -55,6 +59,8 @@ func configure_assets(textures: Dictionary) -> bool:
 	_glow.code = GLOW
 	for id in ["A", "B"]:
 		_bodies[id] = _sprite(_textures[id.to_lower() + "_body"])
+		_roles[id] = id
+		_kits[id] = id
 		add_child(_bodies[id])
 	_player = _sprite(_textures.p_lantern)
 	add_child(_player)
@@ -67,6 +73,33 @@ func configure_assets(textures: Dictionary) -> bool:
 	_generation = -1
 	return true
 
+func bind_composition(enemies: Array) -> void:
+	_clear_hands()
+	for body in _bodies.values(): body.free()
+	_bodies.clear()
+	_roles.clear()
+	_kits.clear()
+	var legacy := P.stage_legacy_composition(enemies)
+	var stage_roles: Dictionary = P.stage_roles(enemies)
+	for i in range(mini(enemies.size(), 2)):
+		var enemy: Dictionary = enemies[i]
+		var id := str(enemy.id)
+		var kit := P.enemy_kit(enemy)
+		if kit not in ["A", "B"]: continue
+		_roles[id] = "A" if stage_roles[id] == 0 else "B"
+		_kits[id] = kit
+		_bodies[id] = _sprite(_textures[kit.to_lower() + "_body"])
+		add_child(_bodies[id])
+	if legacy:
+		for id in ["A", "B"]:
+			if not _bodies.has(id):
+				_roles[id] = id
+				_kits[id] = id
+				_bodies[id] = _sprite(_textures[id.to_lower() + "_body"])
+				_bodies[id].visible = false
+				add_child(_bodies[id])
+	_generation = -1
+
 func _clear_hands() -> void:
 	for node in _hands.values(): node.free()
 	_hands.clear()
@@ -76,30 +109,39 @@ func _clear_hands() -> void:
 func _key(occurrence: Dictionary) -> String:
 	return "%s/%d/%s" % [occurrence.source, occurrence.turn, occurrence.kind]
 
+func _facing_scale(id: String, scale_factor: float) -> Vector2:
+	# The approved cutouts face inward in their matching roles.
+	return Vector2(1.0 if _roles[id] == _kits[id] else -1.0, 1.0) * scale_factor
+
+func _hand_anchor(id: String) -> Vector2:
+	var body: Sprite2D = _bodies[id]
+	return body.transform * HINGES[_kits[id]]
+
 func _hand(occurrence: Dictionary) -> Node2D:
 	var key := _key(occurrence)
 	if not _hands.has(key):
 		var node := Node2D.new()
-		var texture: Texture2D = _textures[str(occurrence.source).to_lower() + "_hands"]
+		var kit: String = _kits[occurrence.source]
+		var texture: Texture2D = _textures[kit.to_lower() + "_hands"]
 		var halo := _sprite(texture)
 		halo.name = "Glow"
-		halo.position = -HINGES[occurrence.source]
+		halo.position = -HINGES[kit]
 		var material := ShaderMaterial.new()
 		material.shader = _glow
 		halo.material = material
 		node.add_child(halo)
 		var art := _sprite(texture)
 		art.name = "Art"
-		art.position = -HINGES[occurrence.source]
+		art.position = -HINGES[kit]
 		node.add_child(art)
 		add_child(node)
 		_hands[key] = node
 	return _hands[key]
 
 func _pose(occurrence: Dictionary, role: String, position: Vector2, scale_factor: float,
-	phase: float, mirror: float = 1.0, angle: float = 0.0) -> void:
+	phase: float, angle: float = 0.0) -> void:
 	var node := _hand(occurrence)
-	node.transform = Transform2D(angle, Vector2(mirror, 1) * scale_factor, 0.0, position)
+	node.transform = Transform2D(angle, _facing_scale(occurrence.source, scale_factor), 0.0, position)
 	node.visible = true
 	var halo: Sprite2D = node.get_node("Glow")
 	halo.visible = role in ["transfer", "held", "shine"]
@@ -156,45 +198,48 @@ func present(description: Dictionary, rect: Rect2) -> void:
 		_player.modulate = Color(1, 0.78, 0.66) if reaction > 0.35 and reaction < 0.75 else Color.WHITE
 	var wanted: Array[String] = []
 	var any_threat := false
-	for id in ["A", "B"]:
+	for id in _bodies:
 		var row: Dictionary = sources.get(id, {})
 		var occurrence: Dictionary = row.get("occurrence", {})
 		var body: Sprite2D = _bodies[id]
-		body.position = rect.position + rect.size * POSITIONS[id] - BASELINES[id] * scale_factor
-		body.scale = Vector2.ONE * scale_factor
+		var role: String = _roles[id]
+		var kit: String = _kits[id]
+		var body_scale := _facing_scale(id, scale_factor)
+		var baseline: Vector2 = rect.position + rect.size * POSITIONS[role]
+		body.transform = Transform2D(0.0, body_scale, 0.0, baseline - BASELINES[kit] * body_scale)
 		var capturing: bool = not transfer.is_empty() and transfer.occurrence.source == id
 		var acting: bool = cue.get("type", "") == "resolve" and cue.get("source", "") == id
 		var moving: bool = cue.get("type", "") == "move" and cue.get("actor", "") == id
-		body.visible = row.get("present", false) or capturing or acting or moving
+		body.visible = row.get("present", false)
 		body.modulate = Color("f7d9a3") if row.get("inspected", false) else Color.WHITE
-		var anchor: Vector2 = body.position + HINGES[id] * scale_factor
+		var anchor := _hand_anchor(id)
 		var threatens: bool = row.get("threatens_player", false)
 		any_threat = any_threat or threatens
-		var local_phase := fposmod(phase + (0.36 if id == "B" else 0.0), 1.0)
+		var local_phase := fposmod(phase + (0.36 if role == "B" else 0.0), 1.0)
 		# During committed resolutions keep the next announcement quiet, rather
 		# than showing next-turn attacks on top of this turn's actual outcome.
 		if not occurrence.is_empty():
 			var press := sin(local_phase * TAU) if threatens and row.get("kind", "") != "swap" else 0.0
-			var direction := 1.0 if id == "A" else -1.0
+			var direction := 1.0 if role == "A" else -1.0
 			_pose(occurrence, "rehearsal" if threatens else "watchful", anchor + Vector2(press * direction * 4, 0) * scale_factor,
-				scale_factor, local_phase, 1.0, press * 0.023 if threatens else direction * 0.40)
+				scale_factor, local_phase, press * 0.023 if threatens else direction * 0.40)
 			wanted.append(_key(occurrence))
 		if body.visible:
-			var identity := "◇ A" if id == "A" else "○ B"
+			var identity := ("◇ " if role == "A" else "○ ") + str(id)
 			if row.get("kind", "") == "swap": identity += " · " + row.name
-			_labels.append({"at": body.position + Vector2(125, 4) * scale_factor,
+			_labels.append({"at": body.transform * Vector2(125, 4),
 				"text": identity + (" · watching" if not threatens and not acting and not capturing and not moving else "")})
 		if not description.busy and not occurrence.is_empty(): _prior_sources[id] = occurrence.duplicate(true)
 	if not transfer.is_empty():
 		var occurrence: Dictionary = transfer.occurrence
 		var id: String = occurrence.source
-		var origin: Vector2 = _bodies[id].position + HINGES[id] * scale_factor
+		var origin := _hand_anchor(id)
 		var t := smoothstep(0.08, 0.90, transfer.progress)
 		# B's same physical cutout makes a continuous half-turn about its hinge,
 		# so its palms end facing outward rather than threatening the player.
-		var angle := -PI * t if id == "B" else -sin(t * PI) * 0.12
+		var angle := -PI * t if _roles[id] == "B" else -sin(t * PI) * 0.12
 		_pose(occurrence, "transfer", _travel(origin, destination, transfer.progress, scale_factor),
-			scale_factor * lerpf(1.0, 0.45, t), phase, 1.0, angle)
+			scale_factor * lerpf(1.0, 0.45, t), phase, angle)
 		wanted.append(_key(occurrence))
 		var trail := PackedVector2Array()
 		for i in range(18):
@@ -202,7 +247,7 @@ func present(description: Dictionary, rect: Rect2) -> void:
 		_lines.append({"points": trail, "color": Color("b6e6ce")})
 	if not held.is_empty():
 		_pose(held, "held", destination + Vector2(sin(phase * TAU) * 2, 0) * scale_factor,
-			scale_factor * 0.45, phase, 1.0, (-PI if held.source == "B" else 0.0) + sin(phase * TAU) * 0.025)
+			scale_factor * 0.45, phase, (-PI if _roles.get(held.source, "") == "B" else 0.0) + sin(phase * TAU) * 0.025)
 		wanted.append(_key(held))
 		_lines.append({"points": PackedVector2Array([handle, destination]), "color": Color("b6e6ce")})
 		_labels.append({"at": destination + Vector2(-8, -39) * scale_factor,
@@ -211,14 +256,16 @@ func present(description: Dictionary, rect: Rect2) -> void:
 		var exchange: Dictionary = {}
 		for event in cue.get("events", []):
 			if event.type == "swap": exchange = event
-		var caption := "You Shine · Swap" if cue.type == "shine" else "Switcher"
+		var source_name: String = sources.get(cue.source, {}).get("name", "")
+		if source_name.is_empty(): source_name = P.actor(cue.source)
+		var caption := "You Shine · Swap" if cue.type == "shine" else source_name
 		if exchange.is_empty():
 			caption += " · target %s missed" % P.cell(cue.to) if not cue.cells.is_empty() else " · no valid exchange"
 		else:
 			caption += " · exchange first, then damage"
 			var anchors := PackedVector2Array()
 			for actor in [exchange.actor, exchange.other]:
-				anchors.append(handle if actor == "player" else _bodies[actor].position + HINGES[actor] * scale_factor)
+				anchors.append(handle if actor == "player" else _hand_anchor(actor))
 			_lines.append({"points": anchors, "color": Color("b6e6ce")})
 			var traded := Timeline.exchange_progress(progress)
 			for amount in [traded, 1.0 - traded]:
@@ -234,15 +281,15 @@ func present(description: Dictionary, rect: Rect2) -> void:
 		var occurrence: Dictionary = held if cue.type == "shine" else _prior_sources.get(id, {})
 		if relevant and not occurrence.is_empty() and occurrence.source == id:
 			var position := destination
-			var angle := -PI if id == "B" else 0.0
+			var angle := -PI if _roles.get(id, "") == "B" else 0.0
 			var factor := scale_factor * 0.55
 			if cue.type == "resolve":
-				position = _bodies[id].position + HINGES[id] * scale_factor
+				position = _hand_anchor(id)
 				angle = 0.0
 				factor = scale_factor
-			var direction := -1.0 if cue.type == "resolve" and id == "B" else 1.0
+			var direction := -1.0 if cue.type == "resolve" and _roles.get(id, "") == "B" else 1.0
 			position.x += sin(progress * PI) * direction * 28 * scale_factor
-			_pose(occurrence, cue.type, position, factor, phase, 1.0, angle)
+			_pose(occurrence, cue.type, position, factor, phase, angle)
 			wanted.append(_key(occurrence))
 		var target_names: Array[String] = []
 		for victim in victims: target_names.append("you" if victim == "player" else str(victim))

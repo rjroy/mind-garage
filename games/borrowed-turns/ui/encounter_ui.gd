@@ -4,17 +4,13 @@ extends Control
 const Encounter = preload("res://model/encounter.gd")
 const Board = preload("res://ui/board.gd")
 const P = preload("res://ui/presentation.gd")
-const Production = preload("res://content/escape.gd")
+const EncounterContent = preload("res://content/encounters.gd")
 const Shadow = preload("res://ui/shadow_presentation.gd")
-const TwoPursuers = preload("res://content/two_pursuers.gd")
-const Switcher = preload("res://content/switcher.gd")
-const SwitcherB = preload("res://content/switcher_b.gd")
-const ENCOUNTERS := {"switcher": "Switcher", "switcher-b": "Switcher + B",
-	"two-pursuers": "Two pursuers", "escape": "Original encounter"}
 const SliceAssets = preload("res://ui/two_pursuer_assets.gd")
 const TwoSourcePresentation = preload("res://ui/two_pursuer_presentation.gd")
 const TwoSourceRig = preload("res://ui/two_pursuer_rig.gd")
 var model = Encounter.new()
+var encounters: Dictionary = EncounterContent.registry()
 var shadow = Shadow.new()
 var encounter_id := "switcher"
 var encounter_picker: OptionButton
@@ -23,10 +19,9 @@ var _pending_encounter := ""
 var _puppet_pack := ""
 var _slice_art: Dictionary = {}
 var _puppet_art: Dictionary = {}
-var _asset_error := ""
-var _asset_dialog: AcceptDialog
 var _puppet_rig: Node2D
 var _two_source_presentation = TwoSourcePresentation.new()
+var _stage_sources: Array = []
 var baseline_feedback_left := 0.0
 var _displayed_held: Dictionary = {}
 var fixture: Dictionary
@@ -75,7 +70,6 @@ var _stage_controls: Button
 
 func _ready() -> void:
 	theme = P.make_theme()
-	fixture = Production.DATA.duplicate(true)
 	_puppet_pack = "res://assets/puppets/two-pursuers"
 	for argument in OS.get_cmdline_user_args():
 		if argument == "--invert" or argument.begins_with("--invert="):
@@ -90,17 +84,15 @@ func _ready() -> void:
 			return
 		elif argument.begins_with("--encounter="):
 			encounter_id = argument.trim_prefix("--encounter=")
-			if not ENCOUNTERS.has(encounter_id):
+			if not encounters.has(encounter_id):
 				push_error("Borrowed Turns: unknown encounter " + encounter_id)
 				get_tree().quit(2)
 				return
 		elif argument.begins_with("--puppet-pack="):
 			_puppet_pack = argument.trim_prefix("--puppet-pack=")
-	if _uses_theatre():
-		if not _prepare_slice_assets():
-			push_error("Borrowed Turns: " + _asset_error)
-			get_tree().quit(2)
-			return
+	if not _load_stage_art():
+		get_tree().quit(2)
+		return
 	fixture = _encounter_data(encounter_id).duplicate(true)
 	_build_interface()
 	_start_encounter()
@@ -111,7 +103,7 @@ func _process(delta: float) -> void:
 	var frame: Dictionary = shadow.frame()
 	board.set_presentation(frame)
 	if frame.held != _displayed_held: _refresh_storage(frame.held)
-	_present_theatre()
+	_present_stage()
 	if resolving:
 		baseline_feedback_left = maxf(0, baseline_feedback_left - delta)
 		if baseline_feedback_left <= 0 and not shadow.frame().busy:
@@ -119,44 +111,33 @@ func _process(delta: float) -> void:
 			_refresh()
 			board.grab_focus()
 
-func _prepare_slice_assets() -> bool:
-	_asset_error = ""
-	if _slice_art.is_empty():
-		var standees: Dictionary = SliceAssets.standees()
-		if standees.has("error"):
-			_asset_error = standees.error
-			return false
-		_slice_art = standees
-	if _puppet_art.is_empty():
-		var puppets: Dictionary = SliceAssets.puppets(_puppet_pack)
-		if puppets.has("error"):
-			_asset_error = puppets.error
-			return false
-		_puppet_art = puppets.textures
+func _load_stage_art() -> bool:
+	var standees: Dictionary = SliceAssets.standees()
+	if standees.has("error"):
+		push_error("Borrowed Turns: " + standees.error)
+		return false
+	var puppets: Dictionary = SliceAssets.puppets(_puppet_pack)
+	if puppets.has("error"):
+		push_error("Borrowed Turns: " + puppets.error)
+		return false
+	_slice_art = standees
+	_puppet_art = puppets.textures
 	return true
 
 func _sync_encounter_picker() -> void:
 	for i in range(encounter_picker.item_count):
 		if encounter_picker.get_item_metadata(i) == encounter_id: encounter_picker.select(i)
 
-func _uses_theatre() -> bool:
-	return encounter_id != "escape"
-
 func _encounter_data(id: String) -> Dictionary:
-	match id:
-		"switcher": return Switcher.DATA
-		"switcher-b": return SwitcherB.DATA
-		"two-pursuers": return TwoPursuers.DATA
-		"escape": return Production.DATA
-	return {}
+	return encounters.get(id, {}).get("data", {})
 
 func request_encounter(id: String) -> void:
-	if not ENCOUNTERS.has(id) or id == encounter_id:
+	if not encounters.has(id) or id == encounter_id:
 		_sync_encounter_picker()
 		return
 	_pending_encounter = id
 	print("Borrowed Turns UI: encounter change requested current=%s candidate=%s" % [encounter_id, id])
-	encounter_dialog.dialog_text = "Start %s?\nThis replaces the current run, including held actions, budgets and history." % ENCOUNTERS[id]
+	encounter_dialog.dialog_text = "Start %s?\nThis replaces the current run, including held actions, budgets and history." % encounters[id].name
 	# A cancel button can still have a deferred hide pending. Reopening after
 	# that notification prevents the new request being hidden by the old one.
 	encounter_dialog.popup_centered.call_deferred(Vector2i(560, 210))
@@ -170,12 +151,6 @@ func _confirm_encounter_request() -> void:
 	var id := _pending_encounter
 	print("Borrowed Turns UI: encounter change confirmation candidate=", id)
 	if id.is_empty(): return
-	if id != "escape" and not _prepare_slice_assets():
-		push_warning("Borrowed Turns: encounter unchanged; " + _asset_error)
-		_asset_dialog.dialog_text = _asset_error + "\nThe current encounter has been kept."
-		_asset_dialog.popup_centered(Vector2i(660, 260))
-		_cancel_encounter_request()
-		return
 	print("Borrowed Turns UI: replacing encounter %s -> %s" % [encounter_id, id])
 	encounter_id = id
 	fixture = _encounter_data(id).duplicate(true)
@@ -183,16 +158,10 @@ func _confirm_encounter_request() -> void:
 	_sync_encounter_picker()
 	_start_encounter()
 
-func _configure_theatre() -> void:
-	if not _uses_theatre():
-		board.configure_standees({}, {})
-		board.theatre_mode = false
-		if _puppet_rig: _puppet_rig.visible = false
-		return
+func _configure_stage() -> bool:
 	if not board.configure_standees(_slice_art.textures, _slice_art.assembly):
 		push_error("Borrowed Turns: approved standee assembly failed; no substitute will be used.")
-		get_tree().quit(2)
-		return
+		return false
 	if _puppet_rig == null:
 		_puppet_rig = TwoSourceRig.new()
 		_puppet_rig.name = "TwoSourcePerformance"
@@ -200,23 +169,19 @@ func _configure_theatre() -> void:
 		board.add_child(_puppet_rig)
 		if not _puppet_rig.configure_assets(_puppet_art):
 			push_error("Borrowed Turns: temporary puppet assembly failed.")
-			get_tree().quit(2)
-			return
-	_present_theatre()
+			return false
+	_puppet_rig.bind_composition(state.enemies)
+	_present_stage()
+	return true
 
-func _present_theatre() -> void:
+func _present_stage() -> void:
 	if _puppet_rig == null: return
-	var active := _uses_theatre()
-	board.theatre_mode = active
-	if not active:
-		_puppet_rig.visible = false
-		return
 	if board.stage_renderer:
 		# Explicit source-layer order: backdrop / performers / floor / board /
 		# foreground. All three approved stage source textures stay unchanged.
 		board.move_child(board.stage_renderer.backdrop, 0)
 		board.move_child(_puppet_rig, 1)
-	var description: Dictionary = _two_source_presentation.compose(state, shadow.frame(), generation, ["A", "B"], source)
+	var description: Dictionary = _two_source_presentation.compose(state, shadow.frame(), generation, _stage_sources, source)
 	_puppet_rig.present(description, board._stage_rect())
 
 func _label(parent: Node, text: String = "", font_size: int = 16, wrap: bool = false) -> Label:
@@ -245,8 +210,8 @@ func _box(parent: Node, vertical: bool = true) -> BoxContainer:
 
 func _build_interface() -> void:
 	encounter_picker = OptionButton.new()
-	for id in ENCOUNTERS:
-		encounter_picker.add_item(ENCOUNTERS[id])
+	for id in encounters:
+		encounter_picker.add_item(encounters[id].name)
 		encounter_picker.set_item_metadata(encounter_picker.item_count - 1, id)
 	encounter_picker.item_selected.connect(func(index: int): request_encounter(encounter_picker.get_item_metadata(index)))
 	_sync_encounter_picker()
@@ -256,9 +221,6 @@ func _build_interface() -> void:
 	encounter_dialog.canceled.connect(_cancel_encounter_request)
 	encounter_dialog.get_cancel_button().pressed.connect(_cancel_encounter_request)
 	add_child(encounter_dialog)
-	_asset_dialog = AcceptDialog.new()
-	_asset_dialog.title = "Temporary artwork unavailable"
-	add_child(_asset_dialog)
 	_build_stage_shell()
 	_stage_root.add_child(encounter_picker)
 	objective = _label(_stage_root, "", 13, true)
@@ -330,9 +292,10 @@ func _build_interface() -> void:
 	help_dialog.title = "Controls and borrowed abilities"
 	help_dialog.dialog_text = "Each turn starts with 3 AP. Each one-cell cardinal move, Capture and Shine costs 1 AP. End turn is free and always explicit; running out of AP never ends your turn automatically.\n\nCapture arms you without choosing a source or target. The next enemy attack that hits you keeps all its normal effects and damage, then you acquire its ability if you and its source survive. Misses leave Capture armed. You cannot arm it twice.\nYour current ability stays until a new hit replaces it. Shine uses it for 1 AP without forgetting it. Keep it as long as its source lives; defeating that source removes the ability after the full attack resolves.\n\nChoose an operation, inspect its exact preview, then Confirm. Move and Shine require a target. Cancel only backs out of an unconfirmed command; it does not undo arming.\nM: Move, C: Capture, S: Shine, E: prepare End turn.\nTab / Shift+Tab: controls. Arrows on board: inspect.\nEnter selects a cell; a separate Enter confirms. Esc / right click: cancel preview.\nCtrl+R: restart. Nothing advances during inspection or preview.\n\nEnemy plans resolve only when you End turn. Capture does not cancel their attacks. Teal outlines show legal choices. Preview lists ordered effects; Recent events contains only confirmed commands."
 	help_dialog.dialog_text += "\n\nStage: click figure or foot marker; [ / ] cycles figures.\nAlt-click targets floor through figures. Details opens exact effects.\nTheatre positions identify actors, not compass directions; rehearsal does not advance time."
-	help_dialog.dialog_text += "\n\nFights end when all foes are defeated. In Two pursuers, A chases with a narrow shove; B seeks usable maximum attack range with a three-wide shove. Width is across the attack, not extra forward range. Shine keeps the borrowed attack's width.\nEnd turn resolves old attacks, then opponents' one-step movement, then new aim. The explicit escape comparison keeps its exit objective."
+	help_dialog.dialog_text += "\n\nFights end when all foes are defeated. In Two pursuers, A chases with a narrow shove; B seeks usable maximum attack range with a three-wide shove. Width is across the attack, not extra forward range. Shine keeps the borrowed attack's width.\nEnd turn resolves old attacks, then opponents' one-step movement, then new aim."
 	help_dialog.dialog_text += "\nTwo pursuers: cool A/diamond and warm B/circle wavefronts show current threats."
 	help_dialog.dialog_text += "\n\nSwitcher (A, provisional artwork): one marked target tile, not a line attack. Its hollow source pad is the other exchange endpoint, not a damage tile. The target cell stays locked when you move away; anyone left there can be hit. It exchanges positions first, then damages the target. Shine uses the same swap on an occupied enemy tile. A miss still spends the attack, not your armed Capture.\nChoose Switcher + B to combine that exchange with B's unchanged wide shove."
+	help_dialog.dialog_text += "\n\nPull deals damage along a cardinal line, then pulls each surviving target one legal step toward the attacker. Shine pulls toward you. Burst marks an area at the end of its line."
 	add_child(help_dialog)
 	# Keep tab order: events, preview, plans.
 	event_tabs.move_child(details_scroll, 2)
@@ -442,16 +405,21 @@ func _start_encounter() -> void:
 	generation += 1
 	model.configure(fixture, "R2")
 	state = model.snapshot()
+	_stage_sources.clear()
+	for enemy in state.enemies:
+		if _stage_sources.size() < 2: _stage_sources.append(enemy.id)
+	board.bind_composition(state.enemies)
 	shadow.reset(state, generation)
 	baseline_feedback_left = 0.0
 	changed = false
 	resolving = false
 	board.clear_pulse()
-	_configure_theatre()
+	if not _configure_stage():
+		get_tree().quit(2)
+		return
 	board.cursor = state.player.pos.duplicate()
-	var goal := "Defeat all foes." if state.get("objective", "escape") == "defeat_all" else "Reach the exit."
-	history_lines = ["Turn 1 · %s\n%s Capture arms for 1 AP; taking the next hit acquires its ability. End turn when ready." % [
-		ENCOUNTERS[encounter_id], goal]]
+	history_lines = ["Turn 1 · %s\nDefeat all foes. Capture arms for 1 AP; taking the next hit acquires its ability. End turn when ready." %
+		encounters[encounter_id].name]
 	history.text = "\n".join(history_lines)
 	new_events.visible = false
 	_clear_selection()
@@ -485,8 +453,7 @@ func _clear_selection() -> void:
 func _refresh() -> void:
 	objective.text = P.objective_text(state)
 	var terminal: bool = state.status != "playing"
-	var victory := "Victory" if state.get("objective", "escape") == "defeat_all" else "Escaped"
-	phase.text = "Turn %d\n%s" % [state.turn, victory if state.status == "won" else ("Caught" if terminal else ("Resolving" if resolving else "Your turn"))]
+	phase.text = "Turn %d\n%s" % [state.turn, "Victory" if state.status == "won" else ("Caught" if terminal else ("Resolving" if resolving else "Your turn"))]
 	budgets.text = "AP %d / %d · End turn: free\n%s" % [state.action_points, state.rules.actions,
 		"Capture armed · next hit still hurts" if state.capture_armed else "Capture: 1 AP · arms your next hit"]
 	_refresh_storage(shadow.frame().held)
@@ -503,8 +470,7 @@ func _refresh() -> void:
 	action_buttons.shine.disabled = terminal or resolving or state.action_points == 0 or state.stored.is_empty()
 	cancel_button.disabled = mode == "inspect" or resolving
 	result.visible = terminal
-	result.text = ("Victory · All foes defeated." if state.get("objective", "escape") == "defeat_all"
-		else "Escaped · The exit is yours.") if state.status == "won" else "Caught · Your health reached zero. Inspect the recent events."
+	result.text = "Victory · All foes defeated." if state.status == "won" else "Caught · Your health reached zero. Inspect the recent events."
 	instruction.visible = not terminal
 	consequence.visible = not terminal
 	confirm_button.visible = not terminal
@@ -537,7 +503,7 @@ func _refresh_storage(held: Dictionary) -> void:
 		var width: int = held.ability.get("width", 1)
 		stored.text = "Held %s · %s · %d damage / range %d%s\nShine: 1 AP · kept while source lives%s" % [
 			str(held.source).to_upper(), str(held.ability.kind).capitalize(), held.ability.damage,
-			held.ability.range, " / width %d" % width if width > 1 else "", " · push" if held.ability.push else ""]
+			held.ability.range, " / width %d" % width if width > 1 else "", " · pull" if held.ability.kind == "pull" else (" · push" if held.ability.push else "")]
 
 func _visible_intentions() -> Array:
 	return [] if shadow.frame().get("announcements_deferred", false) else state.intentions
@@ -563,7 +529,6 @@ func _inspect_cell(cell: Array) -> void:
 	if state.player.pos == cell: occupants.append("You · %d HP" % state.player.hp)
 	for enemy in state.enemies:
 		if enemy.pos == cell: occupants.append("%s · %s · %d HP" % [str(enemy.id).to_upper(), P.enemy_name(enemy), enemy.hp])
-	if state.get("objective", "escape") == "escape" and state.has("exit") and state.exit.pos == cell: occupants.append("Exit")
 	var threats: Array[String] = []
 	for intent in _visible_intentions():
 		if cell in intent.cells: threats.append(str(intent.source).to_upper())
@@ -574,8 +539,7 @@ func _inspect_cell(cell: Array) -> void:
 func _update_board() -> void:
 	board.set_view(state, prediction, candidates, selected, source)
 	board.set_presentation(shadow.frame())
-	board.theatre_mode = _uses_theatre()
-	_present_theatre()
+	_present_stage()
 
 func _choose_action(action: String) -> void:
 	if resolving or state.status != "playing": return
@@ -592,7 +556,7 @@ func _choose_action(action: String) -> void:
 			instruction.text = "End turn: free. Inspect attacks and movement before confirming."
 			command = {"type": "end_turn"}
 			_assess_command()
-	if _uses_theatre() and mode in ["move", "shine"]:
+	if mode in ["move", "shine"]:
 		instruction.text += " Alt-click targets floor through figures."
 	_rebuild_candidates()
 	_refresh()
@@ -680,7 +644,7 @@ func _cancel() -> void:
 
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not event is InputEventKey or not event.pressed or event.echo: return
-	if restart_dialog.visible or help_dialog.visible or encounter_dialog.visible or _asset_dialog.visible: return
+	if restart_dialog.visible or help_dialog.visible or encounter_dialog.visible: return
 	if event.ctrl_pressed and event.keycode == KEY_R:
 		_request_restart()
 		get_viewport().set_input_as_handled()

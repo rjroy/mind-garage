@@ -6,14 +6,12 @@ signal cell_inspected(cell: Array)
 signal cancel_requested
 
 const P = preload("res://ui/presentation.gd")
-const ShadowRenderer = preload("res://ui/shadow_renderer.gd")
 const ShadowPresentation = preload("res://ui/shadow_presentation.gd")
 const PaperCells = preload("res://ui/paper_cells.gd")
 const StageProjection = preload("res://ui/stage_projection.gd")
 const StageRenderer = preload("res://ui/stage_renderer.gd")
 const Regions = preload("res://ui/telegraph_regions.gd")
 const WavefrontOverlay = preload("res://ui/wavefront_overlay.gd")
-var shadow_renderer = ShadowRenderer.new()
 var paper_cells = PaperCells.new()
 var stage_projection = StageProjection.new()
 var stage_renderer: RefCounted
@@ -31,7 +29,6 @@ var hover_cell: Array = []
 var last_events: Array = []
 var accent := 0.0
 var pulse_tween: Tween
-var theatre_mode := false
 var _standee_textures: Dictionary = {}
 var _standee_images: Dictionary = {}
 var _standee_assembly: Dictionary = {}
@@ -39,6 +36,15 @@ var _focused_actor := ""
 var _hover_actor := ""
 var _motion_before: Dictionary = {}
 var wavefront_overlay = WavefrontOverlay.new()
+var _stage_roles: Dictionary = {}
+var _stage_kits: Dictionary = {}
+
+func bind_composition(enemies: Array) -> void:
+	_stage_roles = P.stage_roles(enemies)
+	_stage_kits.clear()
+	for enemy in enemies:
+		var id := str(enemy.id)
+		_stage_kits[id] = P.enemy_kit(enemy)
 
 func _ready() -> void:
 	focus_mode = Control.FOCUS_ALL
@@ -57,6 +63,7 @@ func _on_resized() -> void:
 	queue_redraw()
 
 func set_view(snapshot: Dictionary, predicted: Dictionary, legal_cells: Array, target: Array, selected_source: String) -> void:
+	if _stage_roles.is_empty(): bind_composition(snapshot.get("enemies", []))
 	state = snapshot
 	preview = predicted
 	candidates = legal_cells
@@ -77,15 +84,15 @@ func _visible_intentions() -> Array:
 	return state.get("intentions", [])
 
 func announcement_marks() -> Array:
-	if not theatre_mode or state.is_empty(): return []
+	if state.is_empty(): return []
 	var marks: Array = []
 	for intent in _visible_intentions():
-		if intent.source not in ["A", "B"] or intent.kind not in ["shove", "swap"]: continue
+		if not _stage_roles.has(intent.source) or not P.stage_supports(state, intent.source, intent.kind): continue
 		for enemy in state.get("enemies", []):
 			if enemy.id != intent.source or enemy.get("hp", 0) <= 0: continue
 			var row := {"source": intent.source, "turn": state.turn, "kind": intent.kind,
 				"origin": enemy.pos.duplicate(), "cells": intent.cells.duplicate(true),
-				"lane": 0 if intent.source == "A" else 1}
+				"lane": _stage_roles[intent.source]}
 			if intent.kind == "swap":
 				row.origin = intent.from.duplicate()
 				row["target"] = intent.target.duplicate()
@@ -101,9 +108,6 @@ func announcement_regions() -> Array:
 	for row in regions:
 		row["contours"] = Regions.boundaries(row.cells)
 	return regions
-
-func _uses_wavefronts() -> bool:
-	return theatre_mode and not _standee_textures.is_empty()
 
 func announcement_waves() -> Array:
 	var rows := announcement_regions()
@@ -127,21 +131,16 @@ func configure_standees(textures: Dictionary, assembly: Dictionary) -> bool:
 	_standee_assembly.clear()
 	_focused_actor = ""
 	_hover_actor = ""
-	_projection_size = Vector2(-1, -1)
 	for id in ["player", "A", "B"]:
 		var meta: Dictionary = assembly.get(id, {})
 		var texture = textures.get(id)
 		if not texture is Texture2D or not meta.get("canvas") is Vector2 or not meta.get("foot") is Vector2 \
-			or not meta.get("height_fraction") is float:
-			_sync_stage()
-			return false
+			or not meta.get("height_fraction") is float: return false
 		var canvas: Vector2 = meta.canvas
 		var foot: Vector2 = meta.foot
 		if not canvas.is_finite() or canvas.x <= 0 or canvas.y <= 0 or texture.get_size() != canvas \
 			or not foot.is_finite() or foot.x < 0 or foot.y < 0 or foot.x > canvas.x or foot.y > canvas.y \
-			or not is_finite(meta.height_fraction) or meta.height_fraction <= 0:
-			_sync_stage()
-			return false
+			or not is_finite(meta.height_fraction) or meta.height_fraction <= 0: return false
 	var images := {}
 	for id in ["player", "A", "B"]:
 		var image: Image = textures[id].get_image()
@@ -151,69 +150,20 @@ func configure_standees(textures: Dictionary, assembly: Dictionary) -> bool:
 	_standee_textures = textures.duplicate()
 	_standee_images = images
 	_standee_assembly = assembly.duplicate(true)
-	_sync_stage()
 	queue_redraw()
 	return true
 
 func show_transition(before: Dictionary) -> void:
-	_motion_before = before.duplicate(true) if theatre_mode else {}
+	_motion_before = before.duplicate(true)
 
 func _cue_event_end(cue: Dictionary) -> int:
-	var end: int = state.get("events", []).size()
-	for planned in shadow_frame.get("cues", []):
-		if planned.event_index > cue.get("event_index", -1):
-			end = mini(end, planned.event_index)
-	return end
+	return ShadowPresentation.cue_event_end(state.get("events", []).size(), shadow_frame.get("cues", []), cue)
 
 func _visual_actors() -> Array:
-	var actors: Dictionary = {}
-	if state.is_empty(): return []
-	actors.player = {"actor": "player", "cell": state.player.pos.duplicate(), "hp": state.player.hp}
-	for enemy in state.enemies:
-		actors[enemy.id] = {"actor": enemy.id, "cell": enemy.pos.duplicate(), "hp": enemy.hp}
-	for row in actors.values(): row["grid"] = Vector2(row.cell[0] + 0.5, row.cell[1] + 0.5)
-	if not _motion_before.is_empty():
-		var cue: Dictionary = shadow_frame.get("cue", {})
-		var events: Array = state.get("events", [])
-		var positions := {"player": _motion_before.player.pos}
-		var old: Dictionary = {"player": _motion_before.player}
-		for enemy in _motion_before.enemies:
-			positions[enemy.id] = enemy.pos
-			old[enemy.id] = enemy
-		var end := _cue_event_end(cue)
-		var start: int = cue.get("event_index", -1)
-		var progress: float = cue.get("progress", clampf((1.0 - accent) / 0.88, 0.0, 1.0))
-		var swap_cue: bool = cue.get("kind", "") == "swap"
-		var health := {}
-		for id in old: health[id] = old[id].hp
-		var alive := positions.keys()
-		for i in range(events.size()):
-			if not cue.is_empty() and i >= end: break
-			var event: Dictionary = events[i]
-			var amount := smoothstep(0.18, 0.80, progress) if i >= start else 1.0
-			if event.type in ["move", "displace"]:
-				var from := Vector2(event.from[0], event.from[1])
-				var to := Vector2(event.to[0], event.to[1])
-				positions[event.actor] = from.lerp(to, amount)
-			if event.type == "swap":
-				var from := Vector2(event.from[0], event.from[1])
-				var to := Vector2(event.to[0], event.to[1])
-				var exchanged := ShadowPresentation.exchange_progress(progress) if i >= start else 1.0
-				positions[event.actor] = from.lerp(to, exchanged)
-				positions[event.other] = to.lerp(from, exchanged)
-			var impacted := ShadowPresentation.impact_progress(progress) if swap_cue and i >= start else amount
-			if event.type == "damage" and (i < start or impacted >= 0.5): health[event.actor] = event.hp
-			if event.type == "death" and impacted >= 1.0: alive.erase(event.actor)
-		for id in old:
-			if id not in alive:
-				actors.erase(id)
-				continue
-			if not actors.has(id):
-				actors[id] = {"actor": id, "cell": old[id].pos.duplicate(), "hp": old[id].hp}
-			var pos = positions[id]
-			actors[id]["grid"] = Vector2(pos[0] + 0.5, pos[1] + 0.5)
-			if swap_cue: actors[id].hp = health[id]
-	return actors.values()
+	var pulse_progress := clampf((1.0 - accent) / 0.88, 0.0, 1.0)
+	# A settled finite cue must not fall back to the still-running Board pulse.
+	var pulse_before := _motion_before if shadow_frame.get("cues", []).is_empty() else {}
+	return ShadowPresentation.staged_actors(state, shadow_frame, pulse_before, pulse_progress).values()
 
 func standee_layout() -> Array:
 	if _standee_textures.is_empty() or state.is_empty(): return []
@@ -224,8 +174,9 @@ func standee_layout() -> Array:
 	var marker_size := Vector2(22, 14) * clampf(_stage_rect().size.y / 514.0, 0.85, 1.2)
 	for actor in _visual_actors():
 		var id: String = actor.actor
-		if not _standee_textures.has(id): continue
-		var meta: Dictionary = _standee_assembly[id]
+		var kit: String = "player" if id == "player" else _stage_kits.get(id, "")
+		if not _standee_textures.has(kit): continue
+		var meta: Dictionary = _standee_assembly[kit]
 		var factor: float = _stage_rect().size.y * meta.height_fraction / meta.canvas.y
 		var foot: Vector2 = projection.project(actor.grid)
 		var rect := Rect2(foot - meta.foot * factor, meta.canvas * factor)
@@ -235,7 +186,7 @@ func standee_layout() -> Array:
 				if enemy.id == id: actor_name = P.enemy_name(enemy)
 		rows.append({"actor": id, "cell": actor.cell.duplicate(), "rect": rect, "foot": foot,
 			"tab_rect": Rect2(foot - marker_size / 2.0, marker_size), "opacity": 1.0,
-			"texture": _standee_textures[id], "hp": actor.hp,
+			"texture": _standee_textures[kit], "kit": kit, "hp": actor.hp,
 			"name": actor_name,
 			"roster_rect": _roster_rect(id) if id in living else Rect2()})
 	rows.sort_custom(func(a: Dictionary, b: Dictionary): return a.foot.y < b.foot.y)
@@ -250,7 +201,7 @@ func standee_layout() -> Array:
 
 func _roster_rect(id: String) -> Rect2:
 	# Canonical slots do not shuffle as pieces move, depth-sort or die.
-	var slot := ["player", "A", "B"].find(id)
+	var slot: int = 0 if id == "player" else _stage_roles.get(id, -2) + 1
 	if slot < 0: return Rect2()
 	var stage := _stage_rect()
 	var grid := _board_rect()
@@ -272,7 +223,7 @@ func _actor_at_rows(local_pixel: Vector2, rows: Array) -> String:
 		var row: Dictionary = rows[index]
 		var rect: Rect2 = row.rect
 		if not rect.has_point(local_pixel): continue
-		var image: Image = _standee_images[row.actor]
+		var image: Image = _standee_images[row.kit]
 		var uv := (local_pixel - rect.position) / rect.size
 		var pixel := Vector2i(uv * Vector2(image.get_size()))
 		if image.get_pixel(pixel.x, pixel.y).a >= 0.1: return row.actor
@@ -320,14 +271,8 @@ func _ensure_projection():
 		_projection_size = size
 		_projection_dimensions = dimensions
 		var rect := _stage_rect()
-		if not _standee_textures.is_empty():
-			stage_projection.configure_ground(dimensions.x, dimensions.y,
-				Rect2(rect.position + rect.size * Vector2(0.08, 0.445), rect.size * Vector2(0.74, 0.51)), 30.0)
-		else:
-			var quad := PackedVector2Array()
-			for point in [Vector2(0.25, 0.46), Vector2(0.75, 0.46), Vector2(0.77, 0.885), Vector2(0.20, 0.885)]:
-				quad.append(rect.position + point * rect.size)
-			stage_projection.configure(dimensions.x, dimensions.y, quad)
+		stage_projection.configure_ground(dimensions.x, dimensions.y,
+			Rect2(rect.position + rect.size * Vector2(0.08, 0.445), rect.size * Vector2(0.74, 0.51)), 30.0)
 	return stage_projection
 
 func _sync_stage() -> void:
@@ -337,9 +282,7 @@ func _sync_stage() -> void:
 		stage_renderer = StageRenderer.new()
 		stage_renderer.attach(self)
 	var projection = _ensure_projection()
-	stage_renderer.configure(_stage_rect(), Vector2i(state.width, state.height), projection, piece_appearance, visual_seed,
-		0.33 if not _standee_textures.is_empty() else 0.06, 0.436 if not _standee_textures.is_empty() else 0.0)
-	stage_renderer.set_visible(true)
+	stage_renderer.configure(_stage_rect(), Vector2i(state.width, state.height), projection, piece_appearance, visual_seed)
 
 func pulse(events: Array) -> void:
 	clear_pulse()
@@ -360,9 +303,10 @@ func _process(_delta: float) -> void:
 	if accent > 0.0:
 		queue_redraw()
 
-func _cell_size() -> float:
-	if state.is_empty(): return 1.0
-	return float(figure_layout(state.player.pos)["size"])
+func _preview_scale() -> float:
+	var polygon := cell_polygon(state.player.pos)
+	if polygon.size() != 4: return 0.0
+	return (polygon[0].distance_to(polygon[1]) + polygon[3].distance_to(polygon[2])) * 0.26
 
 func _board_rect() -> Rect2:
 	var projection = _ensure_projection()
@@ -387,15 +331,6 @@ func _cell_rect(cell: Array) -> Rect2:
 
 func piece_appearance(cell: Array) -> Dictionary:
 	return paper_cells.sample(cell, visual_seed)
-
-func figure_layout(cell: Array) -> Dictionary:
-	if state.is_empty() or cell.size() != 2:
-		return {"origin": Vector2.ZERO, "foot": Vector2.ZERO, "size": 0.0}
-	var origin := cell_center(cell)
-	var polygon := cell_polygon(cell)
-	if polygon.size() != 4: return {"origin": origin, "foot": origin, "size": 0.0}
-	var extent := (polygon[0].distance_to(polygon[1]) + polygon[3].distance_to(polygon[2])) * 0.26
-	return {"origin": origin - Vector2(0, extent * 0.40), "foot": origin, "size": extent}
 
 func _from_pixel(pixel: Vector2) -> Array:
 	return _ensure_projection().cell_at(pixel)
@@ -468,10 +403,9 @@ func _tile(cell: Array, inset: float, color: Color, filled: bool = false, width:
 		polygon.append(polygon[0])
 		draw_polyline(polygon, color, width, true)
 
-func _arrow(from: Vector2, to: Vector2, color: Color, dashed: bool) -> void:
+func _arrow(from: Vector2, to: Vector2, color: Color) -> void:
 	if from.is_equal_approx(to): return
-	if dashed: draw_dashed_line(from, to, color, 2.0, 6.0)
-	else: draw_line(from, to, color, 3.0, true)
+	draw_line(from, to, color, 3.0, true)
 	var direction := (to - from).normalized()
 	var side := Vector2(-direction.y, direction.x)
 	draw_colored_polygon(PackedVector2Array([to, to - direction * 9 + side * 5, to - direction * 9 - side * 5]), color)
@@ -517,7 +451,7 @@ func _draw_effect_footprint(footprint: Dictionary, active_shadow: bool = false) 
 					target = event.target
 					break
 		if origin.size() == 2 and target.size() == 2:
-			_arrow(cell_center(origin), cell_center(target), _borrowed(), false)
+			_arrow(cell_center(origin), cell_center(target), _borrowed())
 
 func _draw_exchange_link(origin: Array, target: Array, phase: float, color: Color) -> void:
 	# Hollow exchange endpoints are not extra threatened tiles. Only the model
@@ -540,35 +474,6 @@ func _draw_choices() -> void:
 		_tile(cell, 5, _borrowed(), false, 1.5)
 		draw_circle(cell_center(cell) + Vector2(-5, 0), 2, _borrowed())
 
-func _draw_enemy(enemy: Dictionary, stored: Dictionary) -> void:
-	var placement := figure_layout(enemy.pos)
-	var origin: Vector2 = placement.origin
-	var figure_size: float = placement["size"]
-	var pawn := Rect2(origin - Vector2.ONE * figure_size * 0.23, Vector2.ONE * figure_size * 0.46)
-	pawn.position = placement.foot - Vector2(figure_size * 0.23, figure_size * 0.46)
-	if enemy.kind == "shove":
-		shadow_renderer.draw_figure(self, origin, figure_size, false)
-		_text(origin + Vector2(-4, 4), str(enemy.id).left(1).to_upper(), P.INK, 12)
-	else:
-		draw_rect(pawn, Color("efe8d5"))
-		_text(pawn.position + Vector2(5, pawn.size.y - 5), str(enemy.id).to_upper(), P.INK, 14)
-	# Side labels avoid piling an HP tag on the standee in the preceding row.
-	var hp_at: Vector2 = placement.foot + Vector2(figure_size * 0.33, -figure_size * 0.16)
-	var text_width := ThemeDB.fallback_font.get_string_size("%d HP" % enemy.hp, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
-	draw_rect(Rect2(hp_at - Vector2(1, 12), Vector2(text_width + 2, 14)), P.FLOOR)
-	_text(hp_at, "%d HP" % enemy.hp, P.INK, 12)
-	if enemy.id == source or (not stored.is_empty() and enemy.id == stored.source):
-		draw_rect(pawn.grow(5), _borrowed(), false, 2)
-
-func _draw_player() -> void:
-	var placement := figure_layout(state.player.pos)
-	var player: Vector2 = placement.origin
-	var player_size: float = placement["size"]
-	shadow_renderer.draw_figure(self, player, player_size, true)
-	_text(player + Vector2(-4, 4), "Y", P.INK, 12)
-	var diamond := player + Vector2(player_size * 0.30, -player_size * 0.20)
-	draw_polyline(PackedVector2Array([diamond + Vector2(0, -5), diamond + Vector2(5, 0), diamond + Vector2(0, 5), diamond + Vector2(-5, 0), diamond + Vector2(0, -5)]), _borrowed(), 2, true)
-
 func _draw_standees(rows: Array) -> void:
 	for row in rows:
 		var emphasized: bool = row.actor in [source, _focused_actor, _hover_actor]
@@ -589,16 +494,16 @@ func _draw_standees(rows: Array) -> void:
 	_draw_roster(rows)
 
 func _source_color(id: String) -> Color:
-	if id == "A": return WavefrontOverlay.COOL
-	if id == "B": return WavefrontOverlay.WARM
+	if _stage_roles.get(id, -1) == 0: return WavefrontOverlay.COOL
+	if _stage_roles.get(id, -1) == 1: return WavefrontOverlay.WARM
 	return _borrowed()
 
 func _source_shape(id: String, center: Vector2, radius: float, color: Color) -> void:
-	if id == "A":
+	if _stage_roles.get(id, -1) == 0:
 		draw_polyline(PackedVector2Array([center + Vector2(0, -radius),
 			center + Vector2(radius, 0), center + Vector2(0, radius),
 			center + Vector2(-radius, 0), center + Vector2(0, -radius)]), color, 1.2, true)
-	elif id == "B": draw_arc(center, radius, 0, TAU, 16, color, 1.2, true)
+	elif _stage_roles.get(id, -1) == 1: draw_arc(center, radius, 0, TAU, 16, color, 1.2, true)
 
 func _draw_roster(rows: Array) -> void:
 	for row in rows:
@@ -617,9 +522,6 @@ func _draw_roster(rows: Array) -> void:
 
 func _draw() -> void:
 	if state.is_empty(): return
-	var cell_size := _cell_size()
-	if not theatre_mode:
-		shadow_renderer.draw_shadows(self, state, shadow_frame, cell_center, cell_size, source)
 	for x in range(state.width + 1):
 		var start: Vector2 = _ensure_projection().project(Vector2(x, 0))
 		draw_line(start, _ensure_projection().project(Vector2(x, state.height)), Color("bb887b", 0.55), 1)
@@ -627,14 +529,7 @@ func _draw() -> void:
 		var start: Vector2 = _ensure_projection().project(Vector2(0, y))
 		draw_line(start, _ensure_projection().project(Vector2(state.width, y)), Color("bb887b", 0.55), 1)
 	for wall in state.walls: _tile(wall, 3, Color("837077"), true)
-	if state.get("objective", "escape") == "escape" and state.has("exit"):
-		var exit_color := Color("ffe1a0")
-		_tile(state.exit.pos, 5, exit_color, false, 2)
-		_tile(state.exit.pos, 9, exit_color, false, 1)
-		_text(cell_center(state.exit.pos) + Vector2(-14, 4), "EXIT", exit_color, 12)
-	var threat_counts := {}
-	var regions: Array = announcement_waves() if _uses_wavefronts() else []
-	var actor_rows := standee_layout()
+	var regions := announcement_waves()
 	var wave_sources: Array = []
 	for region in regions: wave_sources.append(region.source)
 	wavefront_overlay.draw_regions(self, regions)
@@ -645,22 +540,9 @@ func _draw() -> void:
 	for intent in _visible_intentions():
 		if intent.source in wave_sources: continue
 		for cell in intent.cells:
-			var key := str(cell)
-			threat_counts[key] = threat_counts.get(key, 0) + 1
-			var tile := _cell_rect(cell).grow(-3)
 			_tile(cell, 3, Color(_danger(), 0.16), true)
-			var hatch := cell_center(cell) + Vector2(-6, -2)
-			if _standee_textures.is_empty():
-				draw_line(hatch, hatch + Vector2(8, -8), _danger(), 1)
 			if intent.source == source: _tile(cell, 3, _danger(), false, 2)
-			if threat_counts[key] > 1 and _standee_textures.is_empty():
-				_text(tile.position + Vector2(tile.size.x - 14, 14), str(threat_counts[key]), _danger())
-		if intent.kind not in ["burst", "swap"] and not intent.cells.is_empty() and _standee_textures.is_empty():
-			for enemy in state.enemies:
-				if enemy.id == intent.source:
-					_arrow(cell_center(enemy.pos), cell_center(intent.cells.back()), _danger(), true)
 	_draw_choices()
-	var stored: Dictionary = shadow_frame.get("held", {})
 	var effects: Array = preview.get("events", []) if not preview.is_empty() else last_events
 	var footprints := effect_footprints()
 	var shadow_effects := _uses_shadow_effects()
@@ -680,7 +562,7 @@ func _draw() -> void:
 			footprint_index += 1
 			_draw_effect_footprint(footprint)
 		if event.type == "move" or event.type == "displace":
-			_arrow(cell_center(event.from), cell_center(event.to), _borrowed(), false)
+			_arrow(cell_center(event.from), cell_center(event.to), _borrowed())
 			effect_positions[event.actor] = event.to
 		if event.type == "mask" and not event.cells.is_empty():
 			var color := _borrowed() if event.actor == "player" else _source_color(event.actor)
@@ -689,31 +571,21 @@ func _draw() -> void:
 			effect_positions[event.actor] = event.to
 			effect_positions[event.other] = event.from
 		if event.type == "death" and effect_positions.has(event.actor): death_cells.append(effect_positions[event.actor])
-	var enemies: Array = state.enemies.duplicate()
-	enemies.sort_custom(func(a: Dictionary, b: Dictionary): return cell_center(a.pos).y < cell_center(b.pos).y)
-	var player_drawn := false
-	if not actor_rows.is_empty():
-		_draw_standees(actor_rows)
-		# Source-marked warning tabs sit beside, rather than underneath, the tall
-		# silhouettes. Every model-authored cell/source remains represented.
-		var labels_per_cell := {}
-		for intent in _visible_intentions():
-			if intent.source in wave_sources: continue
-			for cell in intent.cells:
-				var key := str(cell)
-				var index: int = labels_per_cell.get(key, 0)
-				labels_per_cell[key] = index + 1
-				var tile := _cell_rect(cell)
-				var point := tile.position + Vector2(4 + index * 14, 15)
-				_text(point, str(intent.source), _danger(), 12)
-	else:
-		for enemy in enemies:
-			if not player_drawn and cell_center(state.player.pos).y <= cell_center(enemy.pos).y:
-				_draw_player()
-				player_drawn = true
-			_draw_enemy(enemy, stored)
-		if not player_drawn: _draw_player()
+	_draw_standees(standee_layout())
+	# Source-marked warning tabs sit beside, rather than underneath, the tall
+	# silhouettes. Every model-authored cell/source remains represented.
+	var labels_per_cell := {}
+	for intent in _visible_intentions():
+		if intent.source in wave_sources: continue
+		for cell in intent.cells:
+			var key := str(cell)
+			var index: int = labels_per_cell.get(key, 0)
+			labels_per_cell[key] = index + 1
+			var tile := _cell_rect(cell)
+			var point := tile.position + Vector2(4 + index * 14, 15)
+			_text(point, str(intent.source), _danger(), 12)
 	if not preview.is_empty():
+		var cell_size := _preview_scale()
 		var ghost := cell_center(preview.player.pos)
 		draw_arc(ghost, cell_size * 0.29, 0, TAU, 32, _borrowed(), 2, true)
 		for enemy in preview.enemies:

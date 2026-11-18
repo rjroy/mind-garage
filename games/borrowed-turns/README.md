@@ -12,10 +12,10 @@ From the repository root:
 # Import source textures once after a fresh checkout, or open the Godot editor.
 godot --headless --editor --path games/borrowed-turns --import
 godot --path games/borrowed-turns
-godot --path games/borrowed-turns -- --encounter=escape
+godot --path games/borrowed-turns -- --encounter=flanker
 ```
 
-Normal play opens **Switcher** in **Stage** view: one damaging-swap opponent, on the accepted 7×7 floor, with the same 3-AP budget. **Switcher + B**, baseline **Two pursuers** and **escape** are independently available through the encounter selector. No encounter completion unlock is required. All use the shared model and current Capture/Shine bargain. The original V1–V6 chooser, variant launch modes, discard and wait are removed; `fd8e91d` remains historical, not a parallel legacy engine.
+Normal play opens **Switcher** in **Stage** view: one damaging-swap opponent on the accepted 7×7 floor, with a 3-AP budget. **Switcher + B**, **Two pursuers** and the six solo trials are available from the start. All use the shared model and current Capture/Shine rules.
 
 ```bash
 godot --path games/borrowed-turns -- --encounter=switcher
@@ -31,7 +31,7 @@ Requested window: 1280 × 800; minimum 1024 × 720. Native Controls follow actua
 
 ## Turn and controls
 
-In the default fight, defeat all foes. The goal and number remaining stay visible. There is no exit, progression or unlock condition. In the explicit escape comparison, reach the exit when it is open; killing all foes is not required there.
+Defeat all foes. The goal and number remaining stay visible. There is no progression or unlock condition.
 
 - **AP** means action points. Each turn starts with 3 AP. A confirmed cardinal step, arming Capture, or Shine costs 1 AP. Movement is one adjacent cell per command, not an automatic path.
 - **Capture** arms without selecting a source. The next enemy attack that actually hits you deals its full normal damage and effects, then supplies your held ability if you survive. It does not cancel that attack or protect its other victims. Misses do not consume arming, which persists between turns. Arming twice is rejected.
@@ -62,8 +62,8 @@ Defeating the source removes its held ability, regardless of who deals the killi
 
 ### Reading the board
 
-- In Two pursuers, standees and **P / A / B** foot markers identify the actors. The retained escape encounter uses provisional labeled figures and an `EXIT` doorway. Coordinates are `[x,y]`, right/down.
-- In Two pursuers, full-tile washes and moving wavefronts show current enemy intentions; cool A/diamond and warm B/circle identify their sources. The escape encounter retains hatched warnings. Inspect/select an enemy or intention row for its exact footprint.
+- In Two pursuers, standees and **P / A / B** foot markers identify the actors. Coordinates are `[x,y]`, right/down.
+- In Two pursuers, full-tile washes and moving wavefronts show current enemy intentions; cool A/diamond and warm B/circle identify their sources. Inspect/select an enemy or intention row for its exact footprint.
 - Teal outlines/dots: legal candidates. Solid routes, outlined effect cells and hollow pawn positions: the selected command's exact prediction. Cross marks show predicted deaths. The live board changes only after confirmation.
 - Cell inspection names overlapping enemy sources. Details shows ability range/shape/strength and complete current intentions, with scrolling where needed. Complete Preview/history lines also scroll; they are not hidden in tooltips.
 
@@ -87,7 +87,7 @@ The grid follows the model's runtime width and height, not an image's painted ce
 
 Stable crops, quarter-turns, subtle color variation and seams make cells read as separate paper pieces. The floor shader, board marks, actor feet and mouse targeting share one perspective map. This slice does not add a player-facing grid-size setting. On the dark floor, threats use light coral and legal choices use pale mint; their meaning is unchanged.
 
-The original encounter retains its provisional figures/shove feedback. The two-pursuer Stage profile below uses the approved standee candidates and packaged provisional backdrop puppets. Neither introduces a lantern mechanic. Ronald accepted the preceding visual baseline as sufficient for gameplay; the new moving fight still needs live play feedback.
+The Stage uses the approved standees and packaged backdrop puppets. Ronald accepted the visual baseline as sufficient for gameplay; the moving fights still need live play feedback.
 
 ### Active two-pursuer fight
 
@@ -96,9 +96,9 @@ godot --path games/borrowed-turns -- \
   --encounter=two-pursuers
 ```
 
-The encounter selector offers **Switcher**, **Switcher + B**, **Two pursuers** and **escape**. Changing encounters explicitly confirms a new fight; Cancel keeps the existing one. Restart restores the selected encounter. Omitting the encounter option opens solo Switcher in Stage.
+The selector includes the three earlier fights and the six solo trials listed below. Changing encounters asks for confirmation; Cancel keeps the existing fight. Restart restores the selected encounter. Omitting the encounter option opens solo Switcher in Stage.
 
-The five puppet textures ship in `res://assets/puppets/two-pursuers`; import them as described above after a fresh checkout. Their source and portable extraction recipes are documented in [`assets-source/borrowed-turns/two-pursuers`](../../assets-source/borrowed-turns/two-pursuers/README.md). An optional `--puppet-pack=<directory>` override accepts native RGBA `a-body.png`, `a-hands.png`, `b-body.png`, `b-hands.png` (290×145) and `p-lantern.png` (145×145). Missing or invalid material fails clearly on direct launch; a chooser failure keeps the existing run and reports the problem. No substitute art is used.
+The five puppet textures ship in `res://assets/puppets/two-pursuers`; import them as described above after a fresh checkout. Their source and portable extraction recipes are documented in [`assets-source/borrowed-turns/two-pursuers`](../../assets-source/borrowed-turns/two-pursuers/README.md). An optional `--puppet-pack=<directory>` override accepts native RGBA `a-body.png`, `a-hands.png`, `b-body.png`, `b-hands.png` (290×145) and `p-lantern.png` (145×145). Missing or invalid material fails at launch; no substitute art is used.
 
 The wall-free fight starts the player at the edge midpoint opposite the two corner opponents. A keeps the narrow shove; B's shove is three tiles wide. Health, damage, range and enemy movement are unchanged; acquisition no longer has a capture-reach requirement. Whether the revised bargain creates better choices or peril needs human play. The Stage ground plane yaws about 30 degrees; accepted standee sizes, source images and native foot anchors are unchanged. Small **P / A / B** source markers stay at the true actor feet, above overlapping art. Names and current HP appear in an always-visible roster to the right of the grid, below the Director. Click a roster row, visible figure pixels or a foot marker to inspect the same actor; transparent image padding clicks through. Roster slots stay fixed as figures move, and dead sources lose their row. Hover/focus a rear source to reduce front-piece opacity. With board focus, **[ / ]** cycles figures and Enter selects; arrows still inspect floor cells. **Alt-click** explicitly selects floor through figures. A legal floor target also takes priority when the overlapping actor is not a legal target for the chosen operation.
 
@@ -155,20 +155,45 @@ godot --headless --path games/borrowed-turns --script res://ui/smoke.gd -- --foc
 
 Current verification is headless plus Ronald's live play. Older screenshot/recording procedures are historical and are not this revision's gate.
 
-## Provisional production content
+## Composing opponents
 
-The retained `content/escape.gd` fixture is 7 × 7, player at `[2,3]` with 6 HP, exit `[6,3]` opening on turn 3, and two wall cells. It also uses the shared 3-AP armed-Capture/Shine rules. Bolt, shove and burst sources differ in geometry, range, damage and displacement.
+For a movement comparison, try `circler` and `lantern-guard`: both use a wide shove, but one circles while the other patrols a route relative to its starting cell. Other trial IDs are `flanker`, `deadeye`, `anchor` and `puller`. Launch any one directly, for example:
 
-These content choices are bounded AI implementation assumptions, not balance findings or permanent tuning. Escape is not a mandatory-kill objective. Smoke assertions use controlled test-owned fixtures, not these production numbers.
+```bash
+godot --path games/borrowed-turns -- --encounter=circler
+```
+
+`content/encounters.gd` lists selectable fights; `content/opponents.gd` supplies reusable opponent parts. A fixture's `opponent_definitions` dictionary maps stable definition IDs to dictionaries with:
+
+- `name` and `stats.max_hp`.
+- Optional `movement` with a `pattern` and `budget`.
+- An `abilities` array of existing ability payload dictionaries.
+- `decision`: `fixed` selects the first ability; `first_in_range` selects the first whose nominal footprint reaches the player at announcement, falling back to the first.
+- `presentation`: an existing `A` or `B` kit.
+
+The fixture's `enemies` entries each specify a distinct per-instance `id`, a definition ID, `pos` and `dir`. Multiple instances can share a definition and art, but their instance IDs remain distinct: source-linked abilities belong to the individual source, not every opponent using that definition.
+
+Composing existing parts does not require edits to combat behavior. New effects, movement patterns or decision policies still require implementation. Bodies remain single-cell blockers; there is no traits, reactions or custom-body framework. The Stage retains its two opponent slots and shared A/B artwork. Slot, artwork and captured source are separate: two opponents can share a look without sharing health or ownership of Shine.
 
 ## Implementation and focused checks
+
+From the repository root, run the model, the six catalog replays and the selector/Stage checks with:
+
+```sh
+for script in tests/run tests/stocked_opponents_run tests/stocked_routes_run \
+  tests/stocked_scene_run tests/mixed_stage_roles_run tests/two_pursuer_presentation_run \
+  ui/board_comparison_smoke ui/smoke; do
+  godot --headless --path games/borrowed-turns --script "res://$script.gd" || exit 1
+done
+```
+
+The [opponent trial record](../../.lore/work/experiments/005-opponent-library/record.md) includes the frozen control comparison and the limits of this evidence.
 
 - `model/encounter.gd`: authoritative legality, AP, armed/held state, exact intentions, nonmutating assessments and ordered resolution.
 - `ui/encounter_ui.gd`: native shell, selection/confirmation, input and presentation lifecycle. Enumerates candidate commands and assesses them; does not simulate geometry or damage.
 - `ui/board.gd`: grid rendering, screen/cell conversion and presentation of model footprints/events. Actor movement/death markers follow model events; no displacement convention is reimplemented.
 - `ui/presentation.gd`: theme, ability/event formatting and command summaries.
 - `ui/shadow_presentation.gd`: detached deterministic `RefCounted` projection with `reset(snapshot, generation)`, `observe(before, command, after, generation)`, `advance(delta)` and `frame()`. Persistent announcements/held ownership are separate from finite attack/acquisition/Shine feedback. Inputs/outputs are deep copies; stale generations and unchanged transitions are ignored.
-- `ui/shadow_renderer.gd`: runtime polygon paper figures and palm silhouettes, using board screen anchors and model-authored presentation facts. No gameplay geometry, damage or displacement rules.
 - `ui/smoke.gd`, `ui/smoke_fixtures.gd`: focused integration checks through actual scene controls with controlled inputs. They contain no alternate gameplay path or test-only production command.
 - `scenes/encounter.tscn`: main scene.
 

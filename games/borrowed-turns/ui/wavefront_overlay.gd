@@ -57,7 +57,7 @@ func draw_regions(board, regions: Array) -> void:
 	# All full-cell washes first: one source's fill must not bury the other's
 	# moving fronts. Overlapping cells still carry both source-colored effects.
 	for row in ordered:
-		var color := COOL if row.source == "A" else WARM
+		var color := COOL if row.lane == 0 else WARM
 		for fill in row.fills:
 			var polygon := _project(board, fill)
 			board.draw_colored_polygon(polygon, Color(color, 0.30))
@@ -65,7 +65,7 @@ func draw_regions(board, regions: Array) -> void:
 			if not edge.is_empty(): edge.append(edge[0])
 			board.draw_polyline(edge, Color(color, 0.70), 1.0, true)
 	for row in ordered:
-		var color := COOL if row.source == "A" else WARM
+		var color := COOL if row.lane == 0 else WARM
 		for front in row.fronts:
 			for curve in front.curves:
 				if curve.size() < 2: continue

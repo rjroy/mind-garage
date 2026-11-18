@@ -7,12 +7,65 @@ var _state: Dictionary = {}
 func configure(fixture: Dictionary, variant: String) -> void:
 	assert(variant == "R2", "Only the revision 02 baseline is supported.")
 	_fixture = fixture.duplicate(true)
+	_validate_opponents()
 	reset()
+
+
+func _validate_opponents() -> void:
+	var definitions: Dictionary = _fixture.get("opponent_definitions", {})
+	var ids := {}
+	for enemy in _fixture.enemies:
+		assert(enemy.get("id") is String and not enemy.id.is_empty() and enemy.id != "player", "Enemy IDs must be nonempty and distinct from player.")
+		assert(not ids.has(enemy.id), "Enemy IDs must be unique.")
+		ids[enemy.id] = true
+		assert(_cell(enemy.get("pos")) and _cell(enemy.get("dir")), "Enemy placement requires a position and direction.")
+		if not enemy.has("definition"):
+			assert(enemy.get("ability") is Dictionary and enemy.get("hp") is int, "Flattened enemies require HP and an ability.")
+			continue
+		assert(enemy.definition is String and definitions.has(enemy.definition), "Enemy references an unknown definition.")
+		var definition: Dictionary = definitions[enemy.definition]
+		assert(definition.get("name") is String and not definition.name.is_empty(), "Opponent definition requires a name.")
+		assert(definition.get("stats") is Dictionary and definition.stats.get("max_hp") is int and definition.stats.max_hp > 0, "Opponent definition requires positive max HP.")
+		assert(definition.get("abilities") is Array and not definition.abilities.is_empty(), "Opponent definition requires abilities.")
+		assert(definition.get("decision") in ["fixed", "first_in_range"], "Unknown opponent decision.")
+		assert(definition.get("presentation") is Dictionary and definition.presentation.get("kit") is String, "Opponent definition requires a presentation kit.")
+		if definition.has("movement"):
+			assert(definition.movement is Dictionary and definition.movement.get("pattern") in ["chase_player", "keep_max_range", "seek_firing_line", "orbit_player", "patrol"] and definition.movement.get("budget") is int and definition.movement.budget >= 0, "Invalid opponent movement.")
+			var movement: Dictionary = definition.movement
+			if movement.pattern == "orbit_player":
+				assert(movement.get("radius", 2) is int and movement.get("radius", 2) > 0 and movement.get("clockwise", true) is bool, "Invalid orbit configuration.")
+			if movement.pattern == "patrol":
+				assert(movement.get("route") is Array and movement.route.size() >= 2 and movement.route[0] == [0, 0], "Patrol requires a spawn-relative route.")
+				for offset in movement.route:
+					assert(_cell(offset), "Patrol waypoints must be integer offsets.")
+		for ability in definition.abilities:
+			assert(ability is Dictionary and ability.get("kind") in ["bolt", "shove", "burst", "swap", "pull"] and ability.get("range") is int and ability.range > 0 and ability.get("damage") is int and ability.get("radius") is int and ability.get("push") is bool and not (ability.kind == "pull" and ability.push), "Invalid opponent ability.")
 
 
 func reset() -> void:
 	_state = _fixture.duplicate(true)
-	_state["objective"] = _fixture.get("objective", "defeat_all")
+	_state.erase("opponent_definitions")
+	for enemy in _state.enemies:
+		if enemy.has("definition"):
+			var definition: Dictionary = _fixture.opponent_definitions[enemy.definition]
+			enemy["name"] = definition.name
+			enemy["presentation"] = definition.presentation.duplicate(true)
+			enemy["hp"] = definition.stats.max_hp
+			enemy.erase("movement_pattern")
+			enemy.erase("movement_budget")
+			if definition.has("movement"):
+				enemy["movement_pattern"] = definition.movement.pattern
+				enemy["movement_budget"] = definition.movement.budget
+				if definition.movement.pattern == "orbit_player":
+					enemy["orbit_radius"] = definition.movement.get("radius", 2)
+					enemy["orbit_clockwise"] = definition.movement.get("clockwise", true)
+				elif definition.movement.pattern == "patrol":
+					enemy["patrol_spawn"] = enemy.pos.duplicate()
+					enemy["patrol_route"] = definition.movement.route.duplicate(true)
+					enemy["patrol_next"] = 1
+			enemy["ability"] = definition.abilities[0].duplicate(true)
+			enemy["kind"] = enemy.ability.kind
+	_state["objective"] = "defeat_all"
 	_state.merge({
 		"turn": 1, "status": "playing", "variant": "R2",
 		"action_points": _fixture.rules.actions,
@@ -20,7 +73,7 @@ func reset() -> void:
 		"intentions": [], "events": [],
 	}, true)
 	for enemy in _state.enemies:
-		_announce_swap(enemy)
+		_announce(enemy)
 	_refresh_footprints()
 
 
@@ -156,6 +209,28 @@ func _announce_swap(enemy: Dictionary) -> void:
 	enemy["announced_target"] = target.duplicate() if not _target_ray(enemy.pos, target, enemy.ability.range).is_empty() else []
 
 
+func _selected_ability(enemy: Dictionary) -> Dictionary:
+	if not enemy.has("definition"):
+		return enemy.ability
+	var definition: Dictionary = _fixture.opponent_definitions[enemy.definition]
+	if definition.decision == "first_in_range":
+		for ability in definition.abilities:
+			var candidate := enemy.duplicate(true)
+			candidate.ability = ability
+			candidate["announced_target"] = _state.player.pos.duplicate()
+			if _enemy_footprint(candidate).has(_state.player.pos):
+				return ability
+	return definition.abilities[0]
+
+
+func _announce(enemy: Dictionary) -> void:
+	if enemy.has("definition"):
+		enemy.ability = _selected_ability(enemy).duplicate(true)
+		enemy.kind = enemy.ability.kind
+	enemy.erase("announced_target")
+	_announce_swap(enemy)
+
+
 func _keys_allowed(action: Dictionary, allowed: Array) -> bool:
 	for key in action:
 		if not allowed.has(key):
@@ -280,7 +355,7 @@ func _end_turn() -> void:
 		_move_enemy(enemy)
 	for enemy in _state.enemies:
 		enemy.dir = _aim(enemy.pos)
-		_announce_swap(enemy)
+		_announce(enemy)
 	_state.turn += 1
 	_state.action_points = _state.rules.actions
 	_event("turn", {"number": _state.turn})
@@ -288,12 +363,7 @@ func _end_turn() -> void:
 
 
 func _check_objective() -> void:
-	var won := false
-	if _state.objective == "defeat_all":
-		won = _state.enemies.is_empty()
-	elif _state.objective == "escape" and _state.has("exit"):
-		won = _state.player.pos == _state.exit.pos and _state.turn >= _state.exit.opens
-	if won:
+	if _state.enemies.is_empty():
 		_state.status = "won"
 		_event("win", {"objective": _state.objective})
 
@@ -304,38 +374,16 @@ func _aim(origin: Array) -> Array:
 	return [signi(dx), 0] if absi(dx) >= absi(dy) else [0, signi(dy)]
 
 
-func _move_enemy(enemy: Dictionary) -> void:
-	var pattern: String = enemy.get("movement_pattern", "")
-	if pattern != "chase_player" and pattern != "keep_max_range":
-		return
-	var budget: int = maxi(0, enemy.get("movement_budget", 1))
-	if budget == 0:
-		return
-	# Breadth-first traversal fixes both shortest paths and tie order. Occupancy is
-	# evaluated anew for each enemy, after all earlier movers have settled.
+func _reachable_paths(enemy: Dictionary) -> Array:
+	# Breadth-first traversal fixes both shortest paths and tie order.
 	var start: Array = enemy.pos.duplicate()
 	var queue: Array = [{"pos": start, "path": []}]
 	var visited := [start]
-	var best_path: Array = []
-	var best_range := -1
 	var index := 0
 	while index < queue.size():
 		var entry: Dictionary = queue[index]
 		index += 1
 		var pos: Array = entry.pos
-		if pattern == "chase_player":
-			if _distance(pos, _state.player.pos) == 1:
-				best_path = entry.path
-				break
-		else:
-			var candidate: Dictionary = enemy.duplicate(true)
-			candidate.pos = pos
-			candidate.dir = _aim(pos)
-			if _enemy_footprint(candidate).has(_state.player.pos):
-				var distance := _distance(pos, _state.player.pos)
-				if distance > best_range:
-					best_range = distance
-					best_path = entry.path
 		for direction in [[-1, 0], [0, -1], [0, 1], [1, 0]]:
 			var next := _add(pos, direction)
 			if visited.has(next) or not _walkable(next) or not _occupant(next).is_empty():
@@ -344,10 +392,102 @@ func _move_enemy(enemy: Dictionary) -> void:
 			var path: Array = entry.path.duplicate()
 			path.append(next)
 			queue.append({"pos": next, "path": path})
+	return queue
+
+
+func _prospective_hit(enemy: Dictionary, pos: Array) -> bool:
+	var candidate := enemy.duplicate(true)
+	candidate.pos = pos
+	candidate.dir = _aim(pos)
+	candidate.ability = _selected_ability(candidate)
+	if candidate.ability.kind == "swap":
+		candidate["announced_target"] = _state.player.pos.duplicate()
+	return _enemy_footprint(candidate).has(_state.player.pos)
+
+
+func _move_enemy(enemy: Dictionary) -> void:
+	var pattern: String = enemy.get("movement_pattern", "")
+	if pattern not in ["chase_player", "keep_max_range", "seek_firing_line", "orbit_player", "patrol"]:
+		return
+	var budget: int = maxi(0, enemy.get("movement_budget", 1))
+	if budget == 0:
+		return
+	if pattern == "orbit_player":
+		_orbit_enemy(enemy, budget)
+		return
+	# Occupancy is evaluated after all earlier movers have settled.
+	var paths := _reachable_paths(enemy)
+	var best_path: Array = []
+	var best_range := -1
+	var found := false
+	var waypoint: Array = []
+	if pattern == "patrol":
+		waypoint = _add(enemy.patrol_spawn, enemy.patrol_route[enemy.patrol_next])
+	for entry in paths:
+		var pos: Array = entry.pos
+		if pattern == "patrol":
+			if pos == waypoint:
+				best_path = entry.path
+				found = true
+				break
+		elif pattern == "chase_player":
+			if _distance(pos, _state.player.pos) == 1:
+				best_path = entry.path
+				break
+		elif _prospective_hit(enemy, pos):
+			if pattern == "seek_firing_line":
+				best_path = entry.path
+				found = true
+				break
+			var distance := _distance(pos, _state.player.pos)
+			if distance > best_range:
+				best_range = distance
+				best_path = entry.path
+	if pattern == "seek_firing_line" and not found:
+		for entry in paths:
+			if _distance(entry.pos, _state.player.pos) == 1:
+				best_path = entry.path
+				break
 	for step in range(mini(budget, best_path.size())):
 		var previous: Array = enemy.pos.duplicate()
 		enemy.pos = best_path[step].duplicate()
 		_event("move", {"actor": enemy.id, "from": previous, "to": enemy.pos.duplicate()})
+	if pattern == "patrol" and found and enemy.pos == waypoint:
+		enemy.patrol_next = (enemy.patrol_next + 1) % enemy.patrol_route.size()
+
+
+func _orbit_enemy(enemy: Dictionary, budget: int) -> void:
+	var radius: int = enemy.get("orbit_radius", 2)
+	var rotation: int = 1 if enemy.get("orbit_clockwise", true) else -1
+	var visited := [enemy.pos.duplicate()]
+	for step in range(budget):
+		var origin: Array = enemy.pos
+		var player: Array = _state.player.pos
+		var distance := _distance(origin, player)
+		var best: Array = []
+		var best_error := 2147483647
+		for direction in [[-1, 0], [0, -1], [0, 1], [1, 0]]:
+			var next := _add(origin, direction)
+			if visited.has(next) or not _walkable(next) or not _occupant(next).is_empty():
+				continue
+			var next_distance := _distance(next, player)
+			var error := absi(next_distance - radius)
+			if absi(distance - radius) > 1:
+				if error >= absi(distance - radius):
+					continue
+			else:
+				var cross: int = (origin[0] - player[0]) * direction[1] - (origin[1] - player[1]) * direction[0]
+				if error > 1 or cross * rotation <= 0:
+					continue
+			if error < best_error:
+				best_error = error
+				best = next
+		if best.is_empty():
+			break
+		var previous: Array = enemy.pos.duplicate()
+		enemy.pos = best
+		visited.append(best)
+		_event("move", {"actor": enemy.id, "from": previous, "to": best.duplicate()})
 
 
 func _targets(actor_id: String, cells: Array, is_area: bool) -> Array:
@@ -405,8 +545,11 @@ func _resolve_ability(actor_id: String, ability: Dictionary, cells: Array, cente
 		if _state.status != "playing":
 			break
 		var actor: Dictionary = _state.player if id == "player" else _enemy(id)
-		if ability.push and not actor.is_empty():
-			_displace(id, actor, center)
+		if not actor.is_empty():
+			if ability.kind == "pull":
+				_displace(id, actor, center, true)
+			elif ability.push:
+				_displace(id, actor, center)
 	_finish_ability(actor_id, ability, player_hit)
 
 
@@ -441,11 +584,13 @@ func _damage(id: String, amount: int) -> void:
 			_state.enemies.erase(actor)
 
 
-func _displace(id: String, actor: Dictionary, center: Array) -> void:
+func _displace(id: String, actor: Dictionary, center: Array, toward: bool = false) -> void:
 	var dx: int = actor.pos[0] - center[0]
 	var dy: int = actor.pos[1] - center[1]
 	# Off-axis area pushes choose the dominant axis, with horizontal winning ties.
 	var direction := [signi(dx), 0] if absi(dx) >= absi(dy) else [0, signi(dy)]
+	if toward:
+		direction = [-direction[0], -direction[1]]
 	if direction == [0, 0]:
 		return
 	var destination := _add(actor.pos, direction)

@@ -10,8 +10,8 @@ static func foe(id: String, pos: Array, direction: Array = [0, -1], hp: int = 8,
 
 static func board(enemies: Array = [], health: int = 20) -> Dictionary:
 	return {
-		"objective": "escape", "width": 7, "height": 7, "walls": [],
-		"player": {"pos": [2, 3], "hp": health}, "exit": {"pos": [6, 6], "opens": 99},
+		"objective": "defeat_all", "width": 7, "height": 7, "walls": [],
+		"player": {"pos": [2, 3], "hp": health},
 		"rules": {"actions": 3}, "enemies": enemies.duplicate(true),
 	}
 

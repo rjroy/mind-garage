@@ -54,13 +54,12 @@ func _setup() -> bool:
 func snapshot(dimensions: Vector2i = Vector2i(5, 5), isolated: bool = false) -> Dictionary:
 	var skill := {"kind": "shove", "range": 3, "damage": 2, "radius": 0, "push": true}
 	return {
-		"width": dimensions.x, "height": dimensions.y, "walls": [],
+		"objective": "defeat_all", "width": dimensions.x, "height": dimensions.y, "walls": [],
 		"player": {"pos": [0, 3] if isolated else [2, 2], "hp": 23},
 		"enemies": [
 			{"id": "A", "pos": [2, 2] if isolated else [2, 1], "hp": 11, "kind": "shove", "ability": skill.duplicate(true)},
 			{"id": "B", "pos": [4, 3] if isolated else [2, 3], "hp": 17, "kind": "shove", "ability": skill.duplicate(true)},
 		],
-		"exit": {"pos": [dimensions.x - 1, 0], "opens": 9},
 		"intentions": [], "stored": {}, "capture_armed": false,
 	}
 
