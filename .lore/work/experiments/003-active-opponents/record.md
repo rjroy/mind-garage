@@ -374,6 +374,8 @@ Capacity handoff: close an old game process and launch normally. Judge the far r
 
 Ronald's live response to capacity checkpoint `8275a48` is “works great”; he asks to move on to a list of potential opponents. This accepts the usable board presentation for proceeding, not a claim that 7×7 is the only future footprint or that its current fight is balanced. Close `mind-garage-p4z`; continue gameplay-first opponent proposals under `mind-garage-dxm`, without art or implementation authorization.
 
+The draft [opponent shortlist](../../design/borrowed-turns-opponents.md) proposes six distinct roles in addition to baseline A/B, with borrowed value and partner interactions. A reconciliation rejects purely non-damaging last-opponent designs under the current no-basic-attack/source-linked bargain; damaging swap/pull variants preserve solo completion in principle, still requiring actual mechanical checks before implementation. Ronald's subsequent “Great. Lets see it” selects the recommended Switcher-first follow-up, checked alone and then paired with B. The other five roles remain unbuilt proposals; the next bounded implementation is not a formal six-version mechanic comparison.
+
 ### Capture limitation investigation after `d230a48`
 
 Ronald reports the candidate is “better” but remains unsure. He asks how capture could be limited, which previous decisions would change, and what options exist, noting that comparable powers can feel like endgame abilities. This authorizes investigation and proposals, not implementation.
