@@ -1,6 +1,6 @@
 # Borrowed Turns checks
 
-Deterministic checks exercise the real `res://model/encounter.gd` with controlled, test-owned fixtures. They do not assert production tuning, enjoyment or novelty. Current rules and executed evidence are recorded in [experiment 003](../../.lore/work/experiments/003-active-opponents/record.md). Historical revision-02 contracts are not current requirements or another supported rules engine.
+Deterministic checks exercise the real `res://model/encounter.gd` with controlled, test-owned fixtures. They do not assert production tuning, enjoyment or novelty. Current rules and executed evidence are recorded in [experiment 003](../../.lore/work/games/borrowed-turns/experiments/003-active-opponents/record.md). Historical revision-02 contracts are not current requirements or another supported rules engine.
 
 From repository root, with Godot 4.7.2 installed:
 

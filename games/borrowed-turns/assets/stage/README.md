@@ -11,7 +11,7 @@
 - Source approval: Ronald accepted this exact image after reviewing its rougher texture and actual dimensions.
 - SHA-256: `86f09de16558b344cbf451378a74e56b0e52a8a763fcdfd2b14c31ba39df329c`.
 - Promotion: copied unchanged from the local generated candidate, byte-compared, checksum-verified and reopened successfully.
-- Brief: [stage component description](../../../../.lore/work/design/borrowed-turns-art/stage-components-brief.md).
+- Brief: [stage component description](../../../../.lore/work/games/borrowed-turns/design/art/stage-components-brief.md).
 
 The original has not been resized, keyed or converted. Optional stage view now consumes it through Godot's texture importer and a projective floor shader. Its in-game filtering, cell variation, targeting and visual acceptance remain subject to independent and human review.
 

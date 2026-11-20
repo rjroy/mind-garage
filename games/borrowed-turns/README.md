@@ -2,6 +2,8 @@
 
 One small turn-based fight built around enduring an enemy attack to acquire its ability, then using it through Shine. Ronald reports the 5×5 version at `744fca3` felt good, engaging and puzzle-like, but not particularly replayable as the same encounter. Normal launch uses the accepted 7×7 Stage extent from `8275a48`, not a newly validated fight. It is not a run, unlock system or general enjoyment finding. Mind Garage names the research effort, not this game.
 
+See the [game design and experiment index](../../.lore/work/games/borrowed-turns/README.md) for its research record.
+
 ## Run
 
 Requires the installed Godot 4.7.2 executable. No packages, external services, downloaded fonts, telemetry or persistent saves. The Stage and source actors ship with the game.
@@ -50,7 +52,7 @@ On a hit, both actors exchange positions first, then the victim takes 1 damage. 
 
 The filled wash marks only the locked target cell. Hollow exchange pads and the connecting pulse explain the two positions; they do not mark damage along the corridor or an additional threatened source tile. The Switcher provisionally reuses A's accepted artwork but is named **Switcher** in the roster, Plans and Director. No new art or progression is involved.
 
-Try solo first, then **Switcher + B**. The pair keeps B's three-wide shove unchanged, allowing exchanges to change who occupies its already announced region. Build, checks and interpretation limits are in [experiment 004](../../.lore/work/experiments/004-switcher/record.md).
+Try solo first, then **Switcher + B**. The pair keeps B's three-wide shove unchanged, allowing exchanges to change who occupies its already announced region. Build, checks and interpretation limits are in [experiment 004](../../.lore/work/games/borrowed-turns/experiments/004-switcher/record.md).
 
 ## Holding and source-linked abilities
 
@@ -77,7 +79,7 @@ Full model-authored footprint markings remain authoritative. Rehearsal and previ
 
 Finite shadow cues complete independently of persistent idle/held loops. Gameplay input waits for finite feedback, not an arbitrary scene sleep or endless animation. Restart cancels old visual work. The model commits once on confirmation; animation never decides gameplay results.
 
-The earlier visual pilot does not establish enjoyment. [Experiment 003](../../.lore/work/experiments/003-active-opponents/record.md) records the accepted bargain, positive single-fight feedback and larger Stage. [Experiment 004](../../.lore/work/experiments/004-switcher/record.md) records the new Switcher solo/paired playtest.
+The earlier visual pilot does not establish enjoyment. [Experiment 003](../../.lore/work/games/borrowed-turns/experiments/003-active-opponents/record.md) records the accepted bargain, positive single-fight feedback and larger Stage. [Experiment 004](../../.lore/work/games/borrowed-turns/experiments/004-switcher/record.md) records the new Switcher solo/paired playtest.
 
 ## Theatre stage
 
@@ -187,7 +189,7 @@ for script in tests/run tests/stocked_opponents_run tests/stocked_routes_run \
 done
 ```
 
-The [opponent trial record](../../.lore/work/experiments/005-opponent-library/record.md) includes the frozen control comparison and the limits of this evidence.
+The [opponent trial record](../../.lore/work/games/borrowed-turns/experiments/005-opponent-library/record.md) includes the frozen control comparison and the limits of this evidence.
 
 - `model/encounter.gd`: authoritative legality, AP, armed/held state, exact intentions, nonmutating assessments and ordered resolution.
 - `ui/encounter_ui.gd`: native shell, selection/confirmation, input and presentation lifecycle. Enumerates candidate commands and assesses them; does not simulate geometry or damage.
@@ -205,4 +207,4 @@ godot --headless --path games/borrowed-turns --script res://tests/shadow_present
 
 The armed-Capture/Shine checks cover paid targetless arming, ordinary damage before acquisition, reusable held abilities, source-linked loss, exact wide geometry/endpoints, reset and terminal controls. Controller checks protect event ordering, later independent attacks, generations, detachment and slides. Real-scene checks activate actual button signals and emit viewport input; they are **not physical OS input evidence**, human visual acceptance or enjoyment. See the experiment record for which runners have actually passed at each checkpoint.
 
-Runtime diagnostics print starts, submitted commands and results to stdout. Event history exists only in memory. Independent testing and review establish bounded technical evidence. Earlier rules and presentation experiments remain historical in `.lore/work/experiments/`; they are not parallel supported modes or current requirements. Regenerable evidence stays under ignored `.lore/local/`, never a runtime dependency or committed test artifact.
+Runtime diagnostics print starts, submitted commands and results to stdout. Event history exists only in memory. Independent testing and review establish bounded technical evidence. Earlier rules and presentation experiments remain historical in `.lore/work/games/borrowed-turns/experiments/`; they are not parallel supported modes or current requirements. Regenerable evidence stays under ignored `.lore/local/`, never a runtime dependency or committed test artifact.

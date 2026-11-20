@@ -2,6 +2,8 @@
 
 The neighborhood rink is closing. Skate one last number with the lantern troupe.
 
+See the [game design and experiment index](../../.lore/work/games/last-light-on-the-rink/README.md) for its research record.
+
 ```sh
 godot --path games/last-light-on-the-rink
 ```

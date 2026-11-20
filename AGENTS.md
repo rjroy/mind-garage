@@ -8,9 +8,9 @@ Mind Garage is the name of the experimental effort, not a game title. Give indiv
 
 Read [README.md](README.md) for the project overview and these shared foundations before proposing or changing an experiment:
 
-- [Experiment brief](.lore/work/notes/ai-game-design-experiment.md): research question, validation layers, iteration protocol, and guardrails.
-- [AI, novelty, and fun](.lore/work/notes/ai-design-novel-fun.md): what the retained accounts do and do not demonstrate.
-- [What makes games fun](.lore/work/notes/what-makes-games-fun.md): selective research starting points, not universal design rules.
+- [Experiment brief](.lore/work/shared/method/ai-game-design-experiment.md): research question, validation layers, iteration protocol, and guardrails.
+- [AI, novelty, and fun](.lore/work/shared/research/ai-design-novel-fun.md): what the retained accounts do and do not demonstrate.
+- [What makes games fun](.lore/work/shared/research/what-makes-games-fun.md): selective research starting points, not universal design rules.
 
 ### Experiment scope and authorization
 
@@ -23,8 +23,8 @@ Read [README.md](README.md) for the project overview and these shared foundation
 
 ### Evidence and iteration
 
-- Read the [player brief](.lore/work/intents/player-brief.md) for Ronald's stated preferences and agreed player promise. Before choosing a hook or core mechanic, use [`discover-game-hook`](.agents/skills/discover-game-hook/SKILL.md). Keep reusable procedure separate from player preferences and per-game decisions.
-- Store each experiment's research record at `.lore/work/experiments/<experiment-id>/record.md`, starting from the discovery skill's [template](.agents/skills/discover-game-hook/templates/experiment-record.md). Document input/procedure versions, source commits, configuration, seeds and replay commands. Player learning cannot be reset; repeated AI generation need not yield identical proposals.
+- Read the [player brief](.lore/work/shared/audience/player-brief.md) for Ronald's stated preferences and agreed player promise. Before choosing a hook or core mechanic, use [`discover-game-hook`](.agents/skills/discover-game-hook/SKILL.md). Keep reusable procedure separate from player preferences and per-game decisions.
+- Store each experiment's research record at `.lore/work/games/<game-id>/experiments/<experiment-id>/record.md`, starting from the discovery skill's [template](.agents/skills/discover-game-hook/templates/experiment-record.md). Document input/procedure versions, source commits, configuration, seeds and replay commands. Player learning cannot be reset; repeated AI generation need not yield identical proposals.
 - Do not commit regenerable runtime or test output: screenshots, recordings, raw logs, generated manifests, build/source archives and similar discussion evidence belong under gitignored `.lore/local/`, if retained at all. Commit source, tests, reproducible configuration and substantive documentation, including concise results and interpretation. Documentation may reference local evidence, but must explain how to regenerate it rather than depend on its presence. An artifact is not documentation merely because it sits beside an experiment record.
 - Approved source artwork is not runtime/test output. Promote accepted originals into the game's asset directory with provenance and exact-version approval; keep generated candidates and inspection composites local. Texture-import settings are source configuration, while Godot's `.godot/` import cache remains ignored. Artwork approval does not authorize runtime integration or imply runtime acceptance.
 - Treat `.lore/local/` as disposable scratch, never as a required runtime input. Package accepted assets in the game and preserve necessary preparation sources and recipes outside scratch. A fresh checkout must run without local experiment history; historical output paths are not asset-loading fallbacks.

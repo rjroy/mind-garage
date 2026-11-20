@@ -10,7 +10,7 @@ The shared research question is: **Can AI originate a central game mechanic and 
 
 Human playtest feedback is part of that process. The question is not whether AI can build a game without human contact, or whether a clever prompt alone can establish that a design is novel and fun.
 
-**Experiment concluded.** Ronald’s verdict: no, he would not entrust current AI with the job of finding the fun. He supplied the [research on what makes games fun](.lore/work/notes/what-makes-games-fun.md) at the outset. The AI could discuss that research, build a playable game and find clever solutions, but when asked to focus on enjoyment it kept answering a different question: what could a player solve? Ronald considers that a useful result, and a relief. The prototype and research below remain as the record, not a request for another iteration.
+**Experiment concluded.** Ronald’s verdict: no, he would not entrust current AI with the job of finding the fun. He supplied the [research on what makes games fun](.lore/work/shared/research/what-makes-games-fun.md) at the outset. The AI could discuss that research, build a playable game and find clever solutions, but when asked to focus on enjoyment it kept answering a different question: what could a player solve? Ronald considers that a useful result, and a relief. The prototype and research below remain as the record, not a request for another iteration.
 
 ## Final prototype: Borrowed Turns opponent trials
 
@@ -21,19 +21,19 @@ godot --path games/borrowed-turns
 godot --path games/borrowed-turns -- --encounter=switcher-b
 ```
 
-The candidate uses **3 shared AP per turn**: a cardinal step, arming Capture, or Shine costs 1 AP. Armed Capture acquires the next enemy attack that hits you **after its normal damage and effects**; it does not cancel danger. Shine repeatedly uses the held ability without consuming it. Holding has no expiry or backlash, but defeating its source removes the ability. The Switcher locks one cell, exchanges positions with its occupant, then deals damage. B retains its three-wide shove. Reaching zero AP does not advance time. See the [play instructions](games/borrowed-turns/README.md), [Switcher record](.lore/work/experiments/004-switcher/record.md) and [earlier active-fight record](.lore/work/experiments/003-active-opponents/record.md).
+The candidate uses **3 shared AP per turn**: a cardinal step, arming Capture, or Shine costs 1 AP. Armed Capture acquires the next enemy attack that hits you **after its normal damage and effects**; it does not cancel danger. Shine repeatedly uses the held ability without consuming it. Holding has no expiry or backlash, but defeating its source removes the ability. The Switcher locks one cell, exchanges positions with its occupant, then deals damage. B retains its three-wide shove. Reaching zero AP does not advance time. See the [play instructions](games/borrowed-turns/README.md), [Switcher record](.lore/work/games/borrowed-turns/experiments/004-switcher/record.md) and [earlier active-fight record](.lore/work/games/borrowed-turns/experiments/003-active-opponents/record.md).
 
-This is a mechanic prototype, not a finished roguelite or a validated progression system. Ronald reports the 5×5 armed-Capture/reusable-Shine fight at `744fca3` felt good, engaging and puzzle-like, but not particularly replayable as the same encounter. That is positive engagement evidence from one player, not run retention or a general enjoyment result. Normal launch now uses the accepted **7×7 Stage extent** from `8275a48`, without edge coordinate labels or smaller actors. Combat rules and stats are unchanged; layout acceptance is not a new balance claim. The [Curtain Call narrative direction](.lore/work/narrative/borrowed-turns/curtain-call-narrative-brief.md) supplies context, not an exhaustive mechanics specification.
+This is a mechanic prototype, not a finished roguelite or a validated progression system. Ronald reports the 5×5 armed-Capture/reusable-Shine fight at `744fca3` felt good, engaging and puzzle-like, but not particularly replayable as the same encounter. That is positive engagement evidence from one player, not run retention or a general enjoyment result. Normal launch now uses the accepted **7×7 Stage extent** from `8275a48`, without edge coordinate labels or smaller actors. Combat rules and stats are unchanged; layout acceptance is not a new balance claim. The [Curtain Call narrative direction](.lore/work/games/borrowed-turns/design/narrative/curtain-call-narrative-brief.md) supplies context, not an exhaustive mechanics specification.
 
 The accepted A+B fight remains available with `--encounter=two-pursuers`. Encounter choices share the same rules and Stage. Mechanical feasibility does not establish enjoyment.
 
-The first six-variant prototype is preserved at source commit `fd8e91d`; it is not a parallel mode in the live game. Subsequent human feedback and the unlimited-capture/backlash direction are recorded in [design revision 02](.lore/work/experiments/001-hook-discovery/design-revision-02.md), with provisional [executable rules](.lore/work/experiments/001-hook-discovery/revision-02-executable-rules.md).
+The first six-variant prototype is preserved at source commit `fd8e91d`; it is not a parallel mode in the live game. Subsequent human feedback and the unlimited-capture/backlash direction are recorded in [design revision 02](.lore/work/games/borrowed-turns/experiments/001-hook-discovery/design-revision-02.md), with provisional [executable rules](.lore/work/games/borrowed-turns/experiments/001-hook-discovery/revision-02-executable-rules.md).
 
-The separate [revision-02 replay guide](.lore/work/experiments/001-hook-discovery/builds/revision-02/README.md) identifies checkpoint `009311b` and its recorded test results without replacing the first-build record. It predates the subsequent Invert removal; historical features are not current requirements. Generated archives and raw output are local, not required checkout files.
+The separate [revision-02 replay guide](.lore/work/games/borrowed-turns/experiments/001-hook-discovery/builds/revision-02/README.md) identifies checkpoint `009311b` and its recorded test results without replacing the first-build record. It predates the subsequent Invert removal; historical features are not current requirements. Generated archives and raw output are local, not required checkout files.
 
 ### Accepted presentation baseline
 
-The [action-shadow experiment](.lore/work/experiments/002-shadow-paper/record.md) records the earlier primitive pilot, concept exploration, accepted stage/standees/Director and source-driven wavefronts. Ronald accepted the resulting visuals as sufficient not to detract from gameplay; `mind-garage-fy3` is closed. That is not a finished-art or enjoyment claim.
+The [action-shadow experiment](.lore/work/games/borrowed-turns/experiments/002-shadow-paper/record.md) records the earlier primitive pilot, concept exploration, accepted stage/standees/Director and source-driven wavefronts. Ronald accepted the resulting visuals as sufficient not to detract from gameplay; `mind-garage-fy3` is closed. That is not a finished-art or enjoyment claim.
 
 ```bash
 godot --headless --editor --path games/borrowed-turns --import
@@ -42,15 +42,15 @@ godot --path games/borrowed-turns
 
 Stage is the sole presentation. The accepted art and shared board projection are unchanged by the active-opponent revision. Runtime puppet textures ship in the game; necessary preparation artwork and recipes live under `assets-source/`. No local experiment history is needed to play. See the [stage instructions](games/borrowed-turns/README.md#theatre-stage).
 
-The [opponent library](games/borrowed-turns/README.md#composing-opponents) offers six independent solo trials alongside Switcher, Switcher + B and Two pursuers. Choose one in the encounter selector or pass its ID with `--encounter`. The [trial record](.lore/work/experiments/005-opponent-library/record.md) separates mechanical checks from human play. Multi-fight runs and progression remain deferred.
+The [opponent library](games/borrowed-turns/README.md#composing-opponents) offers six independent solo trials alongside Switcher, Switcher + B and Two pursuers. Choose one in the encounter selector or pass its ID with `--encounter`. The [trial record](.lore/work/games/borrowed-turns/experiments/005-opponent-library/record.md) separates mechanical checks from human play. Multi-fight runs and progression remain deferred.
 
 ## Shared foundations
 
-All experiments start from the notes in [`.lore/work/notes/`](.lore/work/notes/):
+All experiments start from the shared foundations, indexed in [`.lore/README.md`](.lore/README.md):
 
-- [AI game-design experiment](.lore/work/notes/ai-game-design-experiment.md) proposes the research method, evidence layers, and iteration protocol.
-- [Can AI design a novel, fun game?](.lore/work/notes/ai-design-novel-fun.md) distinguishes evidence of AI-assisted development from unproven claims of autonomous invention or originality.
-- [What makes games fun?](.lore/work/notes/what-makes-games-fun.md) summarizes selected research on agency, mastery, connection, absorption, and meaningful appreciation, including its limits.
+- [AI game-design experiment](.lore/work/shared/method/ai-game-design-experiment.md) proposes the research method, evidence layers, and iteration protocol.
+- [Can AI design a novel, fun game?](.lore/work/shared/research/ai-design-novel-fun.md) distinguishes evidence of AI-assisted development from unproven claims of autonomous invention or originality.
+- [What makes games fun?](.lore/work/shared/research/what-makes-games-fun.md) summarizes selected research on agency, mastery, connection, absorption, and meaningful appreciation, including its limits.
 
 These are starting points, not established experiment results or a universal recipe for fun. This workspace focuses on repeatable engagement without claiming that one-time or primarily meaningful experiences are lesser games.
 
@@ -77,9 +77,9 @@ The notes do not authorize a particular implementation. Start with a prototype s
 
 ## How we look for fun
 
-Start with the [player brief](.lore/work/intents/player-brief.md), then use [`discover-game-hook`](.agents/skills/discover-game-hook/SKILL.md) to explore a few experience promises and select a direction. Hand its candidate mechanic to [`explore-mechanic`](.agents/skills/explore-mechanic/SKILL.md) for six alternative versions with independently playable survivors. A promising pitch is not evidence that playing it is fun.
+Start with the [player brief](.lore/work/shared/audience/player-brief.md), then use [`discover-game-hook`](.agents/skills/discover-game-hook/SKILL.md) to explore a few experience promises and select a direction. Hand its candidate mechanic to [`explore-mechanic`](.agents/skills/explore-mechanic/SKILL.md) for six alternative versions with independently playable survivors. A promising pitch is not evidence that playing it is fun.
 
-Keep a separate record per experiment at `.lore/work/experiments/<experiment-id>/record.md`, using the [experiment template](.agents/skills/discover-game-hook/templates/experiment-record.md). Record source/input/procedure versions, configuration, seeds and replay commands so we can repeat a comparison. Neither resets player learning or guarantees identical AI proposals.
+Keep a separate record per experiment at `.lore/work/games/<game-id>/experiments/<experiment-id>/record.md`, using the [experiment template](.agents/skills/discover-game-hook/templates/experiment-record.md). Record source/input/procedure versions, configuration, seeds and replay commands so we can repeat a comparison. Neither resets player learning or guarantees identical AI proposals.
 
 Commit source, tests and substantive documentation, not regenerable evidence. Screenshots, recordings, raw logs, generated manifests and build/source archives belong under gitignored `.lore/local/` if needed for discussion. Document results and how to reproduce them without requiring those local files.
 
