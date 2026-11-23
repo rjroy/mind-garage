@@ -13,6 +13,7 @@
 
 - [Borrowed Turns](work/games/borrowed-turns/README.md): from the original hook to theatrical presentation and opponent trials.
 - [Last Light on the Rink](work/games/last-light-on-the-rink/README.md): designing a complete skating performance for one sitting.
+- [Barnaby's Order of Last Resort](work/games/company-of-unlikely-heroes/README.md): graduated to a private standalone repository; the public source snapshot remains available.
 
 ## Where a new document goes
 
